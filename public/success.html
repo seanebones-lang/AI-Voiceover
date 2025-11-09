@@ -4,165 +4,172 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Successful! - VoiceClone AI</title>
-    <link rel="stylesheet" href="styles.css">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 2s ease-in-out infinite',
+                        'fade-in': 'fadeIn 0.6s ease-out',
+                        'scale-in': 'scaleIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        scaleIn: {
+                            '0%': { transform: 'scale(0.8)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
+                        },
+                    },
+                }
+            }
+        }
+    </script>
+
     <style>
-        .success-container {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px 20px;
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
         }
 
-        .success-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(40px);
-            border-radius: var(--radius-lg);
-            padding: 60px 40px;
-            max-width: 600px;
-            width: 100%;
-            text-align: center;
-            box-shadow: var(--shadow-xl);
-            animation: successPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        }
-
-        @keyframes successPop {
-            0% {
-                transform: scale(0.8);
-                opacity: 0;
-            }
-            100% {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .success-icon {
-            font-size: 80px;
-            animation: bounce 1s ease infinite;
-            margin-bottom: 20px;
-        }
-
-        .success-title {
-            font-size: 2.5rem;
-            font-weight: 800;
-            background: var(--gradient-primary);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 16px;
-        }
-
-        .success-message {
-            font-size: 1.2rem;
-            color: var(--dark);
-            margin-bottom: 30px;
-            line-height: 1.6;
-        }
-
-        .feature-list {
-            text-align: left;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 24px;
-            border-radius: var(--radius);
-            margin: 30px 0;
-        }
-
-        .feature-list h3 {
-            color: var(--dark);
-            margin-bottom: 16px;
-            font-size: 1.3rem;
-        }
-
-        .feature-list ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        .feature-list li {
-            padding: 8px 0;
-            color: var(--dark);
-            font-weight: 500;
-        }
-
-        .feature-list li::before {
-            content: "✅ ";
-            margin-right: 8px;
-        }
-
-        .cta-buttons {
-            display: flex;
-            gap: 16px;
-            justify-content: center;
-            margin-top: 30px;
-        }
-
-        @media (max-width: 600px) {
-            .success-card {
-                padding: 40px 24px;
-            }
-
-            .success-title {
-                font-size: 2rem;
-            }
-
-            .cta-buttons {
-                flex-direction: column;
-            }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
         }
     </style>
 </head>
-<body>
-    <!-- Animated Background -->
-    <div class="animated-bg">
-        <div class="gradient-orb orb-1"></div>
-        <div class="gradient-orb orb-2"></div>
-        <div class="gradient-orb orb-3"></div>
+<body class="font-sans antialiased bg-gradient-to-br from-slate-50 via-purple-50 to-blue-50 dark:from-slate-900 dark:via-purple-900/20 dark:to-slate-900 text-slate-900 dark:text-slate-100">
+
+    <!-- Animated Background Elements -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-20 left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-float"></div>
+        <div class="absolute top-40 right-10 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-float" style="animation-delay: 2s;"></div>
+        <div class="absolute -bottom-8 left-1/2 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-float" style="animation-delay: 4s;"></div>
     </div>
 
-    <div class="success-container">
-        <div class="success-card">
-            <div class="success-icon">🎉</div>
-            <h1 class="success-title">Payment Successful!</h1>
-            <p class="success-message">
-                Welcome to VoiceClone AI Pro! Your subscription is now active and you have access to all premium features.
-            </p>
+    <!-- Success Container -->
+    <div class="relative min-h-screen flex items-center justify-center px-4 py-16">
+        <div class="max-w-2xl w-full animate-scale-in">
+            <!-- Success Card -->
+            <div class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/50 p-8 md:p-12 text-center">
+                <!-- Success Icon -->
+                <div class="mb-6 inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg animate-bounce-slow">
+                    <i data-lucide="check" class="w-12 h-12 text-white stroke-[3]"></i>
+                </div>
 
-            <div class="feature-list">
-                <h3>You Now Have Access To:</h3>
-                <ul>
-                    <li>250,000 characters per month</li>
-                    <li>250+ premium AI voices</li>
-                    <li>Voice cloning (unlimited)</li>
-                    <li>All 8 emotion presets</li>
-                    <li>Multi-voice conversations</li>
-                    <li>Voice comparison tool</li>
-                    <li>Commercial license</li>
-                    <li>Priority support</li>
-                </ul>
-            </div>
+                <!-- Title -->
+                <h1 class="text-4xl md:text-5xl font-extrabold mb-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 dark:from-purple-400 dark:via-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">
+                    Payment Successful!
+                </h1>
 
-            <p style="color: var(--gray); font-size: 0.95rem; margin: 20px 0;">
-                A confirmation email has been sent to your inbox.
-            </p>
-
-            <div class="cta-buttons">
-                <button onclick="window.location.href='/'" class="btn-generate-modern" style="width: auto; padding: 16px 32px;">
-                    <span class="btn-icon">🎙️</span>
-                    <span>Start Creating</span>
-                </button>
-                <button onclick="openBillingPortal()" class="btn-secondary" style="padding: 16px 32px;">
-                    Manage Subscription
-                </button>
-            </div>
-
-            <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid rgba(0,0,0,0.1);">
-                <p style="color: var(--gray); font-size: 0.9rem;">
-                    Need help? Contact us at support@voiceclone.ai
+                <!-- Message -->
+                <p class="text-xl text-slate-600 dark:text-slate-400 mb-8 max-w-md mx-auto">
+                    Welcome to VoiceClone AI Pro! Your subscription is now active and you have access to all premium features.
                 </p>
+
+                <!-- Feature List -->
+                <div class="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-200 dark:border-purple-800/50 rounded-2xl p-6 mb-8 text-left">
+                    <div class="flex items-center space-x-2 mb-4">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+                        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">You Now Have Access To:</h3>
+                    </div>
+                    <ul class="space-y-3">
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">250,000 characters per month</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">250+ premium AI voices</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">Voice cloning (unlimited)</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">All 8 emotion presets</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">Multi-voice conversations</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">Voice comparison tool</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">Commercial license</span>
+                        </li>
+                        <li class="flex items-center space-x-3">
+                            <i data-lucide="check-circle" class="w-5 h-5 text-green-500 flex-shrink-0"></i>
+                            <span class="text-slate-700 dark:text-slate-300">Priority support</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Email Confirmation Notice -->
+                <div class="flex items-center justify-center space-x-2 mb-8 text-slate-500 dark:text-slate-400">
+                    <i data-lucide="mail" class="w-4 h-4"></i>
+                    <p class="text-sm">A confirmation email has been sent to your inbox</p>
+                </div>
+
+                <!-- CTA Buttons -->
+                <div class="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+                    <button onclick="window.location.href='/'" class="group px-8 py-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold shadow-xl transition-all hover:scale-105 flex items-center justify-center space-x-2">
+                        <i data-lucide="mic" class="w-5 h-5"></i>
+                        <span>Start Creating</span>
+                        <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                    </button>
+                    <button onclick="openBillingPortal()" class="px-8 py-4 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 font-semibold transition-all flex items-center justify-center space-x-2">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                        <span>Manage Subscription</span>
+                    </button>
+                </div>
+
+                <!-- Support Section -->
+                <div class="pt-8 border-t border-slate-200 dark:border-slate-700">
+                    <div class="flex items-center justify-center space-x-2 text-slate-500 dark:text-slate-400">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                        <p class="text-sm">
+                            Need help? Contact us at <a href="mailto:support@voiceclone.ai" class="text-purple-600 dark:text-purple-400 hover:underline font-medium">support@voiceclone.ai</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Powered By Badge -->
+            <div class="mt-8 text-center">
+                <div class="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border border-white/20 dark:border-slate-700/50">
+                    <i data-lucide="rocket" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                    <span class="text-sm text-slate-600 dark:text-slate-400 font-medium">Powered by NextEleven Mothership AI</span>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- Initialize Lucide Icons -->
+    <script>
+        lucide.createIcons();
+    </script>
 
     <script>
         // Get session ID from URL
@@ -170,21 +177,29 @@
         const sessionId = urlParams.get('session_id');
 
         if (sessionId) {
-            console.log('Payment session:', sessionId);
+            console.log('✅ Payment session:', sessionId);
             // You can verify the session with your backend if needed
         }
 
         function openBillingPortal() {
             // TODO: Implement Stripe customer portal
-            // For now, redirect to homepage
+            // For now, redirect to homepage with notification
             alert('Billing portal coming soon! For now, you can manage your subscription via Stripe emails.');
             window.location.href = '/';
         }
 
-        // Confetti effect (optional)
+        // Celebrate success
         setTimeout(() => {
-            console.log('🎊 Thank you for subscribing!');
+            console.log('🎉 Thank you for subscribing to VoiceClone AI Pro!');
         }, 500);
+
+        // Load theme preference
+        (function() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
     </script>
 </body>
 </html>
