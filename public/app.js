@@ -53,19 +53,29 @@ function setupEventListeners() {
 function switchTab(tabName) {
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
+        tab.classList.add('hidden');
+        tab.classList.remove('block');
     });
 
-    // Remove active from all buttons
+    // Remove active state from all buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
+        btn.classList.remove('border-purple-600', 'text-purple-600', 'dark:text-purple-400');
+        btn.classList.add('border-transparent', 'text-slate-600', 'dark:text-slate-400');
     });
 
     // Show selected tab
-    document.getElementById(`tab-${tabName}`).classList.add('active');
+    const selectedTab = document.getElementById(`tab-${tabName}`);
+    if (selectedTab) {
+        selectedTab.classList.remove('hidden');
+        selectedTab.classList.add('block');
+    }
 
-    // Add active to clicked button
-    event.target.closest('.tab-btn').classList.add('active');
+    // Add active state to clicked button
+    const clickedBtn = event.target.closest('.tab-btn');
+    if (clickedBtn) {
+        clickedBtn.classList.remove('border-transparent', 'text-slate-600', 'dark:text-slate-400');
+        clickedBtn.classList.add('border-purple-600', 'text-purple-600', 'dark:text-purple-400');
+    }
 
     // Populate voice selects for compare tab
     if (tabName === 'compare') {
@@ -162,21 +172,27 @@ function renderPresets() {
     if (!container) return;
 
     const presetIcons = {
-        excited: '🤩',
-        calm: '😌',
-        serious: '🧐',
-        dramatic: '🎭',
-        whisper: '🤫',
-        angry: '😠',
-        happy: '😊',
-        sad: '😢'
+        excited: 'zap',
+        calm: 'cloud',
+        serious: 'briefcase',
+        dramatic: 'theater',
+        whisper: 'volume-1',
+        angry: 'flame',
+        happy: 'smile',
+        sad: 'cloud-rain'
     };
 
     container.innerHTML = Object.keys(presets).map(key => `
-        <button class="preset-btn" onclick="applyPreset('${key}')" data-preset="${key}">
-            ${presetIcons[key] || '🎤'} ${key.charAt(0).toUpperCase() + key.slice(1)}
+        <button class="px-4 py-2 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 transition-all text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center justify-center space-x-2" onclick="applyPreset('${key}')" data-preset="${key}">
+            <i data-lucide="${presetIcons[key] || 'mic'}" class="w-4 h-4"></i>
+            <span>${key.charAt(0).toUpperCase() + key.slice(1)}</span>
         </button>
     `).join('');
+
+    // Reinitialize Lucide icons for dynamically added elements
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
 }
 
 function applyPreset(presetName) {
@@ -191,11 +207,17 @@ function applyPreset(presetName) {
     updateSliderValue('similarityValue', preset.similarity_boost);
     updateSliderValue('styleValue', preset.style);
 
-    // Visual feedback
-    document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.classList.remove('active');
+    // Visual feedback with Tailwind classes
+    document.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.classList.remove('bg-purple-600', 'border-purple-600', 'text-white');
+        btn.classList.add('border-slate-200', 'dark:border-slate-700', 'text-slate-700', 'dark:text-slate-300');
     });
-    document.querySelector(`[data-preset="${presetName}"]`)?.classList.add('active');
+
+    const activeBtn = document.querySelector(`[data-preset="${presetName}"]`);
+    if (activeBtn) {
+        activeBtn.classList.remove('border-slate-200', 'dark:border-slate-700', 'text-slate-700', 'dark:text-slate-300');
+        activeBtn.classList.add('bg-purple-600', 'border-purple-600', 'text-white');
+    }
 
     currentPreset = presetName;
     console.log(`✅ Applied ${presetName} preset`);
@@ -203,23 +225,17 @@ function applyPreset(presetName) {
 
 // User Info
 async function loadUserInfo() {
-    try {
-        const response = await fetch(`${API_BASE}/api/user`);
-        if (!response.ok) throw new Error('Failed to load user info');
-
-        const data = await response.json();
-        const charCount = data.subscription?.character_count || 0;
-        const charLimit = data.subscription?.character_limit || 10000;
-
-        document.getElementById('characterCount').innerHTML = `
-            Characters: <strong>${charCount.toLocaleString()}</strong> / ${charLimit.toLocaleString()}
+    // Show unlimited access - no paywall
+    const charCountEl = document.getElementById('characterCount');
+    if (charCountEl) {
+        charCountEl.innerHTML = `
+            <span class="flex items-center space-x-2">
+                <span>All Features Unlocked:</span>
+                <strong class="text-purple-600 dark:text-purple-400">Unlimited Access</strong>
+            </span>
         `;
-
-        console.log('✅ User info loaded');
-    } catch (error) {
-        console.error('Error loading user info:', error);
-        document.getElementById('characterCount').textContent = 'Character count unavailable';
     }
+    console.log('✅ Free unlimited access enabled');
 }
 
 // Character Counter
@@ -244,14 +260,41 @@ function toggleAdvanced() {
     const content = document.getElementById('advancedContent');
     const arrow = document.getElementById('advancedArrow');
 
-    if (content.classList.contains('expanded')) {
-        content.classList.remove('expanded');
-        arrow.classList.remove('rotated');
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        arrow.classList.add('rotate-180');
     } else {
-        content.classList.add('expanded');
-        arrow.classList.add('rotated');
+        content.classList.add('hidden');
+        arrow.classList.remove('rotate-180');
     }
 }
+
+// Theme Toggle
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.classList.contains('dark');
+
+    if (isDark) {
+        html.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+    } else {
+        html.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+    }
+
+    // Reinitialize icons after theme change
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+// Load theme preference on init
+(function() {
+    const theme = localStorage.getItem('theme');
+    if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+    }
+})();
 
 // Text to Speech Generation
 async function generateSpeech() {
@@ -307,8 +350,13 @@ async function generateSpeech() {
         const audioElement = document.getElementById('audioElement');
         audioElement.src = audioUrl;
 
-        document.getElementById('audioPlayerCard').style.display = 'block';
-        document.getElementById('errorMessage').style.display = 'none';
+        const audioCard = document.getElementById('audioPlayerCard');
+        audioCard.classList.remove('hidden');
+        audioCard.classList.add('block');
+
+        const errorMsg = document.getElementById('errorMessage');
+        errorMsg.classList.add('hidden');
+        errorMsg.classList.remove('block');
 
         // Update user info
         loadUserInfo();
@@ -325,7 +373,10 @@ async function generateSpeech() {
 
 // Audio Actions
 function clearAudio() {
-    document.getElementById('audioPlayerCard').style.display = 'none';
+    const audioCard = document.getElementById('audioPlayerCard');
+    audioCard.classList.add('hidden');
+    audioCard.classList.remove('block');
+
     const audioElement = document.getElementById('audioElement');
     audioElement.pause();
     audioElement.src = '';
@@ -641,7 +692,8 @@ async function generateCompare(voiceNum) {
 
         const audioElement = document.getElementById(`compareAudio${voiceNum}`);
         audioElement.src = audioUrl;
-        audioElement.style.display = 'block';
+        audioElement.classList.remove('hidden');
+        audioElement.classList.add('block');
 
         console.log(`✅ Comparison audio ${voiceNum} generated`);
     } catch (error) {
@@ -650,29 +702,17 @@ async function generateCompare(voiceNum) {
     }
 }
 
-// Theme Toggle
-function toggleTheme() {
-    const body = document.body;
-    const currentTheme = body.getAttribute('data-theme');
-
-    if (currentTheme === 'dark') {
-        body.removeAttribute('data-theme');
-        document.querySelector('.theme-icon').textContent = '🌙';
-    } else {
-        body.setAttribute('data-theme', 'dark');
-        document.querySelector('.theme-icon').textContent = '☀️';
-    }
-}
-
 // Error Handling
 function showError(message) {
     const errorEl = document.getElementById('errorMessage');
     if (errorEl) {
         errorEl.textContent = message;
-        errorEl.style.display = 'block';
+        errorEl.classList.remove('hidden');
+        errorEl.classList.add('block');
 
         setTimeout(() => {
-            errorEl.style.display = 'none';
+            errorEl.classList.add('hidden');
+            errorEl.classList.remove('block');
         }, 5000);
     }
 }
@@ -681,10 +721,12 @@ function showCloneError(message) {
     const errorEl = document.getElementById('cloneError');
     if (errorEl) {
         errorEl.textContent = message;
-        errorEl.style.display = 'block';
+        errorEl.classList.remove('hidden');
+        errorEl.classList.add('block');
 
         setTimeout(() => {
-            errorEl.style.display = 'none';
+            errorEl.classList.add('hidden');
+            errorEl.classList.remove('block');
         }, 5000);
     }
 }
@@ -693,14 +735,19 @@ function showCloneSuccess(message) {
     const successEl = document.getElementById('cloneResult');
     const errorEl = document.getElementById('cloneError');
 
-    if (errorEl) errorEl.style.display = 'none';
+    if (errorEl) {
+        errorEl.classList.add('hidden');
+        errorEl.classList.remove('block');
+    }
 
     if (successEl) {
         successEl.textContent = message;
-        successEl.style.display = 'block';
+        successEl.classList.remove('hidden');
+        successEl.classList.add('block');
 
         setTimeout(() => {
-            successEl.style.display = 'none';
+            successEl.classList.add('hidden');
+            successEl.classList.remove('block');
         }, 8000);
     }
 }
@@ -719,44 +766,10 @@ function debounce(func, wait) {
 }
 
 // Stripe Checkout
+// Checkout disabled - all features are free for now
 async function startCheckout(plan) {
-    try {
-        // Show loading state
-        event.target.disabled = true;
-        event.target.textContent = 'Loading...';
-
-        // Create checkout session
-        const response = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                plan: plan,
-                email: null // Optional: can prompt user for email first
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to create checkout session');
-        }
-
-        // Redirect to Stripe Checkout
-        if (data.url) {
-            window.location.href = data.url;
-        } else {
-            throw new Error('No checkout URL returned');
-        }
-    } catch (error) {
-        console.error('Checkout error:', error);
-        alert('Failed to start checkout. Please try again.');
-
-        // Reset button
-        event.target.disabled = false;
-        event.target.textContent = 'Get 69% OFF →';
-    }
+    alert('All features are currently free! Just start using the app - no payment required.');
+    console.log('Checkout disabled - plan:', plan);
 }
 
 console.log('🎙️ VoiceClone AI initialized successfully');
