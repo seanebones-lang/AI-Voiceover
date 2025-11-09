@@ -1,0 +1,111 @@
+═══════════════════════════════════════════════════════════════
+🔑 YOUR API KEYS - AI VOICE-OVER GENERATOR
+═══════════════════════════════════════════════════════════════
+
+📝 ELEVENLABS API KEY:
+sk_5ac106062e19304d8fb2fda7799bdcdbbfe136cbae778191
+
+💳 STRIPE SECRET KEY (LIVE):
+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
+
+💳 STRIPE PUBLISHABLE KEY (LIVE):
+pk_live_51S40C8CHzMTnpYNot9Qlzd98VpmyGsQpm2n32CZtWfAKWyYng2BU0F8QfsLSksSeYLvcLdw6pnXH7QCCYRhoV9yr00dujwaMSO
+
+☁️ VERCEL TOKEN:
+vck_3mOD4BEGf22RsRJMscNsZwqzfPh0nnp6TTtadlfK0eK1O8EyBN2bZtq0
+
+═══════════════════════════════════════════════════════════════
+🚀 AUTOMATED DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+
+Run this ONE command to deploy everything:
+
+    ./deploy.sh
+
+This will:
+✅ Deploy to Vercel
+✅ Add all 3 API keys automatically
+✅ Redeploy to apply environment variables
+✅ Give you your live URL
+
+═══════════════════════════════════════════════════════════════
+🌐 MANUAL DEPLOYMENT (Web Dashboard)
+═══════════════════════════════════════════════════════════════
+
+1. Go to: https://vercel.com/new
+
+2. Import GitHub repo: seanebones-lang/AI-Voiceover
+
+3. Add these Environment Variables:
+
+   Name: ELEVENLABS_API_KEY
+   Value: sk_5ac106062e19304d8fb2fda7799bdcdbbfe136cbae778191
+
+   Name: STRIPE_SECRET_KEY
+   Value: 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
+
+   Name: STRIPE_PUBLISHABLE_KEY
+   Value: pk_live_51S40C8CHzMTnpYNot9Qlzd98VpmyGsQpm2n32CZtWfAKWyYng2BU0F8QfsLSksSeYLvcLdw6pnXH7QCCYRhoV9yr00dujwaMSO
+
+4. Click "Deploy"
+
+═══════════════════════════════════════════════════════════════
+🪝 STRIPE WEBHOOK SETUP (After Deployment)
+═══════════════════════════════════════════════════════════════
+
+1. Get your Vercel URL (e.g., https://ai-voiceover.vercel.app)
+
+2. Go to: https://dashboard.stripe.com/webhooks
+
+3. Click "Add endpoint"
+
+4. Webhook URL: https://YOUR-APP.vercel.app/api/stripe/webhook
+
+5. Events to select:
+   - checkout.session.completed
+   - customer.subscription.deleted
+   - customer.subscription.updated
+
+6. Click "Add endpoint"
+
+7. Copy webhook signing secret (starts with whsec_)
+
+8. Add to Vercel:
+   Name: STRIPE_WEBHOOK_SECRET
+   Value: whsec_xxxxxxxxxxxxx
+
+9. Redeploy on Vercel
+
+═══════════════════════════════════════════════════════════════
+✅ VERIFICATION CHECKLIST
+═══════════════════════════════════════════════════════════════
+
+After deployment, verify:
+
+□ App loads at your Vercel URL
+□ Text-to-speech works (try generating audio)
+□ Voice selection dropdown shows 250+ voices
+□ Emotion presets work
+□ "Get 69% OFF" button redirects to Stripe
+□ Test payment with card: 4242 4242 4242 4242
+□ Success page shows after payment
+□ Stripe dashboard shows payment
+
+═══════════════════════════════════════════════════════════════
+💰 START MAKING MONEY!
+═══════════════════════════════════════════════════════════════
+
+Your app is ready to accept real payments at:
+$9 first month, then $29/month
+
+Share your Vercel URL and start getting customers! 🚀
+
+═══════════════════════════════════════════════════════════════
+📞 SUPPORT LINKS
+═══════════════════════════════════════════════════════════════
+
+Vercel Dashboard: https://vercel.com/dashboard
+Stripe Dashboard: https://dashboard.stripe.com
+ElevenLabs Dashboard: https://elevenlabs.io/app/speech-synthesis
+
+═══════════════════════════════════════════════════════════════
