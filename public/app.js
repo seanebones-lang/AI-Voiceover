@@ -225,23 +225,17 @@ function applyPreset(presetName) {
 
 // User Info
 async function loadUserInfo() {
-    try {
-        const response = await fetch(`${API_BASE}/api/user`);
-        if (!response.ok) throw new Error('Failed to load user info');
-
-        const data = await response.json();
-        const charCount = data.subscription?.character_count || 0;
-        const charLimit = data.subscription?.character_limit || 10000;
-
-        document.getElementById('characterCount').innerHTML = `
-            Characters: <strong>${charCount.toLocaleString()}</strong> / ${charLimit.toLocaleString()}
+    // Show unlimited access - no paywall
+    const charCountEl = document.getElementById('characterCount');
+    if (charCountEl) {
+        charCountEl.innerHTML = `
+            <span class="flex items-center space-x-2">
+                <span>All Features Unlocked:</span>
+                <strong class="text-purple-600 dark:text-purple-400">Unlimited Access</strong>
+            </span>
         `;
-
-        console.log('✅ User info loaded');
-    } catch (error) {
-        console.error('Error loading user info:', error);
-        document.getElementById('characterCount').textContent = 'Character count unavailable';
     }
+    console.log('✅ Free unlimited access enabled');
 }
 
 // Character Counter
@@ -772,44 +766,10 @@ function debounce(func, wait) {
 }
 
 // Stripe Checkout
+// Checkout disabled - all features are free for now
 async function startCheckout(plan) {
-    try {
-        // Show loading state
-        event.target.disabled = true;
-        event.target.textContent = 'Loading...';
-
-        // Create checkout session
-        const response = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                plan: plan,
-                email: null // Optional: can prompt user for email first
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to create checkout session');
-        }
-
-        // Redirect to Stripe Checkout
-        if (data.url) {
-            window.location.href = data.url;
-        } else {
-            throw new Error('No checkout URL returned');
-        }
-    } catch (error) {
-        console.error('Checkout error:', error);
-        alert('Failed to start checkout. Please try again.');
-
-        // Reset button
-        event.target.disabled = false;
-        event.target.textContent = 'Get 69% OFF →';
-    }
+    alert('All features are currently free! Just start using the app - no payment required.');
+    console.log('Checkout disabled - plan:', plan);
 }
 
 console.log('🎙️ VoiceClone AI initialized successfully');
