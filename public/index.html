@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice-Over Generator - Turn Text into Voice in Seconds</title>
+    <meta name="description" content="Convert any text to natural-sounding speech with 250+ AI voices. $9/month instead of $99. Try it free!">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="logo">
+                <h1>🎙️ VoiceClone AI</h1>
+            </div>
+            <nav>
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#history">History</a>
+                <a href="#" class="btn-primary">Get Started</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1 class="hero-title">Turn Any Text Into Natural Speech</h1>
+            <p class="hero-subtitle">250+ Premium AI Voices • Morgan Freeman, David Attenborough & More</p>
+            <p class="hero-price"><s>$29/month</s> → <span class="highlight">$9 first month</span> (69% OFF)</p>
+        </div>
+    </section>
+
+    <!-- Main Generator -->
+    <section class="generator">
+        <div class="container">
+            <div class="generator-card">
+                <!-- Character Count Display -->
+                <div class="user-info" id="userInfo">
+                    <span id="characterCount">Loading...</span>
+                </div>
+
+                <!-- Voice Selection -->
+                <div class="form-group">
+                    <label for="voiceSelect">Choose Voice</label>
+                    <select id="voiceSelect" class="voice-select">
+                        <option value="">Loading voices...</option>
+                    </select>
+                </div>
+
+                <!-- Text Input -->
+                <div class="form-group">
+                    <label for="textInput">Your Text</label>
+                    <textarea
+                        id="textInput"
+                        placeholder="Type anything... (e.g., 'I eat crayons for breakfast')"
+                        rows="6"
+                        maxlength="5000"
+                    ></textarea>
+                    <div class="char-counter">
+                        <span id="charCount">0</span> / 5,000 characters
+                    </div>
+                </div>
+
+                <!-- Advanced Settings (Collapsed) -->
+                <div class="advanced-settings">
+                    <button class="toggle-advanced" onclick="toggleAdvanced()">
+                        ⚙️ Advanced Settings
+                    </button>
+                    <div class="advanced-content" id="advancedContent">
+                        <div class="slider-group">
+                            <label>Stability: <span id="stabilityValue">0.5</span></label>
+                            <input type="range" id="stability" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="slider-group">
+                            <label>Similarity: <span id="similarityValue">0.85</span></label>
+                            <input type="range" id="similarity" min="0" max="1" step="0.05" value="0.85">
+                        </div>
+                        <div class="slider-group">
+                            <label>Style: <span id="styleValue">0.3</span></label>
+                            <input type="range" id="style" min="0" max="1" step="0.1" value="0.3">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generate Button -->
+                <button id="generateBtn" class="btn-generate" onclick="generateSpeech()">
+                    <span id="btnText">✨ Generate Voice-Over</span>
+                </button>
+
+                <!-- Audio Player (Hidden until generated) -->
+                <div id="audioPlayer" class="audio-player" style="display: none;">
+                    <audio id="audioElement" controls></audio>
+                    <div class="audio-actions">
+                        <button onclick="downloadAudio()" class="btn-download">⬇️ Download MP3</button>
+                        <button onclick="shareAudio()" class="btn-share">🔗 Share</button>
+                    </div>
+                </div>
+
+                <!-- Error Display -->
+                <div id="errorMessage" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2>Why VoiceClone AI?</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎭</div>
+                    <h3>250+ Premium Voices</h3>
+                    <p>Morgan Freeman, David Attenborough, celebrities, and custom voices</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>5-Second Generation</h3>
+                    <p>Type text → Get audio in seconds. No waiting, no rendering.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h3>$9 vs $99/month</h3>
+                    <p>Same API (ElevenLabs) but 90% cheaper than competitors</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎙️</div>
+                    <h3>Clone Your Voice</h3>
+                    <p>Record 30 seconds → Use your voice forever (coming soon)</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3>Works Everywhere</h3>
+                    <p>Mobile, desktop, tablet. Install as PWA app.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💾</div>
+                    <h3>Download & Share</h3>
+                    <p>MP3 downloads, direct links, Twitter share ready</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing">
+        <div class="container">
+            <h2>Simple Pricing That Works</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>Free</h3>
+                    <div class="price">$0<span>/month</span></div>
+                    <ul>
+                        <li>✓ 10,000 characters/month</li>
+                        <li>✓ 50+ voices</li>
+                        <li>✓ Basic features</li>
+                        <li>✗ Voice cloning</li>
+                    </ul>
+                    <button class="btn-pricing">Try Free</button>
+                </div>
+
+                <div class="pricing-card popular">
+                    <div class="badge">MOST POPULAR</div>
+                    <h3>Pro Monthly</h3>
+                    <div class="price-strike">$29<span>/month</span></div>
+                    <div class="price">$9<span>/first month</span></div>
+                    <div class="discount-badge">69% OFF</div>
+                    <ul>
+                        <li>✓ 250,000 characters/month</li>
+                        <li>✓ 250+ premium voices</li>
+                        <li>✓ Commercial license</li>
+                        <li>✓ Voice cloning (soon)</li>
+                        <li>✓ Priority support</li>
+                    </ul>
+                    <button class="btn-pricing btn-primary">Get 69% OFF →</button>
+                    <small>Then $29/month. Cancel anytime.</small>
+                </div>
+
+                <div class="pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="price">Custom</div>
+                    <ul>
+                        <li>✓ Unlimited characters</li>
+                        <li>✓ Custom voices</li>
+                        <li>✓ API access</li>
+                        <li>✓ Dedicated support</li>
+                    </ul>
+                    <button class="btn-pricing">Contact Us</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- History Section -->
+    <section id="history" class="history">
+        <div class="container">
+            <h2>Your Voice-Over History</h2>
+            <div id="historyList" class="history-list">
+                <p class="empty-state">No voice-overs generated yet. Create your first one above!</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 VoiceClone AI. Built with ElevenLabs API.</p>
+            <p>
+                <a href="#">Privacy</a> •
+                <a href="#">Terms</a> •
+                <a href="#">Contact</a>
+            </p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
