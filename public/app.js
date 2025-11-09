@@ -9,6 +9,14 @@ let selectedFiles = [];
 let conversationMessages = [];
 let currentPreset = null;
 
+// Voice recording state
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingStream = null;
+let recordingTimer = null;
+let recordingStartTime = 0;
+let recordedAudioBlob = null;
+
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
@@ -475,12 +483,33 @@ function renderFileList() {
         return;
     }
 
-    fileList.innerHTML = selectedFiles.map((file, index) => `
-        <div class="file-item">
-            <span class="file-item-name">📄 ${file.name} (${formatFileSize(file.size)})</span>
-            <button class="file-item-remove" onclick="removeFile(${index})">Remove</button>
-        </div>
-    `).join('');
+    fileList.innerHTML = selectedFiles.map((file, index) => {
+        const isRecording = file.name.includes('voice-recording');
+        const icon = isRecording ? 'mic' : 'file-audio';
+        return `
+            <div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <div class="flex items-center space-x-3 flex-1">
+                    <i data-lucide="${icon}" class="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">${file.name}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">${formatFileSize(file.size)}</p>
+                    </div>
+                </div>
+                <button
+                    onclick="removeFile(${index})"
+                    class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex-shrink-0"
+                    title="Remove file"
+                >
+                    <i data-lucide="x" class="w-4 h-4 text-slate-600 dark:text-slate-400"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    // Reinitialize Lucide icons
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
 }
 
 function removeFile(index) {
@@ -493,6 +522,233 @@ function formatFileSize(bytes) {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
+
+// ========== Voice Recording Functions ==========
+
+async function toggleRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        stopRecording();
+    } else {
+        await startRecording();
+    }
+}
+
+async function startRecording() {
+    try {
+        // Request microphone access
+        recordingStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        });
+
+        // Create media recorder
+        const options = { mimeType: 'audio/webm' };
+        mediaRecorder = new MediaRecorder(recordingStream, options);
+        audioChunks = [];
+
+        // Handle data available
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
+
+        // Handle recording stop
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            recordedAudioBlob = audioBlob;
+            displayRecordedAudio(audioBlob);
+        };
+
+        // Start recording
+        mediaRecorder.start();
+        recordingStartTime = Date.now();
+
+        // Update UI
+        updateRecordingUI(true);
+
+        // Start timer
+        startRecordingTimer();
+
+        console.log('✅ Recording started');
+    } catch (error) {
+        console.error('Error starting recording:', error);
+        if (error.name === 'NotAllowedError') {
+            alert('Microphone access denied. Please allow microphone access to record your voice.');
+        } else {
+            alert('Failed to start recording. Please check your microphone.');
+        }
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+
+        // Stop all tracks
+        if (recordingStream) {
+            recordingStream.getTracks().forEach(track => track.stop());
+        }
+
+        // Stop timer
+        stopRecordingTimer();
+
+        // Update UI
+        updateRecordingUI(false);
+
+        console.log('✅ Recording stopped');
+    }
+}
+
+function startRecordingTimer() {
+    const timerElement = document.getElementById('recordingTimer');
+    if (!timerElement) return;
+
+    recordingTimer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }, 1000);
+}
+
+function stopRecordingTimer() {
+    if (recordingTimer) {
+        clearInterval(recordingTimer);
+        recordingTimer = null;
+    }
+}
+
+function updateRecordingUI(isRecording) {
+    const micButton = document.getElementById('micButton');
+    const recordingStatus = document.getElementById('recordingStatus');
+    const recordingTimer = document.getElementById('recordingTimer');
+    const recordingControls = document.getElementById('recordingControls');
+    const recordingPulse = document.getElementById('recordingPulse');
+
+    if (isRecording) {
+        // Change mic button to red
+        micButton.classList.remove('bg-gradient-to-br', 'from-purple-500', 'to-indigo-500', 'hover:from-purple-600', 'hover:to-indigo-600');
+        micButton.classList.add('bg-red-600', 'hover:bg-red-700');
+
+        // Show recording pulse
+        recordingPulse.classList.remove('hidden');
+
+        // Update status
+        recordingStatus.innerHTML = '<span class="flex items-center space-x-2"><span class="w-2 h-2 bg-red-600 rounded-full animate-pulse"></span><span>Recording...</span></span>';
+
+        // Show timer and controls
+        recordingTimer.classList.remove('hidden');
+        recordingControls.classList.remove('hidden');
+    } else {
+        // Change mic button back to purple
+        micButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+        micButton.classList.add('bg-gradient-to-br', 'from-purple-500', 'to-indigo-500', 'hover:from-purple-600', 'hover:to-indigo-600');
+
+        // Hide recording pulse
+        recordingPulse.classList.add('hidden');
+
+        // Update status
+        recordingStatus.textContent = 'Click microphone to start recording';
+
+        // Hide timer and controls
+        recordingTimer.classList.add('hidden');
+        recordingControls.classList.add('hidden');
+    }
+
+    // Reinitialize Lucide icons
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+function displayRecordedAudio(audioBlob) {
+    const container = document.getElementById('recordedAudioContainer');
+    const audioElement = document.getElementById('recordedAudio');
+    const durationElement = document.getElementById('recordedDuration');
+
+    if (!container || !audioElement) return;
+
+    // Create URL for audio
+    const audioUrl = URL.createObjectURL(audioBlob);
+    audioElement.src = audioUrl;
+
+    // Show container
+    container.classList.remove('hidden');
+
+    // Update duration when loaded
+    audioElement.addEventListener('loadedmetadata', () => {
+        const duration = Math.floor(audioElement.duration);
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        durationElement.textContent = `Duration: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }, { once: true });
+
+    // Reinitialize Lucide icons
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+
+    console.log('✅ Recorded audio ready for playback');
+}
+
+function deleteRecording() {
+    recordedAudioBlob = null;
+    audioChunks = [];
+
+    const container = document.getElementById('recordedAudioContainer');
+    const audioElement = document.getElementById('recordedAudio');
+    const timerElement = document.getElementById('recordingTimer');
+
+    if (container) container.classList.add('hidden');
+    if (audioElement) {
+        audioElement.pause();
+        audioElement.src = '';
+    }
+    if (timerElement) timerElement.textContent = '0:00';
+
+    console.log('✅ Recording deleted');
+}
+
+function addRecordingToFiles() {
+    if (!recordedAudioBlob) {
+        alert('No recording to add');
+        return;
+    }
+
+    // Create a File object from the blob
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `voice-recording-${timestamp}.webm`;
+    const file = new File([recordedAudioBlob], fileName, { type: 'audio/webm' });
+
+    // Add to selected files
+    if (selectedFiles.length >= 5) {
+        showCloneError('Maximum 5 files allowed. Remove a file before adding recording.');
+        return;
+    }
+
+    selectedFiles.push(file);
+    renderFileList();
+
+    // Clear the recording
+    deleteRecording();
+
+    // Show success message
+    const status = document.getElementById('recordingStatus');
+    if (status) {
+        status.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">✓ Recording added to voice samples!</span>';
+        setTimeout(() => {
+            status.textContent = 'Click microphone to start recording';
+        }, 3000);
+    }
+
+    console.log('✅ Recording added to files:', fileName);
+}
+
+// ========== End Voice Recording Functions ==========
 
 async function cloneVoice() {
     const name = document.getElementById('cloneName')?.value.trim();
