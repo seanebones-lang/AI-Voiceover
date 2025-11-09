@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful! - VoiceClone AI</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .success-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .success-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(40px);
+            border-radius: var(--radius-lg);
+            padding: 60px 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            box-shadow: var(--shadow-xl);
+            animation: successPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes successPop {
+            0% {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .success-icon {
+            font-size: 80px;
+            animation: bounce 1s ease infinite;
+            margin-bottom: 20px;
+        }
+
+        .success-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 16px;
+        }
+
+        .success-message {
+            font-size: 1.2rem;
+            color: var(--dark);
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .feature-list {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 24px;
+            border-radius: var(--radius);
+            margin: 30px 0;
+        }
+
+        .feature-list h3 {
+            color: var(--dark);
+            margin-bottom: 16px;
+            font-size: 1.3rem;
+        }
+
+        .feature-list ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            color: var(--dark);
+            font-weight: 500;
+        }
+
+        .feature-list li::before {
+            content: "✅ ";
+            margin-right: 8px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 600px) {
+            .success-card {
+                padding: 40px 24px;
+            }
+
+            .success-title {
+                font-size: 2rem;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="animated-bg">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+    </div>
+
+    <div class="success-container">
+        <div class="success-card">
+            <div class="success-icon">🎉</div>
+            <h1 class="success-title">Payment Successful!</h1>
+            <p class="success-message">
+                Welcome to VoiceClone AI Pro! Your subscription is now active and you have access to all premium features.
+            </p>
+
+            <div class="feature-list">
+                <h3>You Now Have Access To:</h3>
+                <ul>
+                    <li>250,000 characters per month</li>
+                    <li>250+ premium AI voices</li>
+                    <li>Voice cloning (unlimited)</li>
+                    <li>All 8 emotion presets</li>
+                    <li>Multi-voice conversations</li>
+                    <li>Voice comparison tool</li>
+                    <li>Commercial license</li>
+                    <li>Priority support</li>
+                </ul>
+            </div>
+
+            <p style="color: var(--gray); font-size: 0.95rem; margin: 20px 0;">
+                A confirmation email has been sent to your inbox.
+            </p>
+
+            <div class="cta-buttons">
+                <button onclick="window.location.href='/'" class="btn-generate-modern" style="width: auto; padding: 16px 32px;">
+                    <span class="btn-icon">🎙️</span>
+                    <span>Start Creating</span>
+                </button>
+                <button onclick="openBillingPortal()" class="btn-secondary" style="padding: 16px 32px;">
+                    Manage Subscription
+                </button>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid rgba(0,0,0,0.1);">
+                <p style="color: var(--gray); font-size: 0.9rem;">
+                    Need help? Contact us at support@voiceclone.ai
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get session ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+
+        if (sessionId) {
+            console.log('Payment session:', sessionId);
+            // You can verify the session with your backend if needed
+        }
+
+        function openBillingPortal() {
+            // TODO: Implement Stripe customer portal
+            // For now, redirect to homepage
+            alert('Billing portal coming soon! For now, you can manage your subscription via Stripe emails.');
+            window.location.href = '/';
+        }
+
+        // Confetti effect (optional)
+        setTimeout(() => {
+            console.log('🎊 Thank you for subscribing!');
+        }, 500);
+    </script>
+</body>
+</html>

@@ -718,4 +718,45 @@ function debounce(func, wait) {
     };
 }
 
+// Stripe Checkout
+async function startCheckout(plan) {
+    try {
+        // Show loading state
+        event.target.disabled = true;
+        event.target.textContent = 'Loading...';
+
+        // Create checkout session
+        const response = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                plan: plan,
+                email: null // Optional: can prompt user for email first
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to create checkout session');
+        }
+
+        // Redirect to Stripe Checkout
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            throw new Error('No checkout URL returned');
+        }
+    } catch (error) {
+        console.error('Checkout error:', error);
+        alert('Failed to start checkout. Please try again.');
+
+        // Reset button
+        event.target.disabled = false;
+        event.target.textContent = 'Get 69% OFF →';
+    }
+}
+
 console.log('🎙️ VoiceClone AI initialized successfully');

@@ -6,6 +6,7 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -297,6 +298,109 @@ app.get('/api/presets', (req, res) => {
     'sad': { stability: 0.6, similarity_boost: 0.85, style: 0.4, description: 'Melancholic and slow' }
   };
   res.json(presets);
+});
+
+// Stripe: Get publishable key
+app.get('/api/stripe/config', (req, res) => {
+  res.json({
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY
+  });
+});
+
+// Stripe: Create checkout session
+app.post('/api/stripe/create-checkout-session', async (req, res) => {
+  try {
+    const { priceId, plan } = req.body;
+
+    // Define your pricing (you can also create these in Stripe Dashboard)
+    const prices = {
+      'pro-monthly': {
+        amount: 900, // $9.00 first month
+        name: 'Pro Monthly - First Month',
+        description: '250,000 characters, all premium features'
+      },
+      'pro-regular': {
+        amount: 2900, // $29.00 regular
+        name: 'Pro Monthly',
+        description: '250,000 characters, all premium features'
+      }
+    };
+
+    const selectedPrice = prices[plan] || prices['pro-monthly'];
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: selectedPrice.name,
+              description: selectedPrice.description,
+              images: ['https://i.imgur.com/EHyR2nP.png'], // Add your logo URL
+            },
+            unit_amount: selectedPrice.amount,
+            recurring: {
+              interval: 'month'
+            }
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/#pricing`,
+      customer_email: req.body.email,
+      allow_promotion_codes: true,
+      billing_address_collection: 'auto',
+    });
+
+    res.json({ sessionId: session.id, url: session.url });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Stripe: Webhook to handle events
+app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test' // Add webhook secret to .env
+    );
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'checkout.session.completed':
+      const session = event.data.object;
+      console.log('💰 Payment successful:', session.id);
+      // TODO: Grant user access to premium features
+      // You would typically:
+      // 1. Get customer email from session.customer_email
+      // 2. Update user in your database to premium status
+      // 3. Send confirmation email
+      break;
+
+    case 'customer.subscription.deleted':
+      const subscription = event.data.object;
+      console.log('❌ Subscription cancelled:', subscription.id);
+      // TODO: Revoke premium access
+      break;
+
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({received: true});
 });
 
 // Health check
