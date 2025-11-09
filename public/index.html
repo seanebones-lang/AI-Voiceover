@@ -3,214 +3,466 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Voice-Over Generator - Turn Text into Voice in Seconds</title>
-    <meta name="description" content="Convert any text to natural-sounding speech with 250+ AI voices. $9/month instead of $99. Try it free!">
+    <title>VoiceClone AI - Clone Any Voice in Seconds</title>
+    <meta name="description" content="Advanced AI voice cloning & text-to-speech. 250+ voices, emotion presets, multi-voice conversations. $9/month.">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Animated Background -->
+    <div class="animated-bg">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+    </div>
+
     <!-- Header -->
-    <header>
+    <header class="glass-header">
         <div class="container">
             <div class="logo">
-                <h1>🎙️ VoiceClone AI</h1>
+                <span class="logo-icon">🎙️</span>
+                <h1>VoiceClone <span class="ai-badge">AI</span></h1>
             </div>
             <nav>
                 <a href="#features">Features</a>
                 <a href="#pricing">Pricing</a>
-                <a href="#history">History</a>
-                <a href="#" class="btn-primary">Get Started</a>
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <button class="btn-primary btn-nav">Get Started</button>
             </nav>
         </div>
     </header>
 
     <!-- Hero Section -->
-    <section class="hero">
+    <section class="hero-modern">
         <div class="container">
-            <h1 class="hero-title">Turn Any Text Into Natural Speech</h1>
-            <p class="hero-subtitle">250+ Premium AI Voices • Morgan Freeman, David Attenborough & More</p>
-            <p class="hero-price"><s>$29/month</s> → <span class="highlight">$9 first month</span> (69% OFF)</p>
+            <div class="hero-badge">🚀 New: Voice Cloning + Emotion Control</div>
+            <h1 class="hero-title-modern">
+                Turn Text Into
+                <span class="gradient-text typing-animation">Natural Speech</span>
+            </h1>
+            <p class="hero-subtitle-modern">
+                Clone voices • 250+ AI voices • Emotion control • Multi-speaker conversations
+            </p>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <div class="stat-number">250+</div>
+                    <div class="stat-label">Voices</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">8</div>
+                    <div class="stat-label">Emotions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">5s</div>
+                    <div class="stat-label">Generation</div>
+                </div>
+            </div>
         </div>
     </section>
 
-    <!-- Main Generator -->
-    <section class="generator">
-        <div class="container">
-            <div class="generator-card">
-                <!-- Character Count Display -->
-                <div class="user-info" id="userInfo">
+    <!-- Main App - Tabbed Interface -->
+    <section class="app-section">
+        <div class="container-wide">
+            <div class="glass-card-main">
+                <!-- Character Count -->
+                <div class="user-info-banner" id="userInfo">
                     <span id="characterCount">Loading...</span>
+                    <button class="btn-sm" onclick="loadUserInfo()">↻ Refresh</button>
                 </div>
 
-                <!-- Voice Selection -->
-                <div class="form-group">
-                    <label for="voiceSelect">Choose Voice</label>
-                    <select id="voiceSelect" class="voice-select">
-                        <option value="">Loading voices...</option>
-                    </select>
-                </div>
-
-                <!-- Text Input -->
-                <div class="form-group">
-                    <label for="textInput">Your Text</label>
-                    <textarea
-                        id="textInput"
-                        placeholder="Type anything... (e.g., 'I eat crayons for breakfast')"
-                        rows="6"
-                        maxlength="5000"
-                    ></textarea>
-                    <div class="char-counter">
-                        <span id="charCount">0</span> / 5,000 characters
-                    </div>
-                </div>
-
-                <!-- Advanced Settings (Collapsed) -->
-                <div class="advanced-settings">
-                    <button class="toggle-advanced" onclick="toggleAdvanced()">
-                        ⚙️ Advanced Settings
+                <!-- Tab Navigation -->
+                <div class="tab-nav">
+                    <button class="tab-btn active" onclick="switchTab('generator')">
+                        <span class="tab-icon">✨</span> Text to Speech
                     </button>
-                    <div class="advanced-content" id="advancedContent">
-                        <div class="slider-group">
-                            <label>Stability: <span id="stabilityValue">0.5</span></label>
-                            <input type="range" id="stability" min="0" max="1" step="0.1" value="0.5">
+                    <button class="tab-btn" onclick="switchTab('clone')">
+                        <span class="tab-icon">🎭</span> Clone Voice
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('conversation')">
+                        <span class="tab-icon">💬</span> Conversation
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('compare')">
+                        <span class="tab-icon">⚖️</span> Compare Voices
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content-wrapper">
+                    <!-- Tab 1: Text to Speech -->
+                    <div id="tab-generator" class="tab-content active">
+                        <div class="dual-column">
+                            <div class="column-main">
+                                <div class="form-section">
+                                    <label class="form-label">
+                                        <span class="label-icon">🎭</span>
+                                        Choose Voice
+                                    </label>
+                                    <select id="voiceSelect" class="input-modern">
+                                        <option value="">Loading voices...</option>
+                                    </select>
+                                </div>
+
+                                <!-- Emotion Presets -->
+                                <div class="form-section">
+                                    <label class="form-label">
+                                        <span class="label-icon">😊</span>
+                                        Emotion / Tone
+                                    </label>
+                                    <div class="preset-grid" id="presetButtons">
+                                        <!-- Loaded dynamically -->
+                                    </div>
+                                </div>
+
+                                <div class="form-section">
+                                    <label class="form-label">
+                                        <span class="label-icon">📝</span>
+                                        Your Text
+                                        <span class="char-counter-inline">
+                                            <span id="charCount">0</span> / 5,000
+                                        </span>
+                                    </label>
+                                    <textarea
+                                        id="textInput"
+                                        class="input-modern textarea-modern"
+                                        placeholder="Type or paste your text here... (Try: 'Hello, I'm an AI voice assistant!')"
+                                        rows="8"
+                                        maxlength="5000"
+                                    ></textarea>
+                                </div>
+
+                                <button id="generateBtn" class="btn-generate-modern" onclick="generateSpeech()">
+                                    <span class="btn-icon">✨</span>
+                                    <span id="btnText">Generate Voice-Over</span>
+                                    <span class="btn-shine"></span>
+                                </button>
+
+                                <div id="errorMessage" class="error-modern" style="display: none;"></div>
+                            </div>
+
+                            <div class="column-side">
+                                <!-- Audio Player -->
+                                <div id="audioPlayerCard" class="audio-card" style="display: none;">
+                                    <div class="audio-card-header">
+                                        <h3>Generated Audio</h3>
+                                        <button class="btn-sm" onclick="clearAudio()">✕</button>
+                                    </div>
+                                    <div class="waveform-viz" id="waveform">
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                    </div>
+                                    <audio id="audioElement" controls></audio>
+                                    <div class="audio-actions-modern">
+                                        <button onclick="downloadAudio()" class="btn-action">
+                                            <span>⬇️</span> Download
+                                        </button>
+                                        <button onclick="shareAudio()" class="btn-action">
+                                            <span>🔗</span> Share
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Settings -->
+                                <div class="settings-card">
+                                    <div class="settings-header" onclick="toggleAdvanced()">
+                                        <span>⚙️ Advanced Settings</span>
+                                        <span class="toggle-arrow" id="advancedArrow">▼</span>
+                                    </div>
+                                    <div class="settings-content" id="advancedContent">
+                                        <div class="slider-modern">
+                                            <label>
+                                                Stability
+                                                <span class="slider-value" id="stabilityValue">0.5</span>
+                                            </label>
+                                            <input type="range" id="stability" min="0" max="1" step="0.05" value="0.5" class="range-modern">
+                                            <div class="slider-labels">
+                                                <span>Variable</span>
+                                                <span>Stable</span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-modern">
+                                            <label>
+                                                Similarity
+                                                <span class="slider-value" id="similarityValue">0.85</span>
+                                            </label>
+                                            <input type="range" id="similarity" min="0" max="1" step="0.05" value="0.85" class="range-modern">
+                                            <div class="slider-labels">
+                                                <span>Low</span>
+                                                <span>High</span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-modern">
+                                            <label>
+                                                Style
+                                                <span class="slider-value" id="styleValue">0.3</span>
+                                            </label>
+                                            <input type="range" id="style" min="0" max="1" step="0.05" value="0.3" class="range-modern">
+                                            <div class="slider-labels">
+                                                <span>Neutral</span>
+                                                <span>Expressive</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="slider-group">
-                            <label>Similarity: <span id="similarityValue">0.85</span></label>
-                            <input type="range" id="similarity" min="0" max="1" step="0.05" value="0.85">
+                    </div>
+
+                    <!-- Tab 2: Voice Cloning -->
+                    <div id="tab-clone" class="tab-content">
+                        <div class="clone-container">
+                            <div class="info-banner">
+                                <span class="info-icon">ℹ️</span>
+                                <p>Upload 1-5 audio samples (30+ seconds total) of clear speech for best results</p>
+                            </div>
+
+                            <div class="form-section">
+                                <label class="form-label">Voice Name</label>
+                                <input
+                                    type="text"
+                                    id="cloneName"
+                                    class="input-modern"
+                                    placeholder="e.g., My Voice"
+                                    maxlength="50"
+                                >
+                            </div>
+
+                            <div class="form-section">
+                                <label class="form-label">Description (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="cloneDescription"
+                                    class="input-modern"
+                                    placeholder="e.g., Professional male voice"
+                                    maxlength="100"
+                                >
+                            </div>
+
+                            <div class="form-section">
+                                <label class="form-label">Audio Samples (1-5 files)</label>
+                                <div class="upload-zone" id="uploadZone">
+                                    <div class="upload-icon">🎙️</div>
+                                    <h3>Drag & Drop Audio Files</h3>
+                                    <p>or click to browse</p>
+                                    <input
+                                        type="file"
+                                        id="audioFiles"
+                                        accept="audio/*"
+                                        multiple
+                                        style="display: none;"
+                                    >
+                                    <button class="btn-secondary" onclick="document.getElementById('audioFiles').click()">
+                                        Choose Files
+                                    </button>
+                                </div>
+                                <div id="fileList" class="file-list"></div>
+                            </div>
+
+                            <button id="cloneBtn" class="btn-generate-modern" onclick="cloneVoice()">
+                                <span class="btn-icon">🎭</span>
+                                <span id="cloneBtnText">Clone Voice</span>
+                            </button>
+
+                            <div id="cloneResult" class="success-modern" style="display: none;"></div>
+                            <div id="cloneError" class="error-modern" style="display: none;"></div>
                         </div>
-                        <div class="slider-group">
-                            <label>Style: <span id="styleValue">0.3</span></label>
-                            <input type="range" id="style" min="0" max="1" step="0.1" value="0.3">
+                    </div>
+
+                    <!-- Tab 3: Conversation Generator -->
+                    <div id="tab-conversation" class="tab-content">
+                        <div class="conversation-builder">
+                            <div class="info-banner">
+                                <span class="info-icon">💬</span>
+                                <p>Create multi-speaker conversations with different voices</p>
+                            </div>
+
+                            <div id="conversationList" class="conversation-list">
+                                <!-- Messages added dynamically -->
+                            </div>
+
+                            <button class="btn-secondary btn-block" onclick="addConversationMessage()">
+                                + Add Speaker
+                            </button>
+
+                            <button class="btn-generate-modern" onclick="generateConversation()">
+                                <span class="btn-icon">🎬</span>
+                                Generate Conversation
+                            </button>
+
+                            <div id="conversationResult" class="success-modern" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 4: Voice Comparison -->
+                    <div id="tab-compare" class="tab-content">
+                        <div class="compare-container">
+                            <div class="info-banner">
+                                <span class="info-icon">⚖️</span>
+                                <p>Compare how different voices sound with the same text</p>
+                            </div>
+
+                            <div class="form-section">
+                                <label class="form-label">Comparison Text</label>
+                                <textarea
+                                    id="compareText"
+                                    class="input-modern textarea-modern"
+                                    placeholder="Enter text to compare across voices..."
+                                    rows="4"
+                                    maxlength="500"
+                                ></textarea>
+                            </div>
+
+                            <div class="compare-grid">
+                                <div class="compare-item">
+                                    <label class="form-label">Voice A</label>
+                                    <select id="compareVoice1" class="input-modern">
+                                        <option value="">Select voice...</option>
+                                    </select>
+                                    <button class="btn-secondary btn-block" onclick="generateCompare(1)">
+                                        Generate A
+                                    </button>
+                                    <audio id="compareAudio1" controls style="width: 100%; margin-top: 10px; display: none;"></audio>
+                                </div>
+
+                                <div class="vs-divider">VS</div>
+
+                                <div class="compare-item">
+                                    <label class="form-label">Voice B</label>
+                                    <select id="compareVoice2" class="input-modern">
+                                        <option value="">Select voice...</option>
+                                    </select>
+                                    <button class="btn-secondary btn-block" onclick="generateCompare(2)">
+                                        Generate B
+                                    </button>
+                                    <audio id="compareAudio2" controls style="width: 100%; margin-top: 10px; display: none;"></audio>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Generate Button -->
-                <button id="generateBtn" class="btn-generate" onclick="generateSpeech()">
-                    <span id="btnText">✨ Generate Voice-Over</span>
-                </button>
-
-                <!-- Audio Player (Hidden until generated) -->
-                <div id="audioPlayer" class="audio-player" style="display: none;">
-                    <audio id="audioElement" controls></audio>
-                    <div class="audio-actions">
-                        <button onclick="downloadAudio()" class="btn-download">⬇️ Download MP3</button>
-                        <button onclick="shareAudio()" class="btn-share">🔗 Share</button>
-                    </div>
-                </div>
-
-                <!-- Error Display -->
-                <div id="errorMessage" class="error-message" style="display: none;"></div>
             </div>
         </div>
     </section>
 
     <!-- Features Section -->
-    <section id="features" class="features">
+    <section id="features" class="features-modern">
         <div class="container">
-            <h2>Why VoiceClone AI?</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🎭</div>
-                    <h3>250+ Premium Voices</h3>
-                    <p>Morgan Freeman, David Attenborough, celebrities, and custom voices</p>
+            <h2 class="section-title">Why Choose Us?</h2>
+            <div class="features-grid-modern">
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">🎭</div>
+                    <h3>Voice Cloning</h3>
+                    <p>Clone any voice with just 30 seconds of audio. Create your digital voice twin.</p>
                 </div>
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">😊</div>
+                    <h3>8 Emotion Presets</h3>
+                    <p>Excited, calm, dramatic, angry - control the emotion and tone instantly.</p>
+                </div>
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">💬</div>
+                    <h3>Multi-Voice Conversations</h3>
+                    <p>Create realistic dialogues with multiple speakers and different voices.</p>
+                </div>
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">⚖️</div>
+                    <h3>Voice Comparison</h3>
+                    <p>Test and compare voices side-by-side before choosing the perfect one.</p>
+                </div>
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">⚙️</div>
+                    <h3>Advanced Controls</h3>
+                    <p>Fine-tune stability, similarity, and style for perfect results.</p>
+                </div>
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">⚡</div>
                     <h3>5-Second Generation</h3>
-                    <p>Type text → Get audio in seconds. No waiting, no rendering.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">💰</div>
-                    <h3>$9 vs $99/month</h3>
-                    <p>Same API (ElevenLabs) but 90% cheaper than competitors</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🎙️</div>
-                    <h3>Clone Your Voice</h3>
-                    <p>Record 30 seconds → Use your voice forever (coming soon)</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📱</div>
-                    <h3>Works Everywhere</h3>
-                    <p>Mobile, desktop, tablet. Install as PWA app.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">💾</div>
-                    <h3>Download & Share</h3>
-                    <p>MP3 downloads, direct links, Twitter share ready</p>
+                    <p>Lightning-fast AI processing. Get your audio in seconds, not minutes.</p>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- Pricing Section -->
-    <section id="pricing" class="pricing">
+    <section id="pricing" class="pricing-modern">
         <div class="container">
-            <h2>Simple Pricing That Works</h2>
-            <div class="pricing-grid">
-                <div class="pricing-card">
+            <h2 class="section-title">Simple Pricing</h2>
+            <div class="pricing-grid-modern">
+                <div class="pricing-card-modern">
                     <h3>Free</h3>
-                    <div class="price">$0<span>/month</span></div>
-                    <ul>
+                    <div class="price-modern">$0<span>/month</span></div>
+                    <ul class="features-list">
                         <li>✓ 10,000 characters/month</li>
                         <li>✓ 50+ voices</li>
                         <li>✓ Basic features</li>
                         <li>✗ Voice cloning</li>
+                        <li>✗ Emotion presets</li>
                     </ul>
-                    <button class="btn-pricing">Try Free</button>
+                    <button class="btn-pricing">Get Started</button>
                 </div>
 
-                <div class="pricing-card popular">
-                    <div class="badge">MOST POPULAR</div>
-                    <h3>Pro Monthly</h3>
-                    <div class="price-strike">$29<span>/month</span></div>
-                    <div class="price">$9<span>/first month</span></div>
-                    <div class="discount-badge">69% OFF</div>
-                    <ul>
+                <div class="pricing-card-modern featured">
+                    <div class="popular-badge">MOST POPULAR</div>
+                    <h3>Pro</h3>
+                    <div class="price-strike">$29<span>/mo</span></div>
+                    <div class="price-modern">$9<span>/first month</span></div>
+                    <div class="save-badge">Save 69%</div>
+                    <ul class="features-list">
                         <li>✓ 250,000 characters/month</li>
                         <li>✓ 250+ premium voices</li>
+                        <li>✓ Voice cloning (unlimited)</li>
+                        <li>✓ All 8 emotion presets</li>
+                        <li>✓ Multi-voice conversations</li>
                         <li>✓ Commercial license</li>
-                        <li>✓ Voice cloning (soon)</li>
                         <li>✓ Priority support</li>
                     </ul>
-                    <button class="btn-pricing btn-primary">Get 69% OFF →</button>
-                    <small>Then $29/month. Cancel anytime.</small>
+                    <button class="btn-pricing btn-primary-pricing">Get 69% OFF →</button>
+                    <small class="pricing-note">Then $29/month. Cancel anytime.</small>
                 </div>
 
-                <div class="pricing-card">
+                <div class="pricing-card-modern">
                     <h3>Enterprise</h3>
-                    <div class="price">Custom</div>
-                    <ul>
+                    <div class="price-modern">Custom</div>
+                    <ul class="features-list">
                         <li>✓ Unlimited characters</li>
-                        <li>✓ Custom voices</li>
+                        <li>✓ Custom voice creation</li>
                         <li>✓ API access</li>
+                        <li>✓ White-label option</li>
                         <li>✓ Dedicated support</li>
                     </ul>
-                    <button class="btn-pricing">Contact Us</button>
+                    <button class="btn-pricing">Contact Sales</button>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- History Section -->
-    <section id="history" class="history">
-        <div class="container">
-            <h2>Your Voice-Over History</h2>
-            <div id="historyList" class="history-list">
-                <p class="empty-state">No voice-overs generated yet. Create your first one above!</p>
             </div>
         </div>
     </section>
 
     <!-- Footer -->
-    <footer>
+    <footer class="footer-modern">
         <div class="container">
-            <p>&copy; 2024 VoiceClone AI. Built with ElevenLabs API.</p>
-            <p>
-                <a href="#">Privacy</a> •
-                <a href="#">Terms</a> •
-                <a href="#">Contact</a>
-            </p>
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <h3>🎙️ VoiceClone AI</h3>
+                    <p>Transform text into natural speech with AI</p>
+                    <div class="powered-by">
+                        <span class="powered-badge">Powered by NextEleven Mothership AI 🚀</span>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <a href="#">Privacy Policy</a>
+                    <a href="#">Terms of Service</a>
+                    <a href="#">Contact</a>
+                    <a href="#">API Docs</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 VoiceClone AI. Powered by ElevenLabs & NextEleven Mothership AI.</p>
+            </div>
         </div>
     </footer>
 
