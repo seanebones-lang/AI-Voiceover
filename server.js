@@ -467,4 +467,5 @@ module.exports = app;
 app.listen(PORT, () => {
   console.log(`🚀 AI Voice-Over Generator running on http://localhost:${PORT}`);
   console.log(`📝 API Key loaded: ${ELEVENLABS_API_KEY ? 'Yes ✓' : 'No ✗'}`);
+  console.log(`📁 Upload directory: ${process.env.VERCEL ? '/tmp' : './uploads'}`);
 });
