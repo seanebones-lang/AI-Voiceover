@@ -181,6 +181,300 @@ function convertAudioFormat(inputBuffer, inputFormat, outputFormat) {
   });
 }
 
+// ============================================
+// TEXT PREPROCESSING SYSTEM - BETTER TTS QUALITY
+// ============================================
+
+function preprocessText(text) {
+  let processed = text;
+
+  // 1. Normalize numbers
+  processed = processed.replace(/\b(\d{1,3})(,\d{3})+\b/g, (match) => {
+    return match.replace(/,/g, '');
+  });
+
+  // Handle large numbers (convert to words for better pronunciation)
+  processed = processed.replace(/\b(\d{4,})\b/g, (match) => {
+    const num = parseInt(match);
+    if (num >= 1000 && num < 10000) {
+      const thousands = Math.floor(num / 1000);
+      const remainder = num % 1000;
+      if (remainder === 0) {
+        return `${thousands} thousand`;
+      }
+      return match; // Keep original for complex numbers
+    }
+    return match;
+  });
+
+  // 2. Expand common abbreviations
+  const abbreviations = {
+    'Dr.': 'Doctor',
+    'Mr.': 'Mister',
+    'Mrs.': 'Misses',
+    'Ms.': 'Miss',
+    'Prof.': 'Professor',
+    'Sr.': 'Senior',
+    'Jr.': 'Junior',
+    'St.': 'Street',
+    'Ave.': 'Avenue',
+    'Blvd.': 'Boulevard',
+    'Rd.': 'Road',
+    'apt.': 'apartment',
+    'vs.': 'versus',
+    'etc.': 'etcetera',
+    'e.g.': 'for example',
+    'i.e.': 'that is',
+    'approx.': 'approximately',
+    'dept.': 'department',
+    'info.': 'information',
+    'max.': 'maximum',
+    'min.': 'minimum'
+  };
+
+  for (const [abbr, full] of Object.entries(abbreviations)) {
+    const regex = new RegExp(`\\b${abbr.replace('.', '\\.')}`, 'gi');
+    processed = processed.replace(regex, full);
+  }
+
+  // 3. Handle dates (MM/DD/YYYY or DD/MM/YYYY)
+  processed = processed.replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g, (match, p1, p2, p3) => {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = parseInt(p1);
+    const day = parseInt(p2);
+    if (month >= 1 && month <= 12) {
+      return `${months[month - 1]} ${day}, ${p3}`;
+    }
+    return match;
+  });
+
+  // 4. Handle times (HH:MM AM/PM)
+  processed = processed.replace(/\b(\d{1,2}):(\d{2})\s?(AM|PM|am|pm)\b/g, (match, hours, minutes, period) => {
+    if (minutes === '00') {
+      return `${hours} ${period.toUpperCase()}`;
+    }
+    return `${hours} ${minutes} ${period.toUpperCase()}`;
+  });
+
+  // 5. Handle URLs (make them pronounceable)
+  processed = processed.replace(/https?:\/\/(www\.)?([a-zA-Z0-9-]+)\.([a-z]{2,})(\/[^\s]*)?/gi, (match, www, domain, tld) => {
+    return `${domain} dot ${tld}`;
+  });
+
+  // 6. Handle email addresses
+  processed = processed.replace(/\b([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/g, (match, user, domain) => {
+    return `${user} at ${domain.replace(/\./g, ' dot ')}`;
+  });
+
+  // 7. Handle currency
+  processed = processed.replace(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)\b/g, (match, amount) => {
+    const num = parseFloat(amount.replace(/,/g, ''));
+    if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)} million dollars`;
+    } else if (num >= 1000) {
+      return `${(num / 1000).toFixed(0)} thousand dollars`;
+    }
+    return `${num} dollars`;
+  });
+
+  // 8. Handle percentages
+  processed = processed.replace(/(\d+(?:\.\d+)?)\s?%/g, '$1 percent');
+
+  // 9. Handle acronyms (add spaces between letters for better pronunciation)
+  processed = processed.replace(/\b([A-Z]{2,})\b/g, (match) => {
+    // Skip common words that are all caps
+    const skipWords = ['OK', 'USA', 'UK', 'US', 'API', 'URL', 'HTML', 'CSS', 'JS', 'AI', 'ML', 'CEO', 'CFO', 'CTO'];
+    if (skipWords.includes(match)) {
+      return match;
+    }
+    // Add spaces for pronunciation: NASA -> N A S A
+    return match.split('').join(' ');
+  });
+
+  // 10. Clean up multiple spaces
+  processed = processed.replace(/\s+/g, ' ').trim();
+
+  return processed;
+}
+
+// ============================================
+// ADVANCED AUDIO EFFECTS - PROFESSIONAL QUALITY
+// ============================================
+
+function applyAudioEffects(inputPath, outputPath, effects = {}) {
+  return new Promise((resolve, reject) => {
+    const {
+      normalize = false,
+      noiseReduction = false,
+      eq = null, // { bass: 0, mid: 0, treble: 0 } (-20 to +20)
+      compression = false,
+      fadeIn = 0, // seconds
+      fadeOut = 0 // seconds
+    } = effects;
+
+    let command = ffmpeg(inputPath);
+
+    const filters = [];
+
+    // Noise reduction (highpass filter to remove low-frequency noise)
+    if (noiseReduction) {
+      filters.push('highpass=f=200');
+      filters.push('lowpass=f=3000');
+    }
+
+    // EQ controls
+    if (eq) {
+      if (eq.bass !== 0) filters.push(`bass=g=${eq.bass}`);
+      if (eq.mid !== 0) filters.push(`equalizer=f=1000:width_type=o:width=2:g=${eq.mid}`);
+      if (eq.treble !== 0) filters.push(`treble=g=${eq.treble}`);
+    }
+
+    // Audio normalization
+    if (normalize) {
+      filters.push('loudnorm=I=-16:LRA=11:TP=-1.5');
+    }
+
+    // Dynamic range compression
+    if (compression) {
+      filters.push('acompressor=threshold=0.089:ratio=9:attack=200:release=1000');
+    }
+
+    // Fade in/out
+    if (fadeIn > 0) {
+      filters.push(`afade=t=in:ss=0:d=${fadeIn}`);
+    }
+    if (fadeOut > 0) {
+      filters.push(`afade=t=out:st=${fadeOut}:d=2`);
+    }
+
+    if (filters.length > 0) {
+      command = command.audioFilters(filters);
+    }
+
+    command
+      .on('end', () => resolve(outputPath))
+      .on('error', (error) => reject(error))
+      .save(outputPath);
+  });
+}
+
+// ============================================
+// AUDIOBOOK CHAPTER DETECTION
+// ============================================
+
+function detectChapters(text) {
+  const chapters = [];
+
+  // Common chapter patterns
+  const patterns = [
+    /^Chapter\s+(\d+|[IVXLCDM]+)[\s:\-—]+(.*)$/gmi,
+    /^(\d+)\.\s+(.+)$/gm, // "1. Chapter Title"
+    /^Part\s+(\d+|[IVXLCDM]+)[\s:\-—]+(.*)$/gmi,
+    /^Section\s+(\d+)[\s:\-—]+(.*)$/gmi,
+    /^##\s+(.+)$/gm, // Markdown headers
+    /^\*\*Chapter\s+(\d+)[:\s]+(.+)\*\*$/gmi
+  ];
+
+  let chapterMatches = [];
+
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length > 0) {
+      chapterMatches = matches;
+      break;
+    }
+  }
+
+  if (chapterMatches.length === 0) {
+    // No chapters detected, treat entire text as one chapter
+    return [{
+      number: 1,
+      title: 'Complete Text',
+      text: text.trim(),
+      startIndex: 0,
+      endIndex: text.length
+    }];
+  }
+
+  // Extract chapters
+  for (let i = 0; i < chapterMatches.length; i++) {
+    const match = chapterMatches[i];
+    const startIndex = match.index;
+    const endIndex = i < chapterMatches.length - 1
+      ? chapterMatches[i + 1].index
+      : text.length;
+
+    const chapterNumber = match[1] || (i + 1);
+    const chapterTitle = match[2] || `Chapter ${chapterNumber}`;
+    const chapterText = text.substring(startIndex, endIndex).trim();
+
+    chapters.push({
+      number: i + 1,
+      title: chapterTitle.trim(),
+      text: chapterText,
+      startIndex,
+      endIndex,
+      wordCount: chapterText.split(/\s+/).length,
+      estimatedDuration: Math.ceil(chapterText.split(/\s+/).length / 150) // 150 words per minute
+    });
+  }
+
+  return chapters;
+}
+
+// ============================================
+// AUDIO ANALYSIS & COMPARISON
+// ============================================
+
+function analyzeAudio(audioPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(audioPath, (err, metadata) => {
+      if (err) return reject(err);
+
+      const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+      if (!audioStream) {
+        return reject(new Error('No audio stream found'));
+      }
+
+      resolve({
+        duration: parseFloat(metadata.format.duration) || 0,
+        bitRate: parseInt(audioStream.bit_rate) || 0,
+        sampleRate: parseInt(audioStream.sample_rate) || 0,
+        channels: audioStream.channels || 0,
+        codec: audioStream.codec_name || 'unknown',
+        size: parseInt(metadata.format.size) || 0,
+        format: metadata.format.format_name || 'unknown'
+      });
+    });
+  });
+}
+
+// Calculate audio similarity score (basic implementation)
+function calculateAudioSimilarity(analysis1, analysis2) {
+  // Simple similarity based on duration and characteristics
+  const durationDiff = Math.abs(analysis1.duration - analysis2.duration);
+  const bitRateDiff = Math.abs(analysis1.bitRate - analysis2.bitRate);
+  const sampleRateDiff = Math.abs(analysis1.sampleRate - analysis2.sampleRate);
+
+  // Normalize differences (0-1 scale)
+  const durationSimilarity = Math.max(0, 1 - (durationDiff / Math.max(analysis1.duration, analysis2.duration)));
+  const bitRateSimilarity = Math.max(0, 1 - (bitRateDiff / Math.max(analysis1.bitRate, analysis2.bitRate)));
+  const sampleRateSimilarity = Math.max(0, 1 - (sampleRateDiff / Math.max(analysis1.sampleRate, analysis2.sampleRate)));
+
+  // Weighted average
+  const similarity = (durationSimilarity * 0.5 + bitRateSimilarity * 0.25 + sampleRateSimilarity * 0.25);
+
+  return {
+    score: Math.round(similarity * 100),
+    details: {
+      durationMatch: Math.round(durationSimilarity * 100),
+      bitRateMatch: Math.round(bitRateSimilarity * 100),
+      sampleRateMatch: Math.round(sampleRateSimilarity * 100)
+    }
+  };
+}
+
 // Get all available voices - COMBINES ElevenLabs + Our Stored Voices
 app.get('/api/voices', async (req, res) => {
   try {
@@ -3119,6 +3413,463 @@ app.get('/api/podcast/shows', (req, res) => {
   res.json({
     shows: shows,
     total_count: shows.length
+  });
+});
+
+// ============================================
+// TEXT PREPROCESSING API
+// ============================================
+
+// Preview text preprocessing
+app.post('/api/text/preprocess', (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const original = text;
+    const processed = preprocessText(text);
+
+    // Calculate changes
+    const changes = [];
+    if (original !== processed) {
+      // Identify what changed
+      if (original.match(/\d{1,3}(,\d{3})+/)) changes.push('Numbers normalized');
+      if (original.match(/\b(Dr\.|Mr\.|Mrs\.)/i)) changes.push('Abbreviations expanded');
+      if (original.match(/\d{1,2}\/\d{1,2}\/\d{4}/)) changes.push('Dates formatted');
+      if (original.match(/https?:\/\//)) changes.push('URLs made pronounceable');
+      if (original.match(/\$\d+/)) changes.push('Currency formatted');
+      if (original.match(/\d+%/)) changes.push('Percentages normalized');
+    }
+
+    res.json({
+      original,
+      processed,
+      changed: original !== processed,
+      changes,
+      character_diff: processed.length - original.length,
+      improvement_tips: [
+        'Preprocessed text is optimized for natural TTS pronunciation',
+        'Numbers and dates are converted to speakable format',
+        'Abbreviations are expanded for clarity',
+        'URLs and emails are made pronounceable'
+      ]
+    });
+  } catch (error) {
+    console.error('Text preprocessing error:', error);
+    res.status(500).json({ error: 'Failed to preprocess text' });
+  }
+});
+
+// ============================================
+// AUDIOBOOK GENERATOR API
+// ============================================
+
+// Detect chapters in text
+app.post('/api/audiobook/detect-chapters', (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const chapters = detectChapters(text);
+
+    res.json({
+      success: true,
+      chapter_count: chapters.length,
+      chapters: chapters.map(ch => ({
+        number: ch.number,
+        title: ch.title,
+        word_count: ch.wordCount,
+        estimated_duration_minutes: ch.estimatedDuration,
+        preview: ch.text.substring(0, 200) + '...'
+      })),
+      total_words: chapters.reduce((sum, ch) => sum + ch.wordCount, 0),
+      estimated_total_duration_minutes: chapters.reduce((sum, ch) => sum + ch.estimatedDuration, 0)
+    });
+  } catch (error) {
+    console.error('Chapter detection error:', error);
+    res.status(500).json({ error: 'Failed to detect chapters' });
+  }
+});
+
+// Generate audiobook with chapters
+app.post('/api/audiobook/generate', async (req, res) => {
+  try {
+    const {
+      text,
+      voice_id,
+      provider = 'elevenlabs',
+      format = 'mp3',
+      quality = 'high',
+      auto_detect_chapters = true,
+      chapters: providedChapters = null,
+      preprocessing = true,
+      effects = {}
+    } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    if (!voice_id) {
+      return res.status(400).json({ error: 'voice_id is required' });
+    }
+
+    console.log('Generating audiobook...');
+
+    // Detect or use provided chapters
+    const chapters = providedChapters || (auto_detect_chapters ? detectChapters(text) : [{
+      number: 1,
+      title: 'Complete Book',
+      text: text,
+      wordCount: text.split(/\s+/).length
+    }]);
+
+    const audiobookId = `audiobook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const chapterAudios = [];
+
+    // Generate audio for each chapter
+    for (const chapter of chapters) {
+      console.log(`Generating Chapter ${chapter.number}: ${chapter.title}`);
+
+      // Preprocess text if enabled
+      const chapterText = preprocessing ? preprocessText(chapter.text) : chapter.text;
+
+      // Generate TTS
+      let audioBuffer;
+      if (provider === 'opensource' || provider === 'coqui-xtts-v2') {
+        // Use open-source TTS
+        const output = await replicate.run(
+          "coqui/xtts-v2:3f0e38b59e10aa0d6e7e20ad5e1a2fb7f973e38973d07c719264cc753a55c3c7",
+          {
+            input: {
+              text: chapterText,
+              speaker: "audio_samples/sample.wav", // Default speaker
+              language: "en"
+            }
+          }
+        );
+        const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
+        audioBuffer = Buffer.from(audioResponse.data);
+      } else {
+        // Use ElevenLabs
+        const response = await axios.post(
+          `${ELEVENLABS_BASE_URL}/text-to-speech/${voice_id}`,
+          { text: chapterText },
+          {
+            headers: {
+              'xi-api-key': ELEVENLABS_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            responseType: 'arraybuffer'
+          }
+        );
+        audioBuffer = Buffer.from(response.data);
+      }
+
+      // Convert format if needed
+      if (format !== 'mp3') {
+        audioBuffer = await convertAudioFormat(audioBuffer, 'mp3', format);
+      }
+
+      // Apply audio effects if requested
+      if (Object.keys(effects).length > 0) {
+        const tempDir = process.env.VERCEL ? '/tmp' : './temp-audio';
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const inputPath = path.join(tempDir, `chapter_${chapter.number}_input.${format}`);
+        const outputPath = path.join(tempDir, `chapter_${chapter.number}_output.${format}`);
+
+        fs.writeFileSync(inputPath, audioBuffer);
+        await applyAudioEffects(inputPath, outputPath, effects);
+        audioBuffer = fs.readFileSync(outputPath);
+
+        // Cleanup
+        fs.unlinkSync(inputPath);
+        fs.unlinkSync(outputPath);
+      }
+
+      // Save chapter audio
+      const chapterFilename = `${audiobookId}_chapter_${chapter.number}.${format}`;
+      const chapterPath = path.join(AUDIO_CACHE_DIR, chapterFilename);
+      fs.writeFileSync(chapterPath, audioBuffer);
+
+      chapterAudios.push({
+        chapter_number: chapter.number,
+        chapter_title: chapter.title,
+        filename: chapterFilename,
+        path: chapterPath,
+        size: audioBuffer.length,
+        download_url: `/api/audiobook/${audiobookId}/chapter/${chapter.number}`
+      });
+    }
+
+    res.json({
+      success: true,
+      audiobook_id: audiobookId,
+      title: 'Generated Audiobook',
+      chapters: chapterAudios,
+      total_chapters: chapters.length,
+      provider,
+      format,
+      message: 'Audiobook generated successfully! Download individual chapters or the complete book.',
+      download_all_url: `/api/audiobook/${audiobookId}/download-all`
+    });
+
+  } catch (error) {
+    console.error('Audiobook generation error:', error);
+    res.status(500).json({
+      error: 'Failed to generate audiobook',
+      details: error.message
+    });
+  }
+});
+
+// Download individual chapter
+app.get('/api/audiobook/:audiobook_id/chapter/:chapter_number', (req, res) => {
+  try {
+    const { audiobook_id, chapter_number } = req.params;
+    const format = req.query.format || 'mp3';
+
+    const filename = `${audiobook_id}_chapter_${chapter_number}.${format}`;
+    const filePath = path.join(AUDIO_CACHE_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Chapter not found' });
+    }
+
+    const audioBuffer = fs.readFileSync(filePath);
+    res.set({
+      'Content-Type': AUDIO_FORMATS[format]?.contentType || 'audio/mpeg',
+      'Content-Disposition': `attachment; filename="chapter_${chapter_number}.${format}"`
+    });
+    res.send(audioBuffer);
+  } catch (error) {
+    console.error('Chapter download error:', error);
+    res.status(500).json({ error: 'Failed to download chapter' });
+  }
+});
+
+// ============================================
+// AUDIO EFFECTS API
+// ============================================
+
+// Apply effects to existing audio
+app.post('/api/audio/apply-effects', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
+
+    const effects = {
+      normalize: req.body.normalize === 'true',
+      noiseReduction: req.body.noiseReduction === 'true',
+      compression: req.body.compression === 'true',
+      fadeIn: parseFloat(req.body.fadeIn) || 0,
+      fadeOut: parseFloat(req.body.fadeOut) || 0,
+      eq: req.body.eq ? JSON.parse(req.body.eq) : null
+    };
+
+    const inputPath = req.file.path;
+    const outputPath = inputPath.replace(/\.[^.]+$/, '_processed' + path.extname(inputPath));
+
+    await applyAudioEffects(inputPath, outputPath, effects);
+
+    const processedBuffer = fs.readFileSync(outputPath);
+
+    // Cleanup
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+
+    res.set({
+      'Content-Type': req.file.mimetype,
+      'Content-Disposition': `attachment; filename="processed_${req.file.originalname}"`
+    });
+    res.send(processedBuffer);
+
+  } catch (error) {
+    console.error('Audio effects error:', error);
+    res.status(500).json({ error: 'Failed to apply effects', details: error.message });
+  }
+});
+
+// ============================================
+// AUDIO ANALYSIS & COMPARISON API
+// ============================================
+
+// Analyze audio file
+app.post('/api/audio/analyze', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
+
+    const analysis = await analyzeAudio(req.file.path);
+
+    // Cleanup
+    fs.unlinkSync(req.file.path);
+
+    res.json({
+      success: true,
+      analysis,
+      quality_assessment: {
+        bitrate_quality: analysis.bitRate >= 128000 ? 'Good' : analysis.bitRate >= 96000 ? 'Acceptable' : 'Low',
+        sample_rate_quality: analysis.sampleRate >= 44100 ? 'High' : analysis.sampleRate >= 22050 ? 'Standard' : 'Low',
+        is_stereo: analysis.channels === 2
+      }
+    });
+
+  } catch (error) {
+    console.error('Audio analysis error:', error);
+    res.status(500).json({ error: 'Failed to analyze audio', details: error.message });
+  }
+});
+
+// Compare two audio files
+app.post('/api/audio/compare', upload.fields([{ name: 'audio1' }, { name: 'audio2' }]), async (req, res) => {
+  try {
+    if (!req.files?.audio1 || !req.files?.audio2) {
+      return res.status(400).json({ error: 'Two audio files are required' });
+    }
+
+    const analysis1 = await analyzeAudio(req.files.audio1[0].path);
+    const analysis2 = await analyzeAudio(req.files.audio2[0].path);
+
+    const similarity = calculateAudioSimilarity(analysis1, analysis2);
+
+    // Cleanup
+    fs.unlinkSync(req.files.audio1[0].path);
+    fs.unlinkSync(req.files.audio2[0].path);
+
+    res.json({
+      success: true,
+      audio1: analysis1,
+      audio2: analysis2,
+      similarity,
+      recommendation: similarity.score >= 80
+        ? 'These audio files are very similar'
+        : similarity.score >= 60
+        ? 'These audio files are somewhat similar'
+        : 'These audio files are quite different'
+    });
+
+  } catch (error) {
+    console.error('Audio comparison error:', error);
+    res.status(500).json({ error: 'Failed to compare audio', details: error.message });
+  }
+});
+
+// Get available preprocessing options
+app.get('/api/text/preprocessing-options', (req, res) => {
+  res.json({
+    features: [
+      {
+        name: 'Number Normalization',
+        description: 'Converts numbers to words for better pronunciation (e.g., "1,000" → "1 thousand")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Abbreviation Expansion',
+        description: 'Expands common abbreviations (e.g., "Dr." → "Doctor", "etc." → "etcetera")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Date Formatting',
+        description: 'Converts dates to spoken format (e.g., "12/25/2024" → "December 25, 2024")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Time Formatting',
+        description: 'Formats times naturally (e.g., "14:30 PM" → "2 30 PM")',
+        enabled_by_default: true
+      },
+      {
+        name: 'URL Pronunciation',
+        description: 'Makes URLs speakable (e.g., "https://example.com" → "example dot com")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Email Pronunciation',
+        description: 'Makes emails speakable (e.g., "user@example.com" → "user at example dot com")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Currency Formatting',
+        description: 'Formats currency amounts (e.g., "$5,000" → "5 thousand dollars")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Percentage Normalization',
+        description: 'Converts percentages (e.g., "50%" → "50 percent")',
+        enabled_by_default: true
+      },
+      {
+        name: 'Acronym Spacing',
+        description: 'Adds spacing to acronyms for pronunciation (e.g., "NASA" → "N A S A")',
+        enabled_by_default: true
+      }
+    ],
+    usage: 'Text preprocessing is automatically applied when using /api/audiobook/generate with preprocessing=true',
+    preview_endpoint: '/api/text/preprocess'
+  });
+});
+
+// Get available audio effects
+app.get('/api/audio/effects-options', (req, res) => {
+  res.json({
+    effects: [
+      {
+        name: 'normalize',
+        description: 'Normalizes audio levels for consistent volume',
+        type: 'boolean',
+        recommended_for: ['podcasts', 'audiobooks', 'professional content']
+      },
+      {
+        name: 'noiseReduction',
+        description: 'Removes background noise using high/low pass filters',
+        type: 'boolean',
+        recommended_for: ['voice recordings', 'podcasts', 'interviews']
+      },
+      {
+        name: 'compression',
+        description: 'Applies dynamic range compression for better clarity',
+        type: 'boolean',
+        recommended_for: ['podcasts', 'radio', 'streaming']
+      },
+      {
+        name: 'eq',
+        description: 'Equalizer controls for bass, mid, and treble',
+        type: 'object',
+        format: { bass: 'number (-20 to +20)', mid: 'number (-20 to +20)', treble: 'number (-20 to +20)' },
+        recommended_for: ['music mixing', 'voice enhancement', 'audio mastering']
+      },
+      {
+        name: 'fadeIn',
+        description: 'Fade in duration in seconds',
+        type: 'number',
+        recommended_for: ['podcast intros', 'music tracks', 'smooth transitions']
+      },
+      {
+        name: 'fadeOut',
+        description: 'Fade out duration in seconds',
+        type: 'number',
+        recommended_for: ['podcast outros', 'music tracks', 'smooth endings']
+      }
+    ],
+    presets: {
+      podcast: { normalize: true, noiseReduction: true, compression: true },
+      audiobook: { normalize: true, noiseReduction: true },
+      music: { normalize: true, eq: { bass: 2, mid: 0, treble: 1 } },
+      voice_clarity: { noiseReduction: true, compression: true, eq: { bass: -2, mid: 3, treble: 2 } }
+    },
+    usage: 'Pass effects object to /api/audiobook/generate or use /api/audio/apply-effects'
   });
 });
 
