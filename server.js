@@ -8,6 +8,11 @@ const FormData = require('form-data');
 const fs = require('fs');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Replicate = require('replicate');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const ffmpeg = require('fluent-ffmpeg');
+
+// Configure ffmpeg
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -107,6 +112,73 @@ function saveVoicesDB(db) {
     console.error('Error saving voices DB:', error);
     return false;
   }
+}
+
+// Audio Format Conversion - MAXIMUM FLEXIBILITY
+const AUDIO_FORMATS = {
+  mp3: { contentType: 'audio/mpeg', codec: 'libmp3lame' },
+  wav: { contentType: 'audio/wav', codec: 'pcm_s16le' },
+  ogg: { contentType: 'audio/ogg', codec: 'libvorbis' },
+  flac: { contentType: 'audio/flac', codec: 'flac' },
+  m4a: { contentType: 'audio/mp4', codec: 'aac' }
+};
+
+function convertAudioFormat(inputBuffer, inputFormat, outputFormat) {
+  return new Promise((resolve, reject) => {
+    if (outputFormat === inputFormat || !AUDIO_FORMATS[outputFormat]) {
+      // No conversion needed or invalid format
+      return resolve(inputBuffer);
+    }
+
+    const tempDir = process.env.VERCEL ? '/tmp' : './temp-audio';
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const inputPath = path.join(tempDir, `input_${Date.now()}.${inputFormat}`);
+    const outputPath = path.join(tempDir, `output_${Date.now()}.${outputFormat}`);
+
+    try {
+      // Write input buffer to temp file
+      fs.writeFileSync(inputPath, inputBuffer);
+
+      const formatConfig = AUDIO_FORMATS[outputFormat];
+
+      // Convert using ffmpeg
+      ffmpeg(inputPath)
+        .audioCodec(formatConfig.codec)
+        .toFormat(outputFormat)
+        .on('end', () => {
+          try {
+            const outputBuffer = fs.readFileSync(outputPath);
+
+            // Clean up temp files
+            fs.unlinkSync(inputPath);
+            fs.unlinkSync(outputPath);
+
+            resolve(outputBuffer);
+          } catch (error) {
+            reject(error);
+          }
+        })
+        .on('error', (error) => {
+          // Clean up on error
+          try {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+          } catch (e) {}
+          reject(error);
+        })
+        .save(outputPath);
+    } catch (error) {
+      // Clean up on error
+      try {
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      } catch (e) {}
+      reject(error);
+    }
+  });
 }
 
 // Get all available voices - COMBINES ElevenLabs + Our Stored Voices
@@ -238,36 +310,53 @@ app.get('/api/voices/stored/:voice_id', (req, res) => {
   }
 });
 
-// Generate speech from text - WITH CACHING TO REDUCE API DEPENDENCY
+// Generate speech from text - WITH CACHING AND MULTI-FORMAT SUPPORT
 app.post('/api/text-to-speech', async (req, res) => {
   try {
-    const { text, voice_id, stability = 0.5, similarity_boost = 0.85, style = 0.3, use_cache = true } = req.body;
+    const {
+      text,
+      voice_id,
+      stability = 0.5,
+      similarity_boost = 0.85,
+      style = 0.3,
+      use_cache = true,
+      format = 'mp3' // NEW: Support mp3, wav, ogg, flac, m4a
+    } = req.body;
 
     if (!text || !voice_id) {
       return res.status(400).json({ error: 'Text and voice_id are required' });
     }
 
-    // Create cache key from request parameters
+    // Validate format
+    const outputFormat = format.toLowerCase();
+    if (!AUDIO_FORMATS[outputFormat]) {
+      return res.status(400).json({
+        error: `Invalid format. Supported formats: ${Object.keys(AUDIO_FORMATS).join(', ')}`
+      });
+    }
+
+    // Create cache key from request parameters (including format)
     const crypto = require('crypto');
     const cacheKey = crypto.createHash('md5')
-      .update(`${text}_${voice_id}_${stability}_${similarity_boost}_${style}`)
+      .update(`${text}_${voice_id}_${stability}_${similarity_boost}_${style}_${outputFormat}`)
       .digest('hex');
-    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.mp3`);
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
 
     // Check cache first - INDEPENDENCE FROM ELEVENLABS
     if (use_cache && fs.existsSync(cachePath)) {
-      console.log(`Cache hit for ${cacheKey} - serving from local storage`);
+      console.log(`Cache hit for ${cacheKey} - serving ${outputFormat} from local storage`);
       const cachedAudio = fs.readFileSync(cachePath);
       res.set({
-        'Content-Type': 'audio/mpeg',
-        'Content-Disposition': 'attachment; filename="voiceover.mp3"',
+        'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+        'Content-Disposition': `attachment; filename="voiceover.${outputFormat}"`,
         'X-Cache': 'HIT',
-        'X-Cache-Key': cacheKey
+        'X-Cache-Key': cacheKey,
+        'X-Format': outputFormat
       });
       return res.send(cachedAudio);
     }
 
-    // Cache miss - call ElevenLabs API
+    // Cache miss - call ElevenLabs API (always returns MP3)
     console.log(`Cache miss - calling ElevenLabs API`);
     const response = await axios({
       method: 'post',
@@ -288,29 +377,44 @@ app.post('/api/text-to-speech', async (req, res) => {
       responseType: 'arraybuffer'
     });
 
+    let audioBuffer = Buffer.from(response.data);
+
+    // Convert format if needed (ElevenLabs returns MP3)
+    if (outputFormat !== 'mp3') {
+      console.log(`Converting audio from mp3 to ${outputFormat}...`);
+      audioBuffer = await convertAudioFormat(audioBuffer, 'mp3', outputFormat);
+    }
+
     // Cache the audio for future use - BUILD THE EMPIRE
     if (use_cache) {
-      fs.writeFileSync(cachePath, response.data);
-      console.log(`Cached audio: ${cachePath}`);
+      fs.writeFileSync(cachePath, audioBuffer);
+      console.log(`Cached ${outputFormat} audio: ${cachePath}`);
     }
 
     res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Disposition': 'attachment; filename="voiceover.mp3"',
+      'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+      'Content-Disposition': `attachment; filename="voiceover.${outputFormat}"`,
       'X-Cache': 'MISS',
-      'X-Cache-Key': cacheKey
+      'X-Cache-Key': cacheKey,
+      'X-Format': outputFormat
     });
-    res.send(response.data);
+    res.send(audioBuffer);
   } catch (error) {
     console.error('Error generating speech:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to generate speech' });
   }
 });
 
-// OPEN SOURCE TTS - Coqui XTTS v2 via Replicate (100% FREE & LEGAL)
+// OPEN SOURCE TTS - Coqui XTTS v2 via Replicate (100% FREE & LEGAL + MULTI-FORMAT)
 app.post('/api/text-to-speech/opensource', async (req, res) => {
   try {
-    const { text, language = 'en', speaker_url = null, use_cache = true } = req.body;
+    const {
+      text,
+      language = 'en',
+      speaker_url = null,
+      use_cache = true,
+      format = 'wav' // NEW: Support mp3, wav, ogg, flac, m4a
+    } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'Text is required' });
@@ -323,30 +427,39 @@ app.post('/api/text-to-speech/opensource', async (req, res) => {
       });
     }
 
-    // Create cache key
+    // Validate format
+    const outputFormat = format.toLowerCase();
+    if (!AUDIO_FORMATS[outputFormat]) {
+      return res.status(400).json({
+        error: `Invalid format. Supported formats: ${Object.keys(AUDIO_FORMATS).join(', ')}`
+      });
+    }
+
+    // Create cache key (including format)
     const crypto = require('crypto');
     const cacheKey = crypto.createHash('md5')
-      .update(`opensource_${text}_${language}_${speaker_url || 'default'}`)
+      .update(`opensource_${text}_${language}_${speaker_url || 'default'}_${outputFormat}`)
       .digest('hex');
-    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.wav`);
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
 
     // Check cache first
     if (use_cache && fs.existsSync(cachePath)) {
-      console.log(`Open source TTS cache hit: ${cacheKey}`);
+      console.log(`Open source TTS cache hit: ${cacheKey} (${outputFormat})`);
       const cachedAudio = fs.readFileSync(cachePath);
       res.set({
-        'Content-Type': 'audio/wav',
-        'Content-Disposition': 'attachment; filename="voiceover_opensource.wav"',
+        'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+        'Content-Disposition': `attachment; filename="voiceover_opensource.${outputFormat}"`,
         'X-Cache': 'HIT',
         'X-Provider': 'coqui-xtts-v2',
-        'X-Cache-Key': cacheKey
+        'X-Cache-Key': cacheKey,
+        'X-Format': outputFormat
       });
       return res.send(cachedAudio);
     }
 
     console.log('Calling Coqui XTTS v2 via Replicate...');
 
-    // Call Replicate API for Coqui XTTS v2
+    // Call Replicate API for Coqui XTTS v2 (returns WAV)
     const output = await replicate.run(
       "lucataco/xtts-v2:684bc3855b37866c0c65add2ff39c78f3dea3f4ff103a436465326e0f438d55e",
       {
@@ -360,20 +473,27 @@ app.post('/api/text-to-speech/opensource', async (req, res) => {
 
     // Download the audio from Replicate's URL
     const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
-    const audioBuffer = Buffer.from(audioResponse.data);
+    let audioBuffer = Buffer.from(audioResponse.data);
+
+    // Convert format if needed (Coqui returns WAV)
+    if (outputFormat !== 'wav') {
+      console.log(`Converting audio from wav to ${outputFormat}...`);
+      audioBuffer = await convertAudioFormat(audioBuffer, 'wav', outputFormat);
+    }
 
     // Cache it
     if (use_cache) {
       fs.writeFileSync(cachePath, audioBuffer);
-      console.log(`Cached opensource audio: ${cachePath}`);
+      console.log(`Cached opensource ${outputFormat} audio: ${cachePath}`);
     }
 
     res.set({
-      'Content-Type': 'audio/wav',
-      'Content-Disposition': 'attachment; filename="voiceover_opensource.wav"',
+      'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+      'Content-Disposition': `attachment; filename="voiceover_opensource.${outputFormat}"`,
       'X-Cache': 'MISS',
       'X-Provider': 'coqui-xtts-v2',
-      'X-Cache-Key': cacheKey
+      'X-Cache-Key': cacheKey,
+      'X-Format': outputFormat
     });
     res.send(audioBuffer);
 
@@ -386,6 +506,628 @@ app.post('/api/text-to-speech/opensource', async (req, res) => {
     });
   }
 });
+
+// Get available audio formats
+app.get('/api/formats', (req, res) => {
+  res.json({
+    formats: Object.keys(AUDIO_FORMATS).map(format => ({
+      format: format,
+      contentType: AUDIO_FORMATS[format].contentType,
+      codec: AUDIO_FORMATS[format].codec,
+      extension: format
+    })),
+    message: 'All TTS endpoints support these formats via the "format" parameter',
+    example: {
+      request: {
+        text: 'Hello world',
+        voice_id: 'voice_id_here',
+        format: 'flac'
+      }
+    }
+  });
+});
+
+// BATCH PROCESSING SYSTEM - Process multiple texts at once
+const batchJobs = new Map(); // In-memory storage (in production, use Redis or database)
+
+app.post('/api/batch/text-to-speech', async (req, res) => {
+  try {
+    const {
+      items, // Array of {text, voice_id, stability, similarity_boost, style, format, provider}
+      batch_name = 'Batch TTS',
+      parallel = true, // Process in parallel or sequential
+      provider = 'elevenlabs' // 'elevenlabs' or 'opensource'
+    } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        error: 'Items array required with at least one item',
+        example: {
+          items: [
+            { text: 'First text', voice_id: 'voice_1', format: 'mp3' },
+            { text: 'Second text', voice_id: 'voice_2', format: 'wav' }
+          ]
+        }
+      });
+    }
+
+    if (items.length > 100) {
+      return res.status(400).json({ error: 'Maximum 100 items per batch' });
+    }
+
+    // Create batch job
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const batchJob = {
+      id: batchId,
+      name: batch_name,
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      status: 'processing',
+      results: [],
+      errors: [],
+      created_at: new Date().toISOString(),
+      provider: provider
+    };
+
+    batchJobs.set(batchId, batchJob);
+
+    // Process batch (don't await - run in background)
+    processBatch(batchId, items, parallel, provider).catch(err => {
+      console.error('Batch processing error:', err);
+      batchJob.status = 'failed';
+      batchJob.error = err.message;
+    });
+
+    // Return immediately with batch ID
+    res.json({
+      success: true,
+      batch_id: batchId,
+      message: `Batch job created with ${items.length} items`,
+      status_url: `/api/batch/${batchId}`,
+      total_items: items.length
+    });
+
+  } catch (error) {
+    console.error('Error creating batch job:', error);
+    res.status(500).json({ error: 'Failed to create batch job' });
+  }
+});
+
+// Process batch items
+async function processBatch(batchId, items, parallel, provider) {
+  const batchJob = batchJobs.get(batchId);
+  if (!batchJob) return;
+
+  const crypto = require('crypto');
+
+  if (parallel) {
+    // Process all items in parallel
+    await Promise.allSettled(items.map(async (item, index) => {
+      try {
+        const result = await processBatchItem(item, index, provider);
+        batchJob.results.push(result);
+        batchJob.completed++;
+      } catch (error) {
+        console.error(`Batch item ${index} failed:`, error.message);
+        batchJob.errors.push({
+          index: index,
+          text: item.text?.substring(0, 50) + '...',
+          error: error.message
+        });
+        batchJob.failed++;
+      }
+    }));
+  } else {
+    // Process sequentially
+    for (let i = 0; i < items.length; i++) {
+      try {
+        const result = await processBatchItem(items[i], i, provider);
+        batchJob.results.push(result);
+        batchJob.completed++;
+      } catch (error) {
+        console.error(`Batch item ${i} failed:`, error.message);
+        batchJob.errors.push({
+          index: i,
+          text: items[i].text?.substring(0, 50) + '...',
+          error: error.message
+        });
+        batchJob.failed++;
+      }
+    }
+  }
+
+  batchJob.status = batchJob.failed === 0 ? 'completed' : 'completed_with_errors';
+  batchJob.completed_at = new Date().toISOString();
+}
+
+// Process a single batch item
+async function processBatchItem(item, index, provider) {
+  const {
+    text,
+    voice_id,
+    stability = 0.5,
+    similarity_boost = 0.85,
+    style = 0.3,
+    format = 'mp3',
+    language = 'en',
+    speaker_url = null
+  } = item;
+
+  const crypto = require('crypto');
+  const outputFormat = format.toLowerCase();
+
+  if (provider === 'opensource') {
+    // Open source TTS
+    const cacheKey = crypto.createHash('md5')
+      .update(`opensource_${text}_${language}_${speaker_url || 'default'}_${outputFormat}`)
+      .digest('hex');
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
+
+    // Check cache
+    if (fs.existsSync(cachePath)) {
+      return {
+        index: index,
+        text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+        cache_key: cacheKey,
+        format: outputFormat,
+        cached: true,
+        provider: 'coqui-xtts-v2'
+      };
+    }
+
+    // Generate with Coqui
+    const output = await replicate.run(
+      "lucataco/xtts-v2:684bc3855b37866c0c65add2ff39c78f3dea3f4ff103a436465326e0f438d55e",
+      {
+        input: {
+          text: text,
+          language: language,
+          speaker: speaker_url || "https://replicate.delivery/pbxt/Jt5YHPJqKFgYBjpm2tQlVdCgwvHChNpzFJXdHVL9H6yqVWfa/female.wav"
+        }
+      }
+    );
+
+    const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
+    let audioBuffer = Buffer.from(audioResponse.data);
+
+    if (outputFormat !== 'wav') {
+      audioBuffer = await convertAudioFormat(audioBuffer, 'wav', outputFormat);
+    }
+
+    fs.writeFileSync(cachePath, audioBuffer);
+
+    return {
+      index: index,
+      text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+      cache_key: cacheKey,
+      format: outputFormat,
+      cached: false,
+      provider: 'coqui-xtts-v2'
+    };
+
+  } else {
+    // ElevenLabs TTS
+    const cacheKey = crypto.createHash('md5')
+      .update(`${text}_${voice_id}_${stability}_${similarity_boost}_${style}_${outputFormat}`)
+      .digest('hex');
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
+
+    // Check cache
+    if (fs.existsSync(cachePath)) {
+      return {
+        index: index,
+        text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+        cache_key: cacheKey,
+        format: outputFormat,
+        cached: true,
+        provider: 'elevenlabs'
+      };
+    }
+
+    // Generate with ElevenLabs
+    const response = await axios({
+      method: 'post',
+      url: `${ELEVENLABS_BASE_URL}/text-to-speech/${voice_id}/stream`,
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        text: text,
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: {
+          stability: parseFloat(stability),
+          similarity_boost: parseFloat(similarity_boost),
+          style: parseFloat(style)
+        }
+      },
+      responseType: 'arraybuffer'
+    });
+
+    let audioBuffer = Buffer.from(response.data);
+
+    if (outputFormat !== 'mp3') {
+      audioBuffer = await convertAudioFormat(audioBuffer, 'mp3', outputFormat);
+    }
+
+    fs.writeFileSync(cachePath, audioBuffer);
+
+    return {
+      index: index,
+      text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+      cache_key: cacheKey,
+      format: outputFormat,
+      cached: false,
+      provider: 'elevenlabs'
+    };
+  }
+}
+
+// Get batch job status
+app.get('/api/batch/:batch_id', (req, res) => {
+  const { batch_id } = req.params;
+  const batchJob = batchJobs.get(batch_id);
+
+  if (!batchJob) {
+    return res.status(404).json({ error: 'Batch job not found' });
+  }
+
+  res.json({
+    ...batchJob,
+    progress: Math.round((batchJob.completed + batchJob.failed) / batchJob.total * 100)
+  });
+});
+
+// Download batch item
+app.get('/api/batch/:batch_id/download/:cache_key', (req, res) => {
+  const { batch_id, cache_key } = req.params;
+  const batchJob = batchJobs.get(batch_id);
+
+  if (!batchJob) {
+    return res.status(404).json({ error: 'Batch job not found' });
+  }
+
+  const result = batchJob.results.find(r => r.cache_key === cache_key);
+  if (!result) {
+    return res.status(404).json({ error: 'Item not found in batch' });
+  }
+
+  const cachePath = path.join(AUDIO_CACHE_DIR, `${cache_key}.${result.format}`);
+  if (!fs.existsSync(cachePath)) {
+    return res.status(404).json({ error: 'Audio file not found' });
+  }
+
+  const audioBuffer = fs.readFileSync(cachePath);
+  res.set({
+    'Content-Type': AUDIO_FORMATS[result.format].contentType,
+    'Content-Disposition': `attachment; filename="batch_${batch_id}_${result.index}.${result.format}"`
+  });
+  res.send(audioBuffer);
+});
+
+// Download all batch items as individual files (returns JSON with download links)
+app.get('/api/batch/:batch_id/download-all', (req, res) => {
+  const { batch_id } = req.params;
+  const batchJob = batchJobs.get(batch_id);
+
+  if (!batchJob) {
+    return res.status(404).json({ error: 'Batch job not found' });
+  }
+
+  if (batchJob.status === 'processing') {
+    return res.status(400).json({ error: 'Batch still processing. Wait for completion.' });
+  }
+
+  const downloadLinks = batchJob.results.map(result => ({
+    index: result.index,
+    text_preview: result.text_preview,
+    download_url: `/api/batch/${batch_id}/download/${result.cache_key}`,
+    format: result.format,
+    cached: result.cached,
+    provider: result.provider
+  }));
+
+  res.json({
+    batch_id: batch_id,
+    batch_name: batchJob.name,
+    total: batchJob.total,
+    completed: batchJob.completed,
+    failed: batchJob.failed,
+    downloads: downloadLinks,
+    errors: batchJob.errors
+  });
+});
+
+// SMART PROVIDER ROUTING - Use open-source first, ElevenLabs as fallback
+app.post('/api/text-to-speech/smart', async (req, res) => {
+  try {
+    const {
+      text,
+      voice_id = null,
+      speaker_url = null,
+      language = 'en',
+      stability = 0.5,
+      similarity_boost = 0.85,
+      style = 0.3,
+      format = 'mp3',
+      use_cache = true,
+      strategy = 'cost' // 'cost' (opensource first), 'quality' (elevenlabs first), 'balanced'
+    } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const crypto = require('crypto');
+    const outputFormat = format.toLowerCase();
+
+    if (!AUDIO_FORMATS[outputFormat]) {
+      return res.status(400).json({
+        error: `Invalid format. Supported formats: ${Object.keys(AUDIO_FORMATS).join(', ')}`
+      });
+    }
+
+    let provider = 'opensource'; // Default to open-source
+    let audioBuffer;
+    let cacheKey;
+    let cachePath;
+    let cacheHit = false;
+
+    // STRATEGY 1: Cost-first (default) - Try open-source, fallback to ElevenLabs
+    if (strategy === 'cost') {
+      if (replicate) {
+        try {
+          // Try open-source first
+          cacheKey = crypto.createHash('md5')
+            .update(`opensource_${text}_${language}_${speaker_url || 'default'}_${outputFormat}`)
+            .digest('hex');
+          cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
+
+          // Check cache
+          if (use_cache && fs.existsSync(cachePath)) {
+            audioBuffer = fs.readFileSync(cachePath);
+            cacheHit = true;
+            provider = 'coqui-xtts-v2';
+          } else {
+            console.log('Smart routing: Trying open-source TTS first...');
+            const output = await replicate.run(
+              "lucataco/xtts-v2:684bc3855b37866c0c65add2ff39c78f3dea3f4ff103a436465326e0f438d55e",
+              {
+                input: {
+                  text: text,
+                  language: language,
+                  speaker: speaker_url || "https://replicate.delivery/pbxt/Jt5YHPJqKFgYBjpm2tQlVdCgwvHChNpzFJXdHVL9H6yqVWfa/female.wav"
+                }
+              }
+            );
+
+            const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
+            audioBuffer = Buffer.from(audioResponse.data);
+
+            if (outputFormat !== 'wav') {
+              audioBuffer = await convertAudioFormat(audioBuffer, 'wav', outputFormat);
+            }
+
+            if (use_cache) {
+              fs.writeFileSync(cachePath, audioBuffer);
+            }
+
+            provider = 'coqui-xtts-v2';
+          }
+        } catch (opensourceError) {
+          console.error('Open-source TTS failed, falling back to ElevenLabs:', opensourceError.message);
+          // Fallback to ElevenLabs
+          if (!voice_id) {
+            throw new Error('voice_id required for ElevenLabs fallback');
+          }
+          provider = 'elevenlabs';
+          ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+            text, voice_id, stability, similarity_boost, style, outputFormat, use_cache
+          ));
+        }
+      } else {
+        // No Replicate configured, use ElevenLabs
+        if (!voice_id) {
+          return res.status(400).json({
+            error: 'voice_id required when Replicate is not configured'
+          });
+        }
+        console.log('Smart routing: Replicate not configured, using ElevenLabs...');
+        provider = 'elevenlabs';
+        ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+          text, voice_id, stability, similarity_boost, style, outputFormat, use_cache
+        ));
+      }
+    }
+    // STRATEGY 2: Quality-first - Use ElevenLabs, fallback to open-source
+    else if (strategy === 'quality') {
+      if (voice_id && ELEVENLABS_API_KEY) {
+        try {
+          console.log('Smart routing: Using ElevenLabs for quality...');
+          provider = 'elevenlabs';
+          ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+            text, voice_id, stability, similarity_boost, style, outputFormat, use_cache
+          ));
+        } catch (elevenlabsError) {
+          console.error('ElevenLabs failed, falling back to open-source:', elevenlabsError.message);
+          if (replicate) {
+            provider = 'coqui-xtts-v2';
+            ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithOpensource(
+              text, language, speaker_url, outputFormat, use_cache
+            ));
+          } else {
+            throw elevenlabsError;
+          }
+        }
+      } else {
+        // No ElevenLabs configured, use open-source
+        if (!replicate) {
+          return res.status(503).json({
+            error: 'Neither ElevenLabs nor Replicate is configured'
+          });
+        }
+        console.log('Smart routing: ElevenLabs not configured, using open-source...');
+        provider = 'coqui-xtts-v2';
+        ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithOpensource(
+          text, language, speaker_url, outputFormat, use_cache
+        ));
+      }
+    }
+    // STRATEGY 3: Balanced - Use whichever is available, prefer quality if both work
+    else if (strategy === 'balanced') {
+      const bothAvailable = replicate && voice_id && ELEVENLABS_API_KEY;
+
+      if (bothAvailable) {
+        // Use ElevenLabs for quality
+        console.log('Smart routing (balanced): Both available, using ElevenLabs for quality...');
+        provider = 'elevenlabs';
+        ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+          text, voice_id, stability, similarity_boost, style, outputFormat, use_cache
+        ));
+      } else if (replicate) {
+        console.log('Smart routing (balanced): Using open-source...');
+        provider = 'coqui-xtts-v2';
+        ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithOpensource(
+          text, language, speaker_url, outputFormat, use_cache
+        ));
+      } else if (voice_id && ELEVENLABS_API_KEY) {
+        console.log('Smart routing (balanced): Using ElevenLabs...');
+        provider = 'elevenlabs';
+        ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+          text, voice_id, stability, similarity_boost, style, outputFormat, use_cache
+        ));
+      } else {
+        return res.status(503).json({
+          error: 'No TTS provider configured. Configure either REPLICATE_API_TOKEN or ELEVENLABS_API_KEY.'
+        });
+      }
+    }
+
+    res.set({
+      'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+      'Content-Disposition': `attachment; filename="voiceover_smart.${outputFormat}"`,
+      'X-Cache': cacheHit ? 'HIT' : 'MISS',
+      'X-Provider': provider,
+      'X-Strategy': strategy,
+      'X-Cache-Key': cacheKey,
+      'X-Format': outputFormat
+    });
+    res.send(audioBuffer);
+
+  } catch (error) {
+    console.error('Smart TTS error:', error);
+    res.status(500).json({
+      error: 'Failed to generate speech with smart routing',
+      details: error.message
+    });
+  }
+});
+
+// Helper: Generate with ElevenLabs
+async function generateWithElevenLabs(text, voice_id, stability, similarity_boost, style, outputFormat, use_cache) {
+  const crypto = require('crypto');
+  const cacheKey = crypto.createHash('md5')
+    .update(`${text}_${voice_id}_${stability}_${similarity_boost}_${style}_${outputFormat}`)
+    .digest('hex');
+  const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
+
+  // Check cache
+  if (use_cache && fs.existsSync(cachePath)) {
+    return {
+      audioBuffer: fs.readFileSync(cachePath),
+      cacheKey,
+      cachePath,
+      cacheHit: true
+    };
+  }
+
+  // Generate with ElevenLabs
+  const response = await axios({
+    method: 'post',
+    url: `${ELEVENLABS_BASE_URL}/text-to-speech/${voice_id}/stream`,
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json'
+    },
+    data: {
+      text: text,
+      model_id: 'eleven_turbo_v2_5',
+      voice_settings: {
+        stability: parseFloat(stability),
+        similarity_boost: parseFloat(similarity_boost),
+        style: parseFloat(style)
+      }
+    },
+    responseType: 'arraybuffer'
+  });
+
+  let audioBuffer = Buffer.from(response.data);
+
+  if (outputFormat !== 'mp3') {
+    audioBuffer = await convertAudioFormat(audioBuffer, 'mp3', outputFormat);
+  }
+
+  if (use_cache) {
+    fs.writeFileSync(cachePath, audioBuffer);
+  }
+
+  return {
+    audioBuffer,
+    cacheKey,
+    cachePath,
+    cacheHit: false
+  };
+}
+
+// Helper: Generate with Open Source
+async function generateWithOpensource(text, language, speaker_url, outputFormat, use_cache) {
+  const crypto = require('crypto');
+  const cacheKey = crypto.createHash('md5')
+    .update(`opensource_${text}_${language}_${speaker_url || 'default'}_${outputFormat}`)
+    .digest('hex');
+  const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.${outputFormat}`);
+
+  // Check cache
+  if (use_cache && fs.existsSync(cachePath)) {
+    return {
+      audioBuffer: fs.readFileSync(cachePath),
+      cacheKey,
+      cachePath,
+      cacheHit: true
+    };
+  }
+
+  // Generate with Coqui
+  const output = await replicate.run(
+    "lucataco/xtts-v2:684bc3855b37866c0c65add2ff39c78f3dea3f4ff103a436465326e0f438d55e",
+    {
+      input: {
+        text: text,
+        language: language,
+        speaker: speaker_url || "https://replicate.delivery/pbxt/Jt5YHPJqKFgYBjpm2tQlVdCgwvHChNpzFJXdHVL9H6yqVWfa/female.wav"
+      }
+    }
+  );
+
+  const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
+  let audioBuffer = Buffer.from(audioResponse.data);
+
+  if (outputFormat !== 'wav') {
+    audioBuffer = await convertAudioFormat(audioBuffer, 'wav', outputFormat);
+  }
+
+  if (use_cache) {
+    fs.writeFileSync(cachePath, audioBuffer);
+  }
+
+  return {
+    audioBuffer,
+    cacheKey,
+    cachePath,
+    cacheHit: false
+  };
+}
 
 // Get open source voices library
 app.get('/api/voices/opensource', (req, res) => {
@@ -722,53 +1464,208 @@ app.post('/api/text-to-speech-ssml', async (req, res) => {
   }
 });
 
-// Multi-voice conversation generator
+// AI VOICE CONVERSATIONS - Multi-speaker podcast-style conversations
 app.post('/api/conversation', async (req, res) => {
   try {
-    const { messages } = req.body; // Array of {text, voice_id, speaker_name}
+    const {
+      messages, // Array of {text, voice_id, speaker_name, speaker_url, language, provider}
+      pause_duration = 0.5, // Seconds of pause between speakers
+      format = 'mp3',
+      use_cache = true,
+      provider = 'auto' // 'elevenlabs', 'opensource', or 'auto'
+    } = req.body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages array required' });
+      return res.status(400).json({
+        error: 'Messages array required',
+        example: {
+          messages: [
+            { text: 'Hello, welcome to the show!', voice_id: 'voice_1', speaker_name: 'Host' },
+            { text: 'Thanks for having me!', voice_id: 'voice_2', speaker_name: 'Guest' }
+          ],
+          pause_duration: 0.5,
+          format: 'mp3'
+        }
+      });
     }
+
+    if (messages.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 messages per conversation' });
+    }
+
+    const outputFormat = format.toLowerCase();
+    if (!AUDIO_FORMATS[outputFormat]) {
+      return res.status(400).json({
+        error: `Invalid format. Supported formats: ${Object.keys(AUDIO_FORMATS).join(', ')}`
+      });
+    }
+
+    console.log(`Generating conversation with ${messages.length} messages...`);
+
+    const tempDir = process.env.VERCEL ? '/tmp' : './temp-conversations';
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const audioFiles = [];
 
     // Generate audio for each message
-    const audioBuffers = [];
-    for (const msg of messages) {
-      const response = await axios({
-        method: 'post',
-        url: `${ELEVENLABS_BASE_URL}/text-to-speech/${msg.voice_id}/stream`,
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        data: {
-          text: msg.text,
-          model_id: 'eleven_turbo_v2_5',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.85,
-            style: 0.3
-          }
-        },
-        responseType: 'arraybuffer'
-      });
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const msgProvider = msg.provider || provider;
 
-      audioBuffers.push({
-        speaker: msg.speaker_name || 'Speaker',
-        audio: response.data
-      });
+      console.log(`Generating message ${i + 1}/${messages.length} (${msg.speaker_name || 'Speaker'})...`);
+
+      let audioBuffer;
+
+      // Auto-detect provider or use specified
+      if (msgProvider === 'auto') {
+        // Try opensource first for cost savings
+        if (replicate && msg.speaker_url) {
+          try {
+            ({ audioBuffer } = await generateWithOpensource(
+              msg.text,
+              msg.language || 'en',
+              msg.speaker_url,
+              'mp3', // Generate as MP3 for consistency
+              use_cache
+            ));
+          } catch (err) {
+            console.warn('Open-source TTS failed, falling back to ElevenLabs:', err.message);
+            if (msg.voice_id) {
+              ({ audioBuffer } = await generateWithElevenLabs(
+                msg.text,
+                msg.voice_id,
+                msg.stability || 0.5,
+                msg.similarity_boost || 0.85,
+                msg.style || 0.3,
+                'mp3',
+                use_cache
+              ));
+            } else {
+              throw new Error('No voice_id provided for ElevenLabs fallback');
+            }
+          }
+        } else if (msg.voice_id) {
+          ({ audioBuffer } = await generateWithElevenLabs(
+            msg.text,
+            msg.voice_id,
+            msg.stability || 0.5,
+            msg.similarity_boost || 0.85,
+            msg.style || 0.3,
+            'mp3',
+            use_cache
+          ));
+        } else {
+          throw new Error('Either speaker_url or voice_id required for each message');
+        }
+      } else if (msgProvider === 'opensource') {
+        if (!msg.speaker_url) {
+          throw new Error('speaker_url required for open-source provider');
+        }
+        ({ audioBuffer } = await generateWithOpensource(
+          msg.text,
+          msg.language || 'en',
+          msg.speaker_url,
+          'mp3',
+          use_cache
+        ));
+      } else {
+        // Use ElevenLabs
+        if (!msg.voice_id) {
+          throw new Error('voice_id required for ElevenLabs provider');
+        }
+        ({ audioBuffer } = await generateWithElevenLabs(
+          msg.text,
+          msg.voice_id,
+          msg.stability || 0.5,
+          msg.similarity_boost || 0.85,
+          msg.style || 0.3,
+          'mp3',
+          use_cache
+        ));
+      }
+
+      // Save audio to temp file
+      const audioPath = path.join(tempDir, `${conversationId}_${i}.mp3`);
+      fs.writeFileSync(audioPath, audioBuffer);
+      audioFiles.push(audioPath);
     }
 
-    // For now, return the first audio (client-side will handle merging)
-    // In production, you'd use ffmpeg to merge audio files with pauses
-    res.json({
-      success: true,
-      count: audioBuffers.length,
-      message: 'Conversation generated. Download each part separately.'
+    console.log('All messages generated. Merging audio files...');
+
+    // Create silence file for pauses
+    const silencePath = path.join(tempDir, `${conversationId}_silence.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input('anullsrc=r=44100:cl=stereo')
+        .inputFormat('lavfi')
+        .duration(pause_duration)
+        .audioCodec('libmp3lame')
+        .on('end', resolve)
+        .on('error', reject)
+        .save(silencePath);
     });
+
+    // Create concat file list
+    const concatListPath = path.join(tempDir, `${conversationId}_concat.txt`);
+    let concatContent = '';
+    audioFiles.forEach((file, index) => {
+      concatContent += `file '${file}'\n`;
+      if (index < audioFiles.length - 1) {
+        // Add pause between messages (but not after last message)
+        concatContent += `file '${silencePath}'\n`;
+      }
+    });
+    fs.writeFileSync(concatListPath, concatContent);
+
+    // Merge all audio files with ffmpeg
+    const outputPath = path.join(tempDir, `${conversationId}_final.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .audioCodec('libmp3lame')
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    });
+
+    // Read the merged audio
+    let mergedAudio = fs.readFileSync(outputPath);
+
+    // Convert to requested format if needed
+    if (outputFormat !== 'mp3') {
+      console.log(`Converting conversation to ${outputFormat}...`);
+      mergedAudio = await convertAudioFormat(mergedAudio, 'mp3', outputFormat);
+    }
+
+    // Clean up temp files
+    audioFiles.forEach(file => {
+      try { fs.unlinkSync(file); } catch (e) {}
+    });
+    try { fs.unlinkSync(silencePath); } catch (e) {}
+    try { fs.unlinkSync(concatListPath); } catch (e) {}
+    try { fs.unlinkSync(outputPath); } catch (e) {}
+
+    console.log(`Conversation generated successfully (${messages.length} speakers, ${outputFormat})`);
+
+    res.set({
+      'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+      'Content-Disposition': `attachment; filename="conversation.${outputFormat}"`,
+      'X-Message-Count': messages.length,
+      'X-Pause-Duration': pause_duration,
+      'X-Format': outputFormat
+    });
+    res.send(mergedAudio);
+
   } catch (error) {
-    console.error('Error generating conversation:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to generate conversation' });
+    console.error('Error generating conversation:', error);
+    res.status(500).json({
+      error: 'Failed to generate conversation',
+      details: error.message
+    });
   }
 });
 
