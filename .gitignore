@@ -9,3 +9,4 @@ uploads/
 .vercel
 voices-storage/
 voices-db.json
+audio-cache/

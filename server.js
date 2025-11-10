@@ -67,12 +67,16 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
 
 // Voice Storage Configuration - OUR OWN EMPIRE
-const VOICES_STORAGE_DIR = './voices-storage';
-const VOICES_DB_PATH = './voices-db.json';
+const VOICES_STORAGE_DIR = process.env.VERCEL ? '/tmp/voices-storage' : './voices-storage';
+const VOICES_DB_PATH = process.env.VERCEL ? '/tmp/voices-db.json' : './voices-db.json';
+const AUDIO_CACHE_DIR = process.env.VERCEL ? '/tmp/audio-cache' : './audio-cache';
 
-// Initialize storage directory
+// Initialize storage directories
 if (!fs.existsSync(VOICES_STORAGE_DIR)) {
   fs.mkdirSync(VOICES_STORAGE_DIR, { recursive: true });
+}
+if (!fs.existsSync(AUDIO_CACHE_DIR)) {
+  fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
 }
 
 // Voice Database Helper Functions
@@ -144,6 +148,72 @@ app.get('/api/voices/stored', (req, res) => {
   }
 });
 
+// SYNC ALL ElevenLabs voices to local storage - BUILD THE LIBRARY
+app.post('/api/voices/sync', async (req, res) => {
+  try {
+    console.log('Starting voice library sync from ElevenLabs...');
+
+    // Get all voices from ElevenLabs
+    const response = await axios.get(`${ELEVENLABS_BASE_URL}/voices`, {
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY
+      }
+    });
+
+    const elevenlabsVoices = response.data.voices;
+    const db = loadVoicesDB();
+    let syncedCount = 0;
+    let skippedCount = 0;
+
+    // Store each voice metadata
+    for (const voice of elevenlabsVoices) {
+      // Check if already stored
+      const existing = db.voices.find(v => v.elevenlabs_voice_id === voice.voice_id);
+
+      if (!existing) {
+        const voiceData = {
+          id: voice.voice_id,
+          name: voice.name,
+          description: voice.description || '',
+          elevenlabs_voice_id: voice.voice_id,
+          category: voice.category || 'general',
+          labels: voice.labels || {},
+          preview_url: voice.preview_url || null,
+          created_at: new Date().toISOString(),
+          source: 'elevenlabs_library',
+          provider: 'elevenlabs',
+          audio_files: []
+        };
+
+        db.voices.push(voiceData);
+        syncedCount++;
+        console.log(`Synced voice: ${voice.name} (${voice.voice_id})`);
+      } else {
+        skippedCount++;
+      }
+    }
+
+    saveVoicesDB(db);
+
+    res.json({
+      success: true,
+      message: `Voice library synced! ${syncedCount} new voices added.`,
+      synced: syncedCount,
+      skipped: skippedCount,
+      total_stored: db.voices.length,
+      note: 'Voice metadata stored. Audio generation still uses ElevenLabs API.'
+    });
+
+    console.log(`Voice sync complete: ${syncedCount} new, ${skippedCount} skipped, ${db.voices.length} total`);
+  } catch (error) {
+    console.error('Error syncing voices:', error.response?.data || error.message);
+    res.status(500).json({
+      error: 'Failed to sync voice library',
+      details: error.message
+    });
+  }
+});
+
 // Get specific stored voice details
 app.get('/api/voices/stored/:voice_id', (req, res) => {
   try {
@@ -162,15 +232,37 @@ app.get('/api/voices/stored/:voice_id', (req, res) => {
   }
 });
 
-// Generate speech from text
+// Generate speech from text - WITH CACHING TO REDUCE API DEPENDENCY
 app.post('/api/text-to-speech', async (req, res) => {
   try {
-    const { text, voice_id, stability = 0.5, similarity_boost = 0.85, style = 0.3 } = req.body;
+    const { text, voice_id, stability = 0.5, similarity_boost = 0.85, style = 0.3, use_cache = true } = req.body;
 
     if (!text || !voice_id) {
       return res.status(400).json({ error: 'Text and voice_id are required' });
     }
 
+    // Create cache key from request parameters
+    const crypto = require('crypto');
+    const cacheKey = crypto.createHash('md5')
+      .update(`${text}_${voice_id}_${stability}_${similarity_boost}_${style}`)
+      .digest('hex');
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.mp3`);
+
+    // Check cache first - INDEPENDENCE FROM ELEVENLABS
+    if (use_cache && fs.existsSync(cachePath)) {
+      console.log(`Cache hit for ${cacheKey} - serving from local storage`);
+      const cachedAudio = fs.readFileSync(cachePath);
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': 'attachment; filename="voiceover.mp3"',
+        'X-Cache': 'HIT',
+        'X-Cache-Key': cacheKey
+      });
+      return res.send(cachedAudio);
+    }
+
+    // Cache miss - call ElevenLabs API
+    console.log(`Cache miss - calling ElevenLabs API`);
     const response = await axios({
       method: 'post',
       url: `${ELEVENLABS_BASE_URL}/text-to-speech/${voice_id}/stream`,
@@ -190,9 +282,17 @@ app.post('/api/text-to-speech', async (req, res) => {
       responseType: 'arraybuffer'
     });
 
+    // Cache the audio for future use - BUILD THE EMPIRE
+    if (use_cache) {
+      fs.writeFileSync(cachePath, response.data);
+      console.log(`Cached audio: ${cachePath}`);
+    }
+
     res.set({
       'Content-Type': 'audio/mpeg',
-      'Content-Disposition': 'attachment; filename="voiceover.mp3"'
+      'Content-Disposition': 'attachment; filename="voiceover.mp3"',
+      'X-Cache': 'MISS',
+      'X-Cache-Key': cacheKey
     });
     res.send(response.data);
   } catch (error) {
