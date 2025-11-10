@@ -66,18 +66,99 @@ app.use((err, req, res, next) => {
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
 
-// Get all available voices
+// Voice Storage Configuration - OUR OWN EMPIRE
+const VOICES_STORAGE_DIR = './voices-storage';
+const VOICES_DB_PATH = './voices-db.json';
+
+// Initialize storage directory
+if (!fs.existsSync(VOICES_STORAGE_DIR)) {
+  fs.mkdirSync(VOICES_STORAGE_DIR, { recursive: true });
+}
+
+// Voice Database Helper Functions
+function loadVoicesDB() {
+  try {
+    if (!fs.existsSync(VOICES_DB_PATH)) {
+      fs.writeFileSync(VOICES_DB_PATH, JSON.stringify({ voices: [] }, null, 2));
+    }
+    const data = fs.readFileSync(VOICES_DB_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error loading voices DB:', error);
+    return { voices: [] };
+  }
+}
+
+function saveVoicesDB(db) {
+  try {
+    fs.writeFileSync(VOICES_DB_PATH, JSON.stringify(db, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error saving voices DB:', error);
+    return false;
+  }
+}
+
+// Get all available voices - COMBINES ElevenLabs + Our Stored Voices
 app.get('/api/voices', async (req, res) => {
   try {
+    // Get ElevenLabs voices
     const response = await axios.get(`${ELEVENLABS_BASE_URL}/voices`, {
       headers: {
         'xi-api-key': ELEVENLABS_API_KEY
       }
     });
-    res.json(response.data);
+
+    // Get our locally stored voices
+    const db = loadVoicesDB();
+
+    // Merge both - mark which ones we own
+    const elevenlabsVoices = response.data.voices.map(v => ({
+      ...v,
+      stored_locally: db.voices.some(stored => stored.elevenlabs_voice_id === v.voice_id)
+    }));
+
+    res.json({
+      voices: elevenlabsVoices,
+      locally_stored_count: db.voices.length,
+      total_count: elevenlabsVoices.length
+    });
   } catch (error) {
     console.error('Error fetching voices:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to fetch voices' });
+  }
+});
+
+// Get OUR stored voices only - THE EMPIRE
+app.get('/api/voices/stored', (req, res) => {
+  try {
+    const db = loadVoicesDB();
+    res.json({
+      voices: db.voices,
+      count: db.voices.length,
+      message: 'These are YOUR voices. You own this data.'
+    });
+  } catch (error) {
+    console.error('Error loading stored voices:', error);
+    res.status(500).json({ error: 'Failed to load stored voices' });
+  }
+});
+
+// Get specific stored voice details
+app.get('/api/voices/stored/:voice_id', (req, res) => {
+  try {
+    const { voice_id } = req.params;
+    const db = loadVoicesDB();
+    const voice = db.voices.find(v => v.id === voice_id || v.elevenlabs_voice_id === voice_id);
+
+    if (!voice) {
+      return res.status(404).json({ error: 'Voice not found in local storage' });
+    }
+
+    res.json(voice);
+  } catch (error) {
+    console.error('Error getting voice details:', error);
+    res.status(500).json({ error: 'Failed to get voice details' });
   }
 });
 
@@ -187,7 +268,48 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
 
     console.log('Voice cloned successfully:', response.data.voice_id);
 
-    // Clean up uploaded files
+    // STORE EVERYTHING LOCALLY - BUILD OUR EMPIRE
+    const voiceId = response.data.voice_id;
+    const voiceStoragePath = path.join(VOICES_STORAGE_DIR, voiceId);
+
+    // Create directory for this voice
+    if (!fs.existsSync(voiceStoragePath)) {
+      fs.mkdirSync(voiceStoragePath, { recursive: true });
+    }
+
+    // Save audio samples permanently
+    const savedFiles = [];
+    files.forEach((file, index) => {
+      const savedFilePath = path.join(voiceStoragePath, `sample_${index}_${file.originalname}`);
+      fs.copyFileSync(file.path, savedFilePath);
+      savedFiles.push({
+        filename: `sample_${index}_${file.originalname}`,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype
+      });
+      console.log(`Saved audio sample: ${savedFilePath}`);
+    });
+
+    // Save voice metadata to our database
+    const voiceData = {
+      id: voiceId,
+      name: sanitizedName,
+      description: description?.trim() || '',
+      elevenlabs_voice_id: voiceId,
+      audio_files: savedFiles,
+      created_at: new Date().toISOString(),
+      source: 'cloned',
+      provider: 'elevenlabs'
+    };
+
+    const db = loadVoicesDB();
+    db.voices.push(voiceData);
+    saveVoicesDB(db);
+
+    console.log('Voice stored locally:', voiceId);
+
+    // Clean up temp uploaded files
     files.forEach(file => {
       try {
         fs.unlinkSync(file.path);
@@ -198,8 +320,10 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
 
     res.json({
       success: true,
-      voice_id: response.data.voice_id,
-      message: 'Voice cloned successfully! You can now use it for text-to-speech.'
+      voice_id: voiceId,
+      message: 'Voice cloned and stored successfully! You own this voice data.',
+      stored_locally: true,
+      audio_samples_saved: savedFiles.length
     });
   } catch (error) {
     console.error('Error cloning voice:', {
@@ -232,20 +356,56 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
   }
 });
 
-// Delete a cloned voice
+// Delete a cloned voice - from BOTH ElevenLabs AND our storage
 app.delete('/api/voices/:voice_id', async (req, res) => {
   try {
     const { voice_id } = req.params;
+    const deleteFromElevenlabs = req.query.elevenlabs !== 'false';
+    const deleteFromLocal = req.query.local !== 'false';
 
-    await axios.delete(`${ELEVENLABS_BASE_URL}/voices/${voice_id}`, {
-      headers: {
-        'xi-api-key': ELEVENLABS_API_KEY
+    let deletedFrom = [];
+
+    // Delete from ElevenLabs if requested
+    if (deleteFromElevenlabs) {
+      try {
+        await axios.delete(`${ELEVENLABS_BASE_URL}/voices/${voice_id}`, {
+          headers: {
+            'xi-api-key': ELEVENLABS_API_KEY
+          }
+        });
+        deletedFrom.push('ElevenLabs');
+      } catch (error) {
+        console.error('Error deleting from ElevenLabs:', error.response?.data || error.message);
       }
-    });
+    }
 
-    res.json({ success: true, message: 'Voice deleted successfully' });
+    // Delete from OUR storage - THE EMPIRE
+    if (deleteFromLocal) {
+      const db = loadVoicesDB();
+      const voiceIndex = db.voices.findIndex(v => v.id === voice_id || v.elevenlabs_voice_id === voice_id);
+
+      if (voiceIndex !== -1) {
+        // Delete audio files
+        const voiceStoragePath = path.join(VOICES_STORAGE_DIR, voice_id);
+        if (fs.existsSync(voiceStoragePath)) {
+          fs.rmSync(voiceStoragePath, { recursive: true, force: true });
+          console.log(`Deleted voice storage: ${voiceStoragePath}`);
+        }
+
+        // Remove from database
+        db.voices.splice(voiceIndex, 1);
+        saveVoicesDB(db);
+        deletedFrom.push('Local Storage');
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Voice deleted from: ${deletedFrom.join(', ')}`,
+      deleted_from: deletedFrom
+    });
   } catch (error) {
-    console.error('Error deleting voice:', error.response?.data || error.message);
+    console.error('Error deleting voice:', error);
     res.status(500).json({ error: 'Failed to delete voice' });
   }
 });

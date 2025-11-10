@@ -7,3 +7,5 @@ build/
 .cache/
 uploads/
 .vercel
+voices-storage/
+voices-db.json
