@@ -147,17 +147,27 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
       return res.status(400).json({ error: 'Name and at least one audio file required' });
     }
 
-    // Create FormData for ElevenLabs API
-    const formData = new FormData();
-    formData.append('name', name);
-    if (description) {
-      formData.append('description', description);
+    // Validate and sanitize name - ElevenLabs expects alphanumeric with spaces, hyphens, underscores
+    const sanitizedName = name.trim();
+    if (sanitizedName.length === 0) {
+      return res.status(400).json({ error: 'Voice name cannot be empty' });
+    }
+    if (sanitizedName.length > 100) {
+      return res.status(400).json({ error: 'Voice name is too long (max 100 characters)' });
     }
 
-    // Add files to form data
+    // Create FormData for ElevenLabs API
+    const formData = new FormData();
+    formData.append('name', sanitizedName);
+    if (description && description.trim()) {
+      formData.append('description', description.trim());
+    }
+
+    // Add files to form data - read as buffers for serverless compatibility
     files.forEach((file, index) => {
       console.log(`Adding file ${index + 1}:`, { name: file.originalname, size: file.size, type: file.mimetype });
-      formData.append('files', fs.createReadStream(file.path), {
+      const fileBuffer = fs.readFileSync(file.path);
+      formData.append('files', fileBuffer, {
         filename: file.originalname,
         contentType: file.mimetype
       });
