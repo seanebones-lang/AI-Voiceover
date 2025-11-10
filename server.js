@@ -2289,6 +2289,194 @@ app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (
 const podcastEpisodes = new Map();
 const podcastShows = new Map();
 
+// PRONUNCIATION DICTIONARY - Fix difficult words, names, technical terms
+const pronunciations = new Map();
+
+// Add pronunciation rule
+app.post('/api/pronunciations/add', (req, res) => {
+  const { word, pronunciation, phonetic = null, description = null } = req.body;
+
+  if (!word || !pronunciation) {
+    return res.status(400).json({
+      error: 'word and pronunciation are required',
+      example: {
+        word: 'PostgreSQL',
+        pronunciation: 'post-gres-Q-L',
+        phonetic: 'pəʊstɡrɛs kjuː ɛl',
+        description: 'Database system'
+      }
+    });
+  }
+
+  const id = `pron_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const rule = {
+    id,
+    word: word.toLowerCase(),
+    pronunciation,
+    phonetic: phonetic || null,
+    description: description || null,
+    created_at: new Date().toISOString(),
+    usage_count: 0
+  };
+
+  pronunciations.set(word.toLowerCase(), rule);
+
+  res.json({
+    success: true,
+    pronunciation_id: id,
+    rule: rule
+  });
+});
+
+// Apply pronunciations to text
+function applyPronunciations(text) {
+  let processedText = text;
+
+  pronunciations.forEach((rule, word) => {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    if (regex.test(processedText)) {
+      processedText = processedText.replace(regex, rule.pronunciation);
+      rule.usage_count++;
+    }
+  });
+
+  return processedText;
+}
+
+// List all pronunciations
+app.get('/api/pronunciations', (req, res) => {
+  const allPronunciations = Array.from(pronunciations.values())
+    .sort((a, b) => b.usage_count - a.usage_count);
+
+  res.json({
+    pronunciations: allPronunciations,
+    total_count: allPronunciations.length,
+    most_used: allPronunciations.slice(0, 10).map(p => ({
+      word: p.word,
+      pronunciation: p.pronunciation,
+      usage_count: p.usage_count
+    }))
+  });
+});
+
+// Delete pronunciation
+app.delete('/api/pronunciations/:word', (req, res) => {
+  const { word } = req.params;
+  const wordLower = word.toLowerCase();
+
+  if (!pronunciations.has(wordLower)) {
+    return res.status(404).json({ error: 'Pronunciation not found' });
+  }
+
+  pronunciations.delete(wordLower);
+
+  res.json({
+    success: true,
+    message: `Pronunciation for "${word}" deleted`
+  });
+});
+
+// Bulk add pronunciations
+app.post('/api/pronunciations/bulk', (req, res) => {
+  const { pronunciations: rules } = req.body;
+
+  if (!rules || !Array.isArray(rules)) {
+    return res.status(400).json({
+      error: 'pronunciations array required'
+    });
+  }
+
+  let added = 0;
+
+  rules.forEach(rule => {
+    if (rule.word && rule.pronunciation) {
+      const id = `pron_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const wordLower = rule.word.toLowerCase();
+
+      pronunciations.set(wordLower, {
+        id,
+        word: wordLower,
+        pronunciation: rule.pronunciation,
+        phonetic: rule.phonetic || null,
+        description: rule.description || null,
+        created_at: new Date().toISOString(),
+        usage_count: 0
+      });
+
+      added++;
+    }
+  });
+
+  res.json({
+    success: true,
+    added: added,
+    total: pronunciations.size
+  });
+});
+
+// AUDIO QUALITY PRESETS - Easy quality selection
+const QUALITY_PRESETS = {
+  'ultra': {
+    format: 'flac',
+    bitrate: '320k',
+    sample_rate: 48000,
+    description: 'Lossless quality - Perfect for archival',
+    use_cases: ['Master recordings', 'Archival', 'Professional production']
+  },
+  'high': {
+    format: 'mp3',
+    bitrate: '192k',
+    sample_rate: 44100,
+    description: 'High quality - Great for music and podcasts',
+    use_cases: ['Podcasts', 'Music', 'Professional content']
+  },
+  'standard': {
+    format: 'mp3',
+    bitrate: '128k',
+    sample_rate: 44100,
+    description: 'Standard quality - Good balance of size and quality',
+    use_cases: ['Audiobooks', 'Web content', 'General use']
+  },
+  'low': {
+    format: 'mp3',
+    bitrate: '64k',
+    sample_rate: 22050,
+    description: 'Low quality - Smallest file size',
+    use_cases: ['Voice notes', 'Previews', 'Low bandwidth']
+  },
+  'podcast': {
+    format: 'mp3',
+    bitrate: '128k',
+    sample_rate: 44100,
+    description: 'Optimized for podcast distribution',
+    use_cases: ['Podcasts', 'Spotify', 'Apple Podcasts']
+  },
+  'audiobook': {
+    format: 'm4a',
+    bitrate: '96k',
+    sample_rate: 44100,
+    description: 'Optimized for audiobooks (AAC)',
+    use_cases: ['Audiobooks', 'Audible', 'Long-form narration']
+  },
+  'streaming': {
+    format: 'ogg',
+    bitrate: '96k',
+    sample_rate: 44100,
+    description: 'Optimized for web streaming',
+    use_cases: ['Web players', 'Gaming', 'Real-time applications']
+  }
+};
+
+// Get quality presets
+app.get('/api/quality-presets', (req, res) => {
+  res.json({
+    presets: QUALITY_PRESETS,
+    total_count: Object.keys(QUALITY_PRESETS).length,
+    recommendation: 'Use "podcast" for podcasts, "audiobook" for long-form, "ultra" for archival'
+  });
+});
+
 // WEBHOOK SYSTEM - Integration with Zapier, Make, n8n, etc.
 const webhooks = new Map();
 const webhookEvents = new Map(); // Store recent events
