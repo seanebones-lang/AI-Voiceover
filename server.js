@@ -14,9 +14,10 @@ const PORT = process.env.PORT || 3000;
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = './uploads';
+    // Use /tmp for Vercel serverless environment
+    const uploadDir = process.env.VERCEL ? '/tmp' : './uploads';
     if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
@@ -42,6 +43,24 @@ const upload = multer({
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
+
+// Multer error handling middleware
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error('Multer error:', err);
+    return res.status(400).json({
+      error: err.message === 'Unexpected field'
+        ? 'Invalid file upload format. Please upload audio files only.'
+        : err.message
+    });
+  } else if (err) {
+    console.error('Upload error:', err);
+    return res.status(400).json({
+      error: err.message || 'File upload error'
+    });
+  }
+  next();
+});
 
 // ElevenLabs API Configuration
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -122,6 +141,8 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
     const { name, description } = req.body;
     const files = req.files;
 
+    console.log('Voice clone request:', { name, description, fileCount: files?.length });
+
     if (!name || !files || files.length === 0) {
       return res.status(400).json({ error: 'Name and at least one audio file required' });
     }
@@ -135,12 +156,14 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
 
     // Add files to form data
     files.forEach((file, index) => {
+      console.log(`Adding file ${index + 1}:`, { name: file.originalname, size: file.size, type: file.mimetype });
       formData.append('files', fs.createReadStream(file.path), {
         filename: file.originalname,
         contentType: file.mimetype
       });
     });
 
+    console.log('Sending request to ElevenLabs...');
     const response = await axios.post(
       `${ELEVENLABS_BASE_URL}/voices/add`,
       formData,
@@ -152,9 +175,15 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
       }
     );
 
+    console.log('Voice cloned successfully:', response.data.voice_id);
+
     // Clean up uploaded files
     files.forEach(file => {
-      fs.unlinkSync(file.path);
+      try {
+        fs.unlinkSync(file.path);
+      } catch (err) {
+        console.error('Error deleting temp file:', err);
+      }
     });
 
     res.json({
@@ -163,17 +192,32 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
       message: 'Voice cloned successfully! You can now use it for text-to-speech.'
     });
   } catch (error) {
-    console.error('Error cloning voice:', error.response?.data || error.message);
+    console.error('Error cloning voice:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+
     // Clean up files on error
     if (req.files) {
       req.files.forEach(file => {
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (err) {
+          console.error('Error cleaning up file:', err);
         }
       });
     }
-    res.status(500).json({
-      error: error.response?.data?.detail?.message || 'Failed to clone voice. Make sure audio is clear and 30+ seconds total.'
+
+    const errorMessage = error.response?.data?.detail?.message
+      || error.response?.data?.message
+      || error.message
+      || 'Failed to clone voice. Make sure audio is clear and 30+ seconds total.';
+
+    res.status(error.response?.status || 500).json({
+      error: errorMessage
     });
   }
 });
