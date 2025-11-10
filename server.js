@@ -7,6 +7,7 @@ const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Replicate = require('replicate');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -65,6 +66,11 @@ app.use((err, req, res, next) => {
 // ElevenLabs API Configuration
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
+
+// Replicate API Configuration - OPEN SOURCE TTS
+const replicate = process.env.REPLICATE_API_TOKEN
+  ? new Replicate({ auth: process.env.REPLICATE_API_TOKEN })
+  : null;
 
 // Voice Storage Configuration - OUR OWN EMPIRE
 const VOICES_STORAGE_DIR = process.env.VERCEL ? '/tmp/voices-storage' : './voices-storage';
@@ -298,6 +304,173 @@ app.post('/api/text-to-speech', async (req, res) => {
   } catch (error) {
     console.error('Error generating speech:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to generate speech' });
+  }
+});
+
+// OPEN SOURCE TTS - Coqui XTTS v2 via Replicate (100% FREE & LEGAL)
+app.post('/api/text-to-speech/opensource', async (req, res) => {
+  try {
+    const { text, language = 'en', speaker_url = null, use_cache = true } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    if (!replicate) {
+      return res.status(503).json({
+        error: 'Open source TTS not configured. Add REPLICATE_API_TOKEN to .env',
+        provider: 'replicate/coqui-xtts-v2'
+      });
+    }
+
+    // Create cache key
+    const crypto = require('crypto');
+    const cacheKey = crypto.createHash('md5')
+      .update(`opensource_${text}_${language}_${speaker_url || 'default'}`)
+      .digest('hex');
+    const cachePath = path.join(AUDIO_CACHE_DIR, `${cacheKey}.wav`);
+
+    // Check cache first
+    if (use_cache && fs.existsSync(cachePath)) {
+      console.log(`Open source TTS cache hit: ${cacheKey}`);
+      const cachedAudio = fs.readFileSync(cachePath);
+      res.set({
+        'Content-Type': 'audio/wav',
+        'Content-Disposition': 'attachment; filename="voiceover_opensource.wav"',
+        'X-Cache': 'HIT',
+        'X-Provider': 'coqui-xtts-v2',
+        'X-Cache-Key': cacheKey
+      });
+      return res.send(cachedAudio);
+    }
+
+    console.log('Calling Coqui XTTS v2 via Replicate...');
+
+    // Call Replicate API for Coqui XTTS v2
+    const output = await replicate.run(
+      "lucataco/xtts-v2:684bc3855b37866c0c65add2ff39c78f3dea3f4ff103a436465326e0f438d55e",
+      {
+        input: {
+          text: text,
+          language: language,
+          speaker: speaker_url || "https://replicate.delivery/pbxt/Jt5YHPJqKFgYBjpm2tQlVdCgwvHChNpzFJXdHVL9H6yqVWfa/female.wav"
+        }
+      }
+    );
+
+    // Download the audio from Replicate's URL
+    const audioResponse = await axios.get(output, { responseType: 'arraybuffer' });
+    const audioBuffer = Buffer.from(audioResponse.data);
+
+    // Cache it
+    if (use_cache) {
+      fs.writeFileSync(cachePath, audioBuffer);
+      console.log(`Cached opensource audio: ${cachePath}`);
+    }
+
+    res.set({
+      'Content-Type': 'audio/wav',
+      'Content-Disposition': 'attachment; filename="voiceover_opensource.wav"',
+      'X-Cache': 'MISS',
+      'X-Provider': 'coqui-xtts-v2',
+      'X-Cache-Key': cacheKey
+    });
+    res.send(audioBuffer);
+
+  } catch (error) {
+    console.error('Error with open source TTS:', error);
+    res.status(500).json({
+      error: 'Failed to generate speech with open source TTS',
+      details: error.message,
+      provider: 'coqui-xtts-v2'
+    });
+  }
+});
+
+// Get open source voices library
+app.get('/api/voices/opensource', (req, res) => {
+  try {
+    const voicesData = JSON.parse(fs.readFileSync('./opensource-voices.json', 'utf8'));
+    res.json({
+      ...voicesData,
+      total_count: voicesData.voices.length,
+      message: '100% free, open-source voices. Add your own by providing audio samples!'
+    });
+  } catch (error) {
+    console.error('Error loading opensource voices:', error);
+    res.status(500).json({ error: 'Failed to load opensource voices' });
+  }
+});
+
+// Voice clone with open source - Upload audio and clone instantly
+app.post('/api/clone-voice/opensource', upload.array('files', 5), async (req, res) => {
+  try {
+    const { name, description, language = 'en' } = req.body;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'At least one audio file required for voice cloning' });
+    }
+
+    if (!replicate) {
+      return res.status(503).json({
+        error: 'Open source voice cloning not configured. Add REPLICATE_API_TOKEN to .env'
+      });
+    }
+
+    // For now, just store the voice sample locally
+    // In production, you'd upload to a CDN/storage service
+    const voiceId = `opensource_${Date.now()}`;
+    const voiceStoragePath = path.join(VOICES_STORAGE_DIR, voiceId);
+
+    if (!fs.existsSync(voiceStoragePath)) {
+      fs.mkdirSync(voiceStoragePath, { recursive: true });
+    }
+
+    // Save first audio file as the speaker sample
+    const speakerSamplePath = path.join(voiceStoragePath, 'speaker_sample.wav');
+    fs.copyFileSync(files[0].path, speakerSamplePath);
+
+    // Save to database
+    const db = loadVoicesDB();
+    const voiceData = {
+      id: voiceId,
+      name: name || `Custom Voice ${db.voices.length + 1}`,
+      description: description || 'Custom cloned voice',
+      language: language,
+      speaker_url: `file://${speakerSamplePath}`, // In production, use public URL
+      provider: 'coqui-xtts-v2',
+      source: 'cloned_opensource',
+      free: true,
+      created_at: new Date().toISOString()
+    };
+
+    db.voices.push(voiceData);
+    saveVoicesDB(db);
+
+    // Clean up temp files
+    files.forEach(file => {
+      try {
+        fs.unlinkSync(file.path);
+      } catch (err) {
+        console.error('Error deleting temp file:', err);
+      }
+    });
+
+    res.json({
+      success: true,
+      voice_id: voiceId,
+      message: 'Voice cloned with open source TTS! 100% free, no vendor lock-in.',
+      provider: 'coqui-xtts-v2',
+      note: 'To use this voice, upload the speaker sample to a public URL and update the voice record.'
+    });
+
+  } catch (error) {
+    console.error('Error cloning opensource voice:', error);
+    res.status(500).json({
+      error: 'Failed to clone voice with open source TTS',
+      details: error.message
+    });
   }
 });
 
