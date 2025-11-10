@@ -2283,6 +2283,377 @@ app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (
   res.json({received: true});
 });
 
+// PODCAST AUTOMATION PLATFORM - Professional podcast production
+
+// Store podcast episodes
+const podcastEpisodes = new Map();
+const podcastShows = new Map();
+
+// Create podcast show
+app.post('/api/podcast/create-show', async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      author,
+      email,
+      category = 'Technology',
+      language = 'en',
+      explicit = false,
+      cover_image_url
+    } = req.body;
+
+    if (!title || !description || !author) {
+      return res.status(400).json({
+        error: 'title, description, and author are required'
+      });
+    }
+
+    const showId = `show_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const show = {
+      id: showId,
+      title,
+      description,
+      author,
+      email,
+      category,
+      language,
+      explicit,
+      cover_image_url: cover_image_url || null,
+      episodes: [],
+      rss_url: `/api/podcast/${showId}/rss`,
+      created_at: new Date().toISOString()
+    };
+
+    podcastShows.set(showId, show);
+
+    res.json({
+      success: true,
+      show_id: showId,
+      show: show,
+      rss_url: `${req.protocol}://${req.get('host')}/api/podcast/${showId}/rss`
+    });
+
+  } catch (error) {
+    console.error('Error creating podcast show:', error);
+    res.status(500).json({ error: 'Failed to create podcast show' });
+  }
+});
+
+// Generate podcast episode with professional features
+app.post('/api/podcast/create-episode', async (req, res) => {
+  try {
+    const {
+      show_id,
+      title,
+      description,
+      messages, // Conversation messages
+      intro_music_url,
+      outro_music_url,
+      intro_text,
+      outro_text,
+      intro_voice_id,
+      outro_voice_id,
+      pause_duration = 0.5,
+      music_volume = 0.3, // Background music volume (0-1)
+      format = 'mp3'
+    } = req.body;
+
+    if (!show_id || !title || !messages) {
+      return res.status(400).json({
+        error: 'show_id, title, and messages are required'
+      });
+    }
+
+    const show = podcastShows.get(show_id);
+    if (!show) {
+      return res.status(404).json({ error: 'Podcast show not found' });
+    }
+
+    console.log(`Generating podcast episode: ${title}`);
+
+    const tempDir = process.env.VERCEL ? '/tmp' : './temp-podcasts';
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const episodeId = `ep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const audioFiles = [];
+
+    // Generate intro if provided
+    if (intro_text && intro_voice_id) {
+      console.log('Generating intro...');
+      const { audioBuffer } = await generateWithElevenLabs(
+        intro_text,
+        intro_voice_id,
+        0.6,
+        0.85,
+        0.4,
+        'mp3',
+        true
+      );
+      const introPath = path.join(tempDir, `${episodeId}_intro.mp3`);
+      fs.writeFileSync(introPath, audioBuffer);
+      audioFiles.push(introPath);
+    }
+
+    // Add intro music if provided
+    if (intro_music_url) {
+      console.log('Downloading intro music...');
+      const musicResponse = await axios.get(intro_music_url, { responseType: 'arraybuffer' });
+      const musicPath = path.join(tempDir, `${episodeId}_intro_music.mp3`);
+      fs.writeFileSync(musicPath, Buffer.from(musicResponse.data));
+      audioFiles.push(musicPath);
+    }
+
+    // Generate main conversation
+    console.log(`Generating conversation with ${messages.length} messages...`);
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      let audioBuffer;
+
+      if (msg.voice_id) {
+        ({ audioBuffer } = await generateWithElevenLabs(
+          msg.text,
+          msg.voice_id,
+          msg.stability || 0.5,
+          msg.similarity_boost || 0.85,
+          msg.style || 0.3,
+          'mp3',
+          true
+        ));
+      } else if (msg.speaker_url) {
+        ({ audioBuffer } = await generateWithOpensource(
+          msg.text,
+          msg.language || 'en',
+          msg.speaker_url,
+          'mp3',
+          true
+        ));
+      } else {
+        throw new Error(`Message ${i} missing voice_id or speaker_url`);
+      }
+
+      const msgPath = path.join(tempDir, `${episodeId}_msg_${i}.mp3`);
+      fs.writeFileSync(msgPath, audioBuffer);
+      audioFiles.push(msgPath);
+    }
+
+    // Generate outro if provided
+    if (outro_text && outro_voice_id) {
+      console.log('Generating outro...');
+      const { audioBuffer } = await generateWithElevenLabs(
+        outro_text,
+        outro_voice_id,
+        0.6,
+        0.85,
+        0.4,
+        'mp3',
+        true
+      );
+      const outroPath = path.join(tempDir, `${episodeId}_outro.mp3`);
+      fs.writeFileSync(outroPath, audioBuffer);
+      audioFiles.push(outroPath);
+    }
+
+    // Add outro music if provided
+    if (outro_music_url) {
+      console.log('Downloading outro music...');
+      const musicResponse = await axios.get(outro_music_url, { responseType: 'arraybuffer' });
+      const musicPath = path.join(tempDir, `${episodeId}_outro_music.mp3`);
+      fs.writeFileSync(musicPath, Buffer.from(musicResponse.data));
+      audioFiles.push(musicPath);
+    }
+
+    console.log('Merging all audio files...');
+
+    // Create silence for pauses
+    const silencePath = path.join(tempDir, `${episodeId}_silence.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input('anullsrc=r=44100:cl=stereo')
+        .inputFormat('lavfi')
+        .duration(pause_duration)
+        .audioCodec('libmp3lame')
+        .on('end', resolve)
+        .on('error', reject)
+        .save(silencePath);
+    });
+
+    // Create concat file
+    const concatListPath = path.join(tempDir, `${episodeId}_concat.txt`);
+    let concatContent = '';
+    audioFiles.forEach((file, index) => {
+      concatContent += `file '${file}'\n`;
+      if (index < audioFiles.length - 1) {
+        concatContent += `file '${silencePath}'\n`;
+      }
+    });
+    fs.writeFileSync(concatListPath, concatContent);
+
+    // Merge all audio
+    const outputPath = path.join(tempDir, `${episodeId}_final.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .audioCodec('libmp3lame')
+        .audioBitrate('128k') // Podcast-optimized bitrate
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    });
+
+    // Read final audio
+    let finalAudio = fs.readFileSync(outputPath);
+
+    // Get audio duration
+    const stats = fs.statSync(outputPath);
+    const durationSeconds = Math.round(stats.size / 16000); // Rough estimate
+
+    // Convert format if needed
+    if (format !== 'mp3') {
+      finalAudio = await convertAudioFormat(finalAudio, 'mp3', format);
+    }
+
+    // Clean up temp files
+    audioFiles.forEach(file => {
+      try { fs.unlinkSync(file); } catch (e) {}
+    });
+    try { fs.unlinkSync(silencePath); } catch (e) {}
+    try { fs.unlinkSync(concatListPath); } catch (e) {}
+    try { fs.unlinkSync(outputPath); } catch (e) {}
+
+    // Store episode metadata
+    const episode = {
+      id: episodeId,
+      show_id,
+      title,
+      description: description || '',
+      duration: durationSeconds,
+      format,
+      speaker_count: messages.length,
+      has_intro: !!intro_text,
+      has_outro: !!outro_text,
+      has_music: !!(intro_music_url || outro_music_url),
+      published_at: new Date().toISOString(),
+      download_url: `/api/podcast/episode/${episodeId}/download`
+    };
+
+    podcastEpisodes.set(episodeId, {
+      ...episode,
+      audio: finalAudio
+    });
+
+    // Add episode to show
+    show.episodes.push(episode);
+
+    console.log(`Podcast episode generated: ${title} (${durationSeconds}s)`);
+
+    res.json({
+      success: true,
+      episode: episode,
+      download_url: `${req.protocol}://${req.get('host')}/api/podcast/episode/${episodeId}/download`,
+      rss_url: `${req.protocol}://${req.get('host')}/api/podcast/${show_id}/rss`
+    });
+
+  } catch (error) {
+    console.error('Error creating podcast episode:', error);
+    res.status(500).json({
+      error: 'Failed to create podcast episode',
+      details: error.message
+    });
+  }
+});
+
+// Download podcast episode
+app.get('/api/podcast/episode/:episode_id/download', (req, res) => {
+  const { episode_id } = req.params;
+  const episode = podcastEpisodes.get(episode_id);
+
+  if (!episode) {
+    return res.status(404).json({ error: 'Episode not found' });
+  }
+
+  res.set({
+    'Content-Type': AUDIO_FORMATS[episode.format].contentType,
+    'Content-Disposition': `attachment; filename="episode_${episode_id}.${episode.format}"`
+  });
+  res.send(episode.audio);
+});
+
+// Generate RSS feed for podcast
+app.get('/api/podcast/:show_id/rss', (req, res) => {
+  const { show_id } = req.params;
+  const show = podcastShows.get(show_id);
+
+  if (!show) {
+    return res.status(404).send('Podcast show not found');
+  }
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+  // Build RSS 2.0 feed with iTunes tags
+  const rss = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>${escapeXml(show.title)}</title>
+    <description>${escapeXml(show.description)}</description>
+    <link>${baseUrl}/api/podcast/${show_id}/rss</link>
+    <language>${show.language}</language>
+    <copyright>Copyright ${new Date().getFullYear()} ${escapeXml(show.author)}</copyright>
+    <itunes:author>${escapeXml(show.author)}</itunes:author>
+    <itunes:summary>${escapeXml(show.description)}</itunes:summary>
+    <itunes:owner>
+      <itunes:name>${escapeXml(show.author)}</itunes:name>
+      <itunes:email>${escapeXml(show.email || 'podcast@example.com')}</itunes:email>
+    </itunes:owner>
+    <itunes:explicit>${show.explicit ? 'yes' : 'no'}</itunes:explicit>
+    <itunes:category text="${escapeXml(show.category)}"/>
+    ${show.cover_image_url ? `<itunes:image href="${escapeXml(show.cover_image_url)}"/>` : ''}
+    ${show.episodes.map(ep => `
+    <item>
+      <title>${escapeXml(ep.title)}</title>
+      <description>${escapeXml(ep.description)}</description>
+      <pubDate>${new Date(ep.published_at).toUTCString()}</pubDate>
+      <enclosure url="${baseUrl}/api/podcast/episode/${ep.id}/download" type="audio/mpeg"/>
+      <itunes:duration>${ep.duration}</itunes:duration>
+      <itunes:summary>${escapeXml(ep.description)}</itunes:summary>
+      <guid>${baseUrl}/api/podcast/episode/${ep.id}/download</guid>
+    </item>
+    `).join('')}
+  </channel>
+</rss>`;
+
+  res.set('Content-Type', 'application/rss+xml');
+  res.send(rss);
+});
+
+// Helper function to escape XML
+function escapeXml(unsafe) {
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Get all podcast shows
+app.get('/api/podcast/shows', (req, res) => {
+  const shows = Array.from(podcastShows.values()).map(show => ({
+    ...show,
+    episode_count: show.episodes.length
+  }));
+
+  res.json({
+    shows: shows,
+    total_count: shows.length
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
