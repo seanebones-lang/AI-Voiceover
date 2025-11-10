@@ -527,6 +527,74 @@ app.get('/api/formats', (req, res) => {
   });
 });
 
+// ANALYTICS TRACKING - In-memory storage (in production, use database)
+const analytics = {
+  total_requests: 0,
+  cache_hits: 0,
+  cache_misses: 0,
+  providers: {
+    elevenlabs: 0,
+    'coqui-xtts-v2': 0
+  },
+  formats: {
+    mp3: 0,
+    wav: 0,
+    ogg: 0,
+    flac: 0,
+    m4a: 0
+  },
+  emotions: {},
+  total_characters: 0,
+  total_audio_seconds: 0,
+  batch_requests: 0,
+  conversation_requests: 0,
+  smart_routing_requests: 0,
+  voices_cloned: 0,
+  started_at: new Date().toISOString()
+};
+
+function trackAnalytics(data) {
+  analytics.total_requests++;
+
+  if (data.cache_hit) {
+    analytics.cache_hits++;
+  } else {
+    analytics.cache_misses++;
+  }
+
+  if (data.provider) {
+    analytics.providers[data.provider] = (analytics.providers[data.provider] || 0) + 1;
+  }
+
+  if (data.format) {
+    analytics.formats[data.format] = (analytics.formats[data.format] || 0) + 1;
+  }
+
+  if (data.emotion) {
+    analytics.emotions[data.emotion] = (analytics.emotions[data.emotion] || 0) + 1;
+  }
+
+  if (data.text_length) {
+    analytics.total_characters += data.text_length;
+  }
+
+  if (data.batch) {
+    analytics.batch_requests++;
+  }
+
+  if (data.conversation) {
+    analytics.conversation_requests++;
+  }
+
+  if (data.smart_routing) {
+    analytics.smart_routing_requests++;
+  }
+
+  if (data.voice_cloned) {
+    analytics.voices_cloned++;
+  }
+}
+
 // BATCH PROCESSING SYSTEM - Process multiple texts at once
 const batchJobs = new Map(); // In-memory storage (in production, use Redis or database)
 
@@ -1669,19 +1737,447 @@ app.post('/api/conversation', async (req, res) => {
   }
 });
 
-// Get voice settings presets
+// EMOTION & STYLE CONTROLS - Comprehensive voice presets
 app.get('/api/presets', (req, res) => {
   const presets = {
-    'excited': { stability: 0.3, similarity_boost: 0.75, style: 0.8, description: 'High energy and enthusiastic' },
-    'calm': { stability: 0.7, similarity_boost: 0.85, style: 0.2, description: 'Relaxed and soothing' },
-    'serious': { stability: 0.8, similarity_boost: 0.9, style: 0.1, description: 'Professional and formal' },
-    'dramatic': { stability: 0.4, similarity_boost: 0.8, style: 0.9, description: 'Theatrical and expressive' },
-    'whisper': { stability: 0.5, similarity_boost: 0.95, style: 0.5, description: 'Soft and intimate' },
-    'angry': { stability: 0.3, similarity_boost: 0.7, style: 0.9, description: 'Intense and forceful' },
-    'happy': { stability: 0.4, similarity_boost: 0.8, style: 0.7, description: 'Cheerful and upbeat' },
-    'sad': { stability: 0.6, similarity_boost: 0.85, style: 0.4, description: 'Melancholic and slow' }
+    // Basic Emotions
+    'neutral': {
+      stability: 0.5,
+      similarity_boost: 0.85,
+      style: 0.3,
+      description: 'Balanced and natural',
+      category: 'emotion',
+      use_cases: ['General narration', 'Balanced content']
+    },
+    'happy': {
+      stability: 0.4,
+      similarity_boost: 0.8,
+      style: 0.7,
+      description: 'Cheerful and upbeat',
+      category: 'emotion',
+      use_cases: ['Positive announcements', 'Celebrations', 'Marketing']
+    },
+    'sad': {
+      stability: 0.6,
+      similarity_boost: 0.85,
+      style: 0.4,
+      description: 'Melancholic and somber',
+      category: 'emotion',
+      use_cases: ['Emotional stories', 'Sympathetic content']
+    },
+    'angry': {
+      stability: 0.3,
+      similarity_boost: 0.7,
+      style: 0.9,
+      description: 'Intense and forceful',
+      category: 'emotion',
+      use_cases: ['Conflict scenes', 'Confrontational dialogue']
+    },
+    'excited': {
+      stability: 0.3,
+      similarity_boost: 0.75,
+      style: 0.8,
+      description: 'High energy and enthusiastic',
+      category: 'emotion',
+      use_cases: ['Sports commentary', 'Hype content', 'Promotions']
+    },
+    'fearful': {
+      stability: 0.4,
+      similarity_boost: 0.75,
+      style: 0.7,
+      description: 'Anxious and tense',
+      category: 'emotion',
+      use_cases: ['Thriller narration', 'Suspenseful content']
+    },
+    'surprised': {
+      stability: 0.35,
+      similarity_boost: 0.8,
+      style: 0.75,
+      description: 'Shocked and amazed',
+      category: 'emotion',
+      use_cases: ['Plot twists', 'Reveal moments']
+    },
+    'disgusted': {
+      stability: 0.5,
+      similarity_boost: 0.75,
+      style: 0.6,
+      description: 'Repulsed and disdainful',
+      category: 'emotion',
+      use_cases: ['Negative reviews', 'Critical commentary']
+    },
+
+    // Speaking Styles
+    'calm': {
+      stability: 0.7,
+      similarity_boost: 0.85,
+      style: 0.2,
+      description: 'Relaxed and soothing',
+      category: 'style',
+      use_cases: ['Meditation', 'ASMR', 'Bedtime stories']
+    },
+    'serious': {
+      stability: 0.8,
+      similarity_boost: 0.9,
+      style: 0.1,
+      description: 'Professional and formal',
+      category: 'style',
+      use_cases: ['News', 'Corporate content', 'Documentation']
+    },
+    'dramatic': {
+      stability: 0.4,
+      similarity_boost: 0.8,
+      style: 0.9,
+      description: 'Theatrical and expressive',
+      category: 'style',
+      use_cases: ['Movie trailers', 'Dramatic readings']
+    },
+    'whisper': {
+      stability: 0.5,
+      similarity_boost: 0.95,
+      style: 0.5,
+      description: 'Soft and intimate',
+      category: 'style',
+      use_cases: ['ASMR', 'Secrets', 'Intimate moments']
+    },
+    'shouting': {
+      stability: 0.2,
+      similarity_boost: 0.7,
+      style: 0.95,
+      description: 'Loud and emphatic',
+      category: 'style',
+      use_cases: ['Action scenes', 'Urgent announcements']
+    },
+    'conversational': {
+      stability: 0.5,
+      similarity_boost: 0.85,
+      style: 0.5,
+      description: 'Natural and casual',
+      category: 'style',
+      use_cases: ['Podcasts', 'Casual content', 'Vlogs']
+    },
+    'storytelling': {
+      stability: 0.55,
+      similarity_boost: 0.82,
+      style: 0.65,
+      description: 'Engaging narrative voice',
+      category: 'style',
+      use_cases: ['Audiobooks', 'Story narration']
+    },
+    'authoritative': {
+      stability: 0.75,
+      similarity_boost: 0.88,
+      style: 0.3,
+      description: 'Commanding and confident',
+      category: 'style',
+      use_cases: ['Leadership content', 'Instructions', 'Tutorials']
+    },
+    'friendly': {
+      stability: 0.45,
+      similarity_boost: 0.83,
+      style: 0.6,
+      description: 'Warm and approachable',
+      category: 'style',
+      use_cases: ['Customer service', 'Greetings', 'Social content']
+    },
+    'mysterious': {
+      stability: 0.6,
+      similarity_boost: 0.8,
+      style: 0.7,
+      description: 'Enigmatic and intriguing',
+      category: 'style',
+      use_cases: ['Mystery stories', 'Suspense', 'Teasers']
+    },
+
+    // Content-Specific Presets
+    'news_anchor': {
+      stability: 0.8,
+      similarity_boost: 0.9,
+      style: 0.2,
+      description: 'Clear, professional news delivery',
+      category: 'content',
+      use_cases: ['News broadcasts', 'Current events']
+    },
+    'audiobook': {
+      stability: 0.6,
+      similarity_boost: 0.85,
+      style: 0.6,
+      description: 'Engaging long-form narration',
+      category: 'content',
+      use_cases: ['Audiobooks', 'Long-form content']
+    },
+    'meditation': {
+      stability: 0.75,
+      similarity_boost: 0.9,
+      style: 0.15,
+      description: 'Ultra-calm and peaceful',
+      category: 'content',
+      use_cases: ['Meditation guides', 'Relaxation']
+    },
+    'commercial': {
+      stability: 0.4,
+      similarity_boost: 0.8,
+      style: 0.75,
+      description: 'Persuasive and energetic',
+      category: 'content',
+      use_cases: ['Advertisements', 'Sales', 'Marketing']
+    },
+    'podcast_host': {
+      stability: 0.5,
+      similarity_boost: 0.83,
+      style: 0.55,
+      description: 'Engaging podcast personality',
+      category: 'content',
+      use_cases: ['Podcasts', 'Interviews', 'Discussions']
+    },
+    'documentary': {
+      stability: 0.65,
+      similarity_boost: 0.87,
+      style: 0.4,
+      description: 'Informative and authoritative',
+      category: 'content',
+      use_cases: ['Documentaries', 'Educational content']
+    },
+    'gaming': {
+      stability: 0.35,
+      similarity_boost: 0.78,
+      style: 0.8,
+      description: 'Energetic gaming commentary',
+      category: 'content',
+      use_cases: ['Gaming videos', 'Live streams']
+    },
+    'children': {
+      stability: 0.4,
+      similarity_boost: 0.85,
+      style: 0.7,
+      description: 'Playful and animated',
+      category: 'content',
+      use_cases: ['Children\'s content', 'Educational kids']
+    }
   };
-  res.json(presets);
+
+  res.json({
+    presets: presets,
+    total_count: Object.keys(presets).length,
+    categories: {
+      emotion: 'Emotional states and feelings',
+      style: 'Speaking styles and delivery methods',
+      content: 'Optimized for specific content types'
+    },
+    usage_note: 'Apply presets to any TTS endpoint by using the preset name or copying the stability/similarity_boost/style values'
+  });
+});
+
+// Apply emotion/style preset to text
+app.post('/api/text-to-speech/with-emotion', async (req, res) => {
+  try {
+    const {
+      text,
+      voice_id,
+      emotion = 'neutral', // Preset name
+      format = 'mp3',
+      use_cache = true,
+      provider = 'auto'
+    } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    // Load presets
+    const presets = {
+      'neutral': { stability: 0.5, similarity_boost: 0.85, style: 0.3 },
+      'happy': { stability: 0.4, similarity_boost: 0.8, style: 0.7 },
+      'sad': { stability: 0.6, similarity_boost: 0.85, style: 0.4 },
+      'angry': { stability: 0.3, similarity_boost: 0.7, style: 0.9 },
+      'excited': { stability: 0.3, similarity_boost: 0.75, style: 0.8 },
+      'calm': { stability: 0.7, similarity_boost: 0.85, style: 0.2 },
+      'serious': { stability: 0.8, similarity_boost: 0.9, style: 0.1 },
+      'dramatic': { stability: 0.4, similarity_boost: 0.8, style: 0.9 },
+      'whisper': { stability: 0.5, similarity_boost: 0.95, style: 0.5 },
+      'shouting': { stability: 0.2, similarity_boost: 0.7, style: 0.95 },
+      'conversational': { stability: 0.5, similarity_boost: 0.85, style: 0.5 },
+      'storytelling': { stability: 0.55, similarity_boost: 0.82, style: 0.65 },
+      'authoritative': { stability: 0.75, similarity_boost: 0.88, style: 0.3 },
+      'friendly': { stability: 0.45, similarity_boost: 0.83, style: 0.6 },
+      'mysterious': { stability: 0.6, similarity_boost: 0.8, style: 0.7 },
+      'fearful': { stability: 0.4, similarity_boost: 0.75, style: 0.7 },
+      'surprised': { stability: 0.35, similarity_boost: 0.8, style: 0.75 },
+      'disgusted': { stability: 0.5, similarity_boost: 0.75, style: 0.6 },
+      'news_anchor': { stability: 0.8, similarity_boost: 0.9, style: 0.2 },
+      'audiobook': { stability: 0.6, similarity_boost: 0.85, style: 0.6 },
+      'meditation': { stability: 0.75, similarity_boost: 0.9, style: 0.15 },
+      'commercial': { stability: 0.4, similarity_boost: 0.8, style: 0.75 },
+      'podcast_host': { stability: 0.5, similarity_boost: 0.83, style: 0.55 },
+      'documentary': { stability: 0.65, similarity_boost: 0.87, style: 0.4 },
+      'gaming': { stability: 0.35, similarity_boost: 0.78, style: 0.8 },
+      'children': { stability: 0.4, similarity_boost: 0.85, style: 0.7 }
+    };
+
+    const preset = presets[emotion];
+    if (!preset) {
+      return res.status(400).json({
+        error: `Invalid emotion preset. Available: ${Object.keys(presets).join(', ')}`
+      });
+    }
+
+    const outputFormat = format.toLowerCase();
+    if (!AUDIO_FORMATS[outputFormat]) {
+      return res.status(400).json({
+        error: `Invalid format. Supported formats: ${Object.keys(AUDIO_FORMATS).join(', ')}`
+      });
+    }
+
+    console.log(`Generating speech with ${emotion} emotion...`);
+
+    let audioBuffer, cacheKey, cachePath, cacheHit;
+
+    // Use smart routing with emotion preset
+    if (provider === 'auto' || provider === 'elevenlabs') {
+      if (!voice_id) {
+        return res.status(400).json({ error: 'voice_id required for ElevenLabs' });
+      }
+      ({ audioBuffer, cacheKey, cachePath, cacheHit } = await generateWithElevenLabs(
+        text,
+        voice_id,
+        preset.stability,
+        preset.similarity_boost,
+        preset.style,
+        outputFormat,
+        use_cache
+      ));
+    } else {
+      return res.status(400).json({
+        error: 'Emotion presets currently only supported for ElevenLabs provider'
+      });
+    }
+
+    res.set({
+      'Content-Type': AUDIO_FORMATS[outputFormat].contentType,
+      'Content-Disposition': `attachment; filename="voiceover_${emotion}.${outputFormat}"`,
+      'X-Cache': cacheHit ? 'HIT' : 'MISS',
+      'X-Emotion': emotion,
+      'X-Stability': preset.stability,
+      'X-Similarity-Boost': preset.similarity_boost,
+      'X-Style': preset.style,
+      'X-Format': outputFormat
+    });
+    res.send(audioBuffer);
+
+  } catch (error) {
+    console.error('Error generating speech with emotion:', error);
+    res.status(500).json({
+      error: 'Failed to generate speech with emotion',
+      details: error.message
+    });
+  }
+});
+
+// ANALYTICS DASHBOARD - Usage statistics and insights
+app.get('/api/analytics', (req, res) => {
+  const now = new Date();
+  const startedAt = new Date(analytics.started_at);
+  const uptimeMs = now - startedAt;
+  const uptimeHours = uptimeMs / (1000 * 60 * 60);
+
+  const cacheHitRate = analytics.total_requests > 0
+    ? ((analytics.cache_hits / analytics.total_requests) * 100).toFixed(2)
+    : 0;
+
+  // Calculate cost savings (assuming $0.30 per 1000 chars for ElevenLabs)
+  const elevenLabsCost = analytics.providers.elevenlabs * 0.0003; // Rough estimate
+  const cacheSavings = analytics.cache_hits * 0.0003; // Saved API calls
+
+  // Top formats
+  const sortedFormats = Object.entries(analytics.formats)
+    .sort(([,a], [,b]) => b - a)
+    .map(([format, count]) => ({ format, count, percentage: ((count / analytics.total_requests) * 100).toFixed(1) }));
+
+  // Top emotions
+  const sortedEmotions = Object.entries(analytics.emotions)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 10)
+    .map(([emotion, count]) => ({ emotion, count }));
+
+  res.json({
+    overview: {
+      total_requests: analytics.total_requests,
+      cache_hit_rate: `${cacheHitRate}%`,
+      cache_hits: analytics.cache_hits,
+      cache_misses: analytics.cache_misses,
+      uptime_hours: uptimeHours.toFixed(2),
+      started_at: analytics.started_at
+    },
+    providers: {
+      elevenlabs: {
+        requests: analytics.providers.elevenlabs,
+        percentage: analytics.total_requests > 0
+          ? ((analytics.providers.elevenlabs / analytics.total_requests) * 100).toFixed(1)
+          : 0,
+        estimated_cost: `$${elevenLabsCost.toFixed(4)}`
+      },
+      opensource: {
+        requests: analytics.providers['coqui-xtts-v2'] || 0,
+        percentage: analytics.total_requests > 0
+          ? (((analytics.providers['coqui-xtts-v2'] || 0) / analytics.total_requests) * 100).toFixed(1)
+          : 0,
+        estimated_cost: '$0.0000 (Free!)'
+      }
+    },
+    formats: sortedFormats,
+    emotions: {
+      top_emotions: sortedEmotions,
+      total_emotion_requests: Object.values(analytics.emotions).reduce((a, b) => a + b, 0)
+    },
+    content: {
+      total_characters: analytics.total_characters,
+      avg_characters_per_request: analytics.total_requests > 0
+        ? Math.round(analytics.total_characters / analytics.total_requests)
+        : 0
+    },
+    features: {
+      batch_requests: analytics.batch_requests,
+      conversation_requests: analytics.conversation_requests,
+      smart_routing_requests: analytics.smart_routing_requests,
+      voices_cloned: analytics.voices_cloned
+    },
+    cost_analysis: {
+      estimated_total_cost: `$${elevenLabsCost.toFixed(4)}`,
+      cache_savings: `$${cacheSavings.toFixed(4)}`,
+      savings_percentage: analytics.total_requests > 0
+        ? `${((analytics.cache_hits / analytics.total_requests) * 100).toFixed(1)}%`
+        : '0%',
+      note: 'Cost estimates based on $0.30 per 1000 characters for ElevenLabs'
+    },
+    insights: [
+      cacheHitRate > 50 ? '🎯 Great cache utilization!' : '💡 Consider caching more requests',
+      analytics.providers['coqui-xtts-v2'] > analytics.providers.elevenlabs
+        ? '💰 Excellent cost optimization with open-source!' : '💡 Try using more open-source TTS to save costs',
+      analytics.total_requests > 100 ? '🚀 High usage detected!' : '📈 Building momentum',
+      analytics.voices_cloned > 0 ? `🎤 ${analytics.voices_cloned} custom voices created!` : '💡 Try voice cloning for unique sounds'
+    ]
+  });
+});
+
+// Reset analytics (admin only - in production, add authentication)
+app.post('/api/analytics/reset', (req, res) => {
+  analytics.total_requests = 0;
+  analytics.cache_hits = 0;
+  analytics.cache_misses = 0;
+  analytics.providers = { elevenlabs: 0, 'coqui-xtts-v2': 0 };
+  analytics.formats = { mp3: 0, wav: 0, ogg: 0, flac: 0, m4a: 0 };
+  analytics.emotions = {};
+  analytics.total_characters = 0;
+  analytics.total_audio_seconds = 0;
+  analytics.batch_requests = 0;
+  analytics.conversation_requests = 0;
+  analytics.smart_routing_requests = 0;
+  analytics.voices_cloned = 0;
+  analytics.started_at = new Date().toISOString();
+
+  res.json({
+    success: true,
+    message: 'Analytics reset successfully'
+  });
 });
 
 // Stripe: Get publishable key
