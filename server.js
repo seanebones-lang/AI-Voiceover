@@ -2289,6 +2289,286 @@ app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (
 const podcastEpisodes = new Map();
 const podcastShows = new Map();
 
+// WEBHOOK SYSTEM - Integration with Zapier, Make, n8n, etc.
+const webhooks = new Map();
+const webhookEvents = new Map(); // Store recent events
+
+// Supported webhook events
+const WEBHOOK_EVENTS = {
+  'tts.completed': 'Triggered when text-to-speech generation completes',
+  'voice.cloned': 'Triggered when a new voice is cloned',
+  'batch.completed': 'Triggered when a batch job completes',
+  'conversation.created': 'Triggered when a conversation is generated',
+  'podcast.episode.created': 'Triggered when a podcast episode is created',
+  'cache.hit': 'Triggered on cache hits (optional, high volume)',
+  'error.occurred': 'Triggered when an error occurs'
+};
+
+// Register webhook
+app.post('/api/webhooks/register', (req, res) => {
+  const { url, events, secret } = req.body;
+
+  if (!url || !events || !Array.isArray(events)) {
+    return res.status(400).json({
+      error: 'url and events array required',
+      example: {
+        url: 'https://your-server.com/webhook',
+        events: ['tts.completed', 'voice.cloned'],
+        secret: 'optional_secret_for_verification'
+      }
+    });
+  }
+
+  // Validate events
+  const invalidEvents = events.filter(e => !WEBHOOK_EVENTS[e]);
+  if (invalidEvents.length > 0) {
+    return res.status(400).json({
+      error: `Invalid events: ${invalidEvents.join(', ')}`,
+      supported_events: Object.keys(WEBHOOK_EVENTS)
+    });
+  }
+
+  const webhookId = `wh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const webhook = {
+    id: webhookId,
+    url,
+    events,
+    secret: secret || null,
+    active: true,
+    created_at: new Date().toISOString(),
+    total_calls: 0,
+    last_called: null,
+    failures: 0
+  };
+
+  webhooks.set(webhookId, webhook);
+
+  res.json({
+    success: true,
+    webhook_id: webhookId,
+    webhook: webhook,
+    test_url: `/api/webhooks/${webhookId}/test`
+  });
+});
+
+// Trigger webhook (internal function)
+async function triggerWebhook(eventType, data) {
+  const relevantWebhooks = Array.from(webhooks.values()).filter(
+    wh => wh.active && wh.events.includes(eventType)
+  );
+
+  if (relevantWebhooks.length === 0) return;
+
+  const eventId = `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const eventData = {
+    id: eventId,
+    event: eventType,
+    timestamp: new Date().toISOString(),
+    data: data
+  };
+
+  // Store event for history
+  webhookEvents.set(eventId, eventData);
+
+  // Trigger all relevant webhooks
+  for (const webhook of relevantWebhooks) {
+    try {
+      const payload = {
+        ...eventData,
+        webhook_id: webhook.id
+      };
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'AI-VoiceOver-Webhooks/1.0'
+      };
+
+      // Add signature if secret provided
+      if (webhook.secret) {
+        const crypto = require('crypto');
+        const signature = crypto
+          .createHmac('sha256', webhook.secret)
+          .update(JSON.stringify(payload))
+          .digest('hex');
+        headers['X-Webhook-Signature'] = signature;
+      }
+
+      const response = await axios.post(webhook.url, payload, {
+        headers,
+        timeout: 5000 // 5 second timeout
+      });
+
+      webhook.total_calls++;
+      webhook.last_called = new Date().toISOString();
+
+      console.log(`Webhook ${webhook.id} triggered successfully for ${eventType}`);
+
+    } catch (error) {
+      webhook.failures++;
+      console.error(`Webhook ${webhook.id} failed:`, error.message);
+
+      // Disable webhook after 10 consecutive failures
+      if (webhook.failures >= 10) {
+        webhook.active = false;
+        console.warn(`Webhook ${webhook.id} disabled due to failures`);
+      }
+    }
+  }
+}
+
+// Test webhook
+app.post('/api/webhooks/:webhook_id/test', async (req, res) => {
+  const { webhook_id } = req.params;
+  const webhook = webhooks.get(webhook_id);
+
+  if (!webhook) {
+    return res.status(404).json({ error: 'Webhook not found' });
+  }
+
+  const testData = {
+    test: true,
+    message: 'This is a test webhook event',
+    webhook_id: webhook_id,
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'AI-VoiceOver-Webhooks/1.0'
+    };
+
+    if (webhook.secret) {
+      const crypto = require('crypto');
+      const signature = crypto
+        .createHmac('sha256', webhook.secret)
+        .update(JSON.stringify(testData))
+        .digest('hex');
+      headers['X-Webhook-Signature'] = signature;
+    }
+
+    const response = await axios.post(webhook.url, testData, {
+      headers,
+      timeout: 5000
+    });
+
+    res.json({
+      success: true,
+      message: 'Webhook test successful',
+      response_status: response.status
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Webhook test failed',
+      details: error.message
+    });
+  }
+});
+
+// List all webhooks
+app.get('/api/webhooks', (req, res) => {
+  const allWebhooks = Array.from(webhooks.values());
+
+  res.json({
+    webhooks: allWebhooks,
+    total_count: allWebhooks.length,
+    active_count: allWebhooks.filter(wh => wh.active).length
+  });
+});
+
+// Get webhook details
+app.get('/api/webhooks/:webhook_id', (req, res) => {
+  const { webhook_id } = req.params;
+  const webhook = webhooks.get(webhook_id);
+
+  if (!webhook) {
+    return res.status(404).json({ error: 'Webhook not found' });
+  }
+
+  res.json(webhook);
+});
+
+// Update webhook
+app.patch('/api/webhooks/:webhook_id', (req, res) => {
+  const { webhook_id } = req.params;
+  const webhook = webhooks.get(webhook_id);
+
+  if (!webhook) {
+    return res.status(404).json({ error: 'Webhook not found' });
+  }
+
+  const { url, events, secret, active } = req.body;
+
+  if (url) webhook.url = url;
+  if (events) {
+    // Validate events
+    const invalidEvents = events.filter(e => !WEBHOOK_EVENTS[e]);
+    if (invalidEvents.length > 0) {
+      return res.status(400).json({
+        error: `Invalid events: ${invalidEvents.join(', ')}`,
+        supported_events: Object.keys(WEBHOOK_EVENTS)
+      });
+    }
+    webhook.events = events;
+  }
+  if (secret !== undefined) webhook.secret = secret;
+  if (active !== undefined) webhook.active = active;
+
+  res.json({
+    success: true,
+    webhook: webhook
+  });
+});
+
+// Delete webhook
+app.delete('/api/webhooks/:webhook_id', (req, res) => {
+  const { webhook_id } = req.params;
+
+  if (!webhooks.has(webhook_id)) {
+    return res.status(404).json({ error: 'Webhook not found' });
+  }
+
+  webhooks.delete(webhook_id);
+
+  res.json({
+    success: true,
+    message: 'Webhook deleted successfully'
+  });
+});
+
+// Get recent webhook events
+app.get('/api/webhooks/events/recent', (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  const eventType = req.query.event;
+
+  let events = Array.from(webhookEvents.values());
+
+  if (eventType) {
+    events = events.filter(e => e.event === eventType);
+  }
+
+  events = events
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, limit);
+
+  res.json({
+    events: events,
+    total_count: events.length,
+    available_events: Object.keys(WEBHOOK_EVENTS)
+  });
+});
+
+// Get supported webhook events
+app.get('/api/webhooks/events/supported', (req, res) => {
+  res.json({
+    events: WEBHOOK_EVENTS,
+    total_count: Object.keys(WEBHOOK_EVENTS).length
+  });
+});
+
 // Create podcast show
 app.post('/api/podcast/create-show', async (req, res) => {
   try {
