@@ -417,6 +417,9 @@ app.get('/success.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'success.html'));
 });
 
+// Export for Vercel serverless
+module.exports = app;
+
 app.listen(PORT, () => {
   console.log(`🚀 AI Voice-Over Generator running on http://localhost:${PORT}`);
   console.log(`📝 API Key loaded: ${ELEVENLABS_API_KEY ? 'Yes ✓' : 'No ✗'}`);
