@@ -15,6 +15,10 @@ This is a comprehensive TTS (Text-to-Speech) API with dual-provider support, adv
 - ✅ **Audio Caching System** (90%+ cost reduction)
 - ✅ **Voice Cloning** (Both providers)
 - ✅ **17 Languages Supported**
+- ✅ **Text Preprocessing** (Better TTS pronunciation)
+- ✅ **Audiobook Generator** (Automatic chapter detection)
+- ✅ **Professional Audio Effects** (Normalize, EQ, compression, noise reduction)
+- ✅ **Audio Analysis & Comparison** (Quality assessment)
 
 ---
 
@@ -488,6 +492,223 @@ curl -X POST http://localhost:3000/api/batch/text-to-speech \
   "format": "flac", // Lossless quality
   "stability": 0.8,
   "similarity_boost": 0.95
+}
+```
+
+---
+
+## 🎨 Advanced Quality Features
+
+### Text Preprocessing
+
+**Endpoint:** `POST /api/text/preprocess`
+
+Preview how text will be preprocessed for better TTS pronunciation.
+
+**Request:**
+```json
+{
+  "text": "Dr. Smith earned $5,000 on 12/25/2024 at 3:30 PM. Visit https://example.com for more info."
+}
+```
+
+**Response:**
+```json
+{
+  "original": "Dr. Smith earned $5,000 on 12/25/2024 at 3:30 PM...",
+  "processed": "Doctor Smith earned 5 thousand dollars on December 25, 2024 at 3 30 PM...",
+  "changed": true,
+  "changes": ["Abbreviations expanded", "Currency formatted", "Dates formatted"],
+  "character_diff": 15,
+  "improvement_tips": [...]
+}
+```
+
+**Get Preprocessing Options:** `GET /api/text/preprocessing-options`
+
+Lists all available preprocessing features including:
+- Number normalization
+- Abbreviation expansion
+- Date/time formatting
+- URL/email pronunciation
+- Currency & percentage handling
+- Acronym spacing
+
+---
+
+### Audiobook Generator
+
+**Detect Chapters:** `POST /api/audiobook/detect-chapters`
+
+Automatically detect chapters in your text.
+
+**Request:**
+```json
+{
+  "text": "Chapter 1: Introduction\nOnce upon a time...\n\nChapter 2: The Adventure\nThe journey began..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "chapter_count": 2,
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Introduction",
+      "word_count": 150,
+      "estimated_duration_minutes": 1,
+      "preview": "Once upon a time..."
+    }
+  ],
+  "total_words": 300,
+  "estimated_total_duration_minutes": 2
+}
+```
+
+**Generate Audiobook:** `POST /api/audiobook/generate`
+
+Generate a complete audiobook with automatic chapter detection.
+
+**Request:**
+```json
+{
+  "text": "Chapter 1: Introduction\n...\n\nChapter 2: Conclusion\n...",
+  "voice_id": "your_voice_id",
+  "provider": "elevenlabs",
+  "format": "mp3",
+  "auto_detect_chapters": true,
+  "preprocessing": true,
+  "effects": {
+    "normalize": true,
+    "noiseReduction": true,
+    "fadeIn": 1.0,
+    "fadeOut": 1.0
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "audiobook_id": "audiobook_12345",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "chapter_title": "Introduction",
+      "filename": "audiobook_12345_chapter_1.mp3",
+      "size": 1048576,
+      "download_url": "/api/audiobook/audiobook_12345/chapter/1"
+    }
+  ],
+  "total_chapters": 2,
+  "download_all_url": "/api/audiobook/audiobook_12345/download-all"
+}
+```
+
+**Download Chapter:** `GET /api/audiobook/:audiobook_id/chapter/:chapter_number`
+
+Download individual chapter audio file.
+
+---
+
+### Audio Effects
+
+**Apply Effects:** `POST /api/audio/apply-effects`
+
+Apply professional audio effects to existing audio files.
+
+**Request (multipart/form-data):**
+- `audio`: Audio file (MP3, WAV, OGG, etc.)
+- `normalize`: true/false
+- `noiseReduction`: true/false
+- `compression`: true/false
+- `fadeIn`: number (seconds)
+- `fadeOut`: number (seconds)
+- `eq`: JSON string `{"bass": 2, "mid": 0, "treble": 1}`
+
+**Response:** Processed audio file (binary)
+
+**Get Effects Options:** `GET /api/audio/effects-options`
+
+Lists all available effects with presets:
+
+```json
+{
+  "effects": [
+    {
+      "name": "normalize",
+      "description": "Normalizes audio levels for consistent volume",
+      "type": "boolean",
+      "recommended_for": ["podcasts", "audiobooks"]
+    }
+  ],
+  "presets": {
+    "podcast": { "normalize": true, "noiseReduction": true, "compression": true },
+    "audiobook": { "normalize": true, "noiseReduction": true },
+    "voice_clarity": { "noiseReduction": true, "compression": true, "eq": {"bass": -2, "mid": 3, "treble": 2} }
+  }
+}
+```
+
+---
+
+### Audio Analysis & Comparison
+
+**Analyze Audio:** `POST /api/audio/analyze`
+
+Analyze audio file quality and characteristics.
+
+**Request (multipart/form-data):**
+- `audio`: Audio file
+
+**Response:**
+```json
+{
+  "success": true,
+  "analysis": {
+    "duration": 120.5,
+    "bitRate": 128000,
+    "sampleRate": 44100,
+    "channels": 2,
+    "codec": "mp3",
+    "size": 1048576,
+    "format": "mp3"
+  },
+  "quality_assessment": {
+    "bitrate_quality": "Good",
+    "sample_rate_quality": "High",
+    "is_stereo": true
+  }
+}
+```
+
+**Compare Audio Files:** `POST /api/audio/compare`
+
+Compare two audio files to determine similarity.
+
+**Request (multipart/form-data):**
+- `audio1`: First audio file
+- `audio2`: Second audio file
+
+**Response:**
+```json
+{
+  "success": true,
+  "audio1": { "duration": 120, "bitRate": 128000, ... },
+  "audio2": { "duration": 118, "bitRate": 192000, ... },
+  "similarity": {
+    "score": 85,
+    "details": {
+      "durationMatch": 98,
+      "bitRateMatch": 66,
+      "sampleRateMatch": 100
+    }
+  },
+  "recommendation": "These audio files are very similar"
 }
 ```
 
