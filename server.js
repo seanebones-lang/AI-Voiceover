@@ -6,10 +6,59 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Rate limiting configuration
+const rateLimit = {
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Simple in-memory store (use Redis for production)
+  store: new Map(),
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  }
+};
+
+// Simple rate limiter middleware
+const rateLimiter = (req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const windowStart = now - rateLimit.windowMs;
+
+  if (!rateLimit.store.has(ip)) {
+    rateLimit.store.set(ip, []);
+  }
+
+  const requests = rateLimit.store.get(ip).filter(time => time > windowStart);
+  requests.push(now);
+  rateLimit.store.set(ip, requests);
+
+  // Clean up old entries
+  if (Math.random() < 0.01) {
+    for (const [key, times] of rateLimit.store.entries()) {
+      const filtered = times.filter(time => time > windowStart);
+      if (filtered.length === 0) {
+        rateLimit.store.delete(key);
+      } else {
+        rateLimit.store.set(key, filtered);
+      }
+    }
+  }
+
+  if (requests.length > rateLimit.max) {
+    return rateLimit.handler(req, res);
+  }
+
+  res.setHeader('X-RateLimit-Limit', rateLimit.max);
+  res.setHeader('X-RateLimit-Remaining', Math.max(0, rateLimit.max - requests.length));
+  next();
+};
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -38,10 +87,46 @@ const upload = multer({
   }
 });
 
+// Security Headers Middleware
+app.use((req, res, next) => {
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+
+  // Remove powered-by header
+  res.removeHeader('X-Powered-By');
+
+  next();
+});
+
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS || '*',
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
+
+// Apply rate limiting to API routes
+app.use('/api', rateLimiter);
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const log = `${req.method} ${req.path} ${res.statusCode} - ${duration}ms`;
+    if (res.statusCode >= 400) {
+      console.error(`❌ ${log}`);
+    } else {
+      console.log(`✅ ${log}`);
+    }
+  });
+  next();
+});
 
 // ElevenLabs API Configuration
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -67,9 +152,42 @@ app.post('/api/text-to-speech', async (req, res) => {
   try {
     const { text, voice_id, stability = 0.5, similarity_boost = 0.85, style = 0.3 } = req.body;
 
-    if (!text || !voice_id) {
-      return res.status(400).json({ error: 'Text and voice_id are required' });
+    // Validation
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Valid text is required' });
     }
+
+    if (!voice_id || typeof voice_id !== 'string') {
+      return res.status(400).json({ error: 'Valid voice_id is required' });
+    }
+
+    if (text.length > 5000) {
+      return res.status(400).json({ error: 'Text must be 5,000 characters or less' });
+    }
+
+    // Validate parameters are numbers and in range
+    const stabilityNum = parseFloat(stability);
+    const similarityNum = parseFloat(similarity_boost);
+    const styleNum = parseFloat(style);
+
+    if (isNaN(stabilityNum) || stabilityNum < 0 || stabilityNum > 1) {
+      return res.status(400).json({ error: 'Stability must be between 0 and 1' });
+    }
+
+    if (isNaN(similarityNum) || similarityNum < 0 || similarityNum > 1) {
+      return res.status(400).json({ error: 'Similarity boost must be between 0 and 1' });
+    }
+
+    if (isNaN(styleNum) || styleNum < 0 || styleNum > 1) {
+      return res.status(400).json({ error: 'Style must be between 0 and 1' });
+    }
+
+    if (!ELEVENLABS_API_KEY) {
+      console.error('❌ ElevenLabs API key not configured');
+      return res.status(500).json({ error: 'Text-to-speech service not configured' });
+    }
+
+    console.log(`🎙️  Generating speech: ${text.substring(0, 50)}... (voice: ${voice_id})`);
 
     const response = await axios({
       method: 'post',
@@ -79,15 +197,16 @@ app.post('/api/text-to-speech', async (req, res) => {
         'Content-Type': 'application/json'
       },
       data: {
-        text: text,
+        text: text.trim(),
         model_id: 'eleven_turbo_v2_5',
         voice_settings: {
-          stability: parseFloat(stability),
-          similarity_boost: parseFloat(similarity_boost),
-          style: parseFloat(style)
+          stability: stabilityNum,
+          similarity_boost: similarityNum,
+          style: styleNum
         }
       },
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 60000 // 60 second timeout
     });
 
     res.set({
@@ -95,9 +214,34 @@ app.post('/api/text-to-speech', async (req, res) => {
       'Content-Disposition': 'attachment; filename="voiceover.mp3"'
     });
     res.send(response.data);
+
+    console.log(`✅ Speech generated successfully (${response.data.length} bytes)`);
   } catch (error) {
-    console.error('Error generating speech:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to generate speech' });
+    console.error('❌ Error generating speech:', error.response?.data || error.message);
+
+    let errorMessage = 'Failed to generate speech';
+    let statusCode = 500;
+
+    if (error.response?.status === 401) {
+      errorMessage = 'API authentication failed';
+      statusCode = 500;
+    } else if (error.response?.status === 404) {
+      errorMessage = 'Voice not found. Please select a different voice.';
+      statusCode = 400;
+    } else if (error.response?.status === 422) {
+      errorMessage = 'Invalid request. Please check your text and settings.';
+      statusCode = 400;
+    } else if (error.response?.status === 429) {
+      errorMessage = 'Rate limit exceeded. Please try again later.';
+      statusCode = 429;
+    } else if (error.code === 'ECONNABORTED') {
+      errorMessage = 'Request timeout. Please try with shorter text.';
+      statusCode = 408;
+    } else if (error.response?.data?.detail) {
+      errorMessage = error.response.data.detail.message || error.response.data.detail;
+    }
+
+    res.status(statusCode).json({ error: errorMessage });
   }
 });
 
@@ -118,28 +262,64 @@ app.get('/api/user', async (req, res) => {
 
 // Voice cloning endpoint - Upload audio samples
 app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
+  const uploadedFiles = req.files || [];
+
   try {
     const { name, description } = req.body;
-    const files = req.files;
+    const files = uploadedFiles;
 
-    if (!name || !files || files.length === 0) {
-      return res.status(400).json({ error: 'Name and at least one audio file required' });
+    console.log(`🎤 Voice clone request: "${name}" with ${files.length} files`);
+
+    // Validation
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: 'Voice name is required' });
+    }
+
+    if (name.length > 50) {
+      return res.status(400).json({ error: 'Voice name must be 50 characters or less' });
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'At least one audio file is required' });
+    }
+
+    if (files.length > 5) {
+      return res.status(400).json({ error: 'Maximum 5 audio files allowed' });
+    }
+
+    // Check total file size and log details
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+    console.log(`📊 Files: ${files.map(f => `${f.originalname} (${(f.size / 1024).toFixed(1)}KB)`).join(', ')}`);
+    console.log(`📊 Total size: ${totalSizeMB} MB`);
+
+    if (totalSize > 50 * 1024 * 1024) {
+      return res.status(400).json({ error: `Total file size (${totalSizeMB} MB) exceeds 50 MB limit` });
+    }
+
+    // Validate API key
+    if (!ELEVENLABS_API_KEY) {
+      console.error('❌ ElevenLabs API key not configured');
+      return res.status(500).json({ error: 'Voice cloning service not configured. Please contact administrator.' });
     }
 
     // Create FormData for ElevenLabs API
     const formData = new FormData();
-    formData.append('name', name);
-    if (description) {
-      formData.append('description', description);
+    formData.append('name', name.trim());
+    if (description && description.trim().length > 0) {
+      formData.append('description', description.trim());
     }
 
     // Add files to form data
     files.forEach((file, index) => {
+      console.log(`📎 Adding file ${index + 1}: ${file.originalname}`);
       formData.append('files', fs.createReadStream(file.path), {
         filename: file.originalname,
         contentType: file.mimetype
       });
     });
+
+    console.log('📤 Sending request to ElevenLabs API...');
 
     const response = await axios.post(
       `${ELEVENLABS_BASE_URL}/voices/add`,
@@ -148,13 +328,22 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
         headers: {
           'xi-api-key': ELEVENLABS_API_KEY,
           ...formData.getHeaders()
-        }
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
       }
     );
 
+    console.log('✅ ElevenLabs response:', response.data);
+
     // Clean up uploaded files
     files.forEach(file => {
-      fs.unlinkSync(file.path);
+      try {
+        fs.unlinkSync(file.path);
+        console.log(`🗑️  Cleaned up: ${file.filename}`);
+      } catch (cleanupError) {
+        console.error(`Failed to delete ${file.filename}:`, cleanupError);
+      }
     });
 
     res.json({
@@ -162,19 +351,52 @@ app.post('/api/clone-voice', upload.array('files', 5), async (req, res) => {
       voice_id: response.data.voice_id,
       message: 'Voice cloned successfully! You can now use it for text-to-speech.'
     });
+
+    console.log(`✅ Voice "${name}" cloned successfully. Voice ID: ${response.data.voice_id}`);
   } catch (error) {
-    console.error('Error cloning voice:', error.response?.data || error.message);
+    console.error('❌ Error cloning voice:', error.response?.data || error.message);
+
     // Clean up files on error
-    if (req.files) {
-      req.files.forEach(file => {
+    uploadedFiles.forEach(file => {
+      try {
         if (fs.existsSync(file.path)) {
           fs.unlinkSync(file.path);
+          console.log(`🗑️  Cleaned up (error): ${file.filename}`);
         }
-      });
-    }
-    res.status(500).json({
-      error: error.response?.data?.detail?.message || 'Failed to clone voice. Make sure audio is clear and 30+ seconds total.'
+      } catch (cleanupError) {
+        console.error(`Failed to delete ${file.filename}:`, cleanupError);
+      }
     });
+
+    // Extract meaningful error message
+    let errorMessage = 'Failed to clone voice. ';
+
+    if (error.response?.data) {
+      const errData = error.response.data;
+      if (errData.detail?.message) {
+        errorMessage += errData.detail.message;
+      } else if (errData.detail?.status) {
+        errorMessage += errData.detail.status;
+      } else if (typeof errData.detail === 'string') {
+        errorMessage += errData.detail;
+      } else {
+        errorMessage += 'Please ensure audio is clear and at least 30 seconds total.';
+      }
+    } else {
+      errorMessage += error.message || 'Unknown error occurred.';
+    }
+
+    // Check for specific error conditions
+    if (error.response?.status === 401) {
+      errorMessage = 'API authentication failed. Please check API key configuration.';
+    } else if (error.response?.status === 422) {
+      errorMessage = 'Invalid audio files. Ensure files are clear audio and total at least 30 seconds.';
+    } else if (error.response?.status === 429) {
+      errorMessage = 'Rate limit exceeded. Please try again later.';
+    }
+
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({ error: errorMessage });
   }
 });
 
@@ -420,7 +642,11 @@ app.get('/success.html', (req, res) => {
 // Export for Vercel serverless
 module.exports = app;
 
-app.listen(PORT, () => {
-  console.log(`🚀 AI Voice-Over Generator running on http://localhost:${PORT}`);
-  console.log(`📝 API Key loaded: ${ELEVENLABS_API_KEY ? 'Yes ✓' : 'No ✗'}`);
-});
+// Only start server if not in serverless environment (e.g., running locally)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 AI Voice-Over Generator running on http://localhost:${PORT}`);
+    console.log(`📝 API Key loaded: ${ELEVENLABS_API_KEY ? 'Yes ✓' : 'No ✗'}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+}
