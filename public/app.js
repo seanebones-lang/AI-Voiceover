@@ -11,6 +11,10 @@ let selectedFiles = [];
 let conversationMessages = [];
 let currentPreset = null;
 let isOnline = navigator.onLine;
+let favoriteVoices = JSON.parse(localStorage.getItem('favoriteVoices') || '[]');
+let audioHistory = JSON.parse(localStorage.getItem('audioHistory') || '[]');
+let voiceSearchTerm = '';
+let voiceFilters = { gender: 'all', language: 'all', source: 'all' };
 
 // Voice recording state
 let mediaRecorder = null;
@@ -191,14 +195,36 @@ function populateVoiceSelect(selectId) {
 
     select.innerHTML = '<option value="">-- Select a Voice --</option>';
 
-    // Browser voices first (offline, free)
-    if (browserVoices.length > 0) {
+    // Filter voices based on search and filters
+    const filteredBrowser = filterVoices(browserVoices);
+    const filteredPremium = filterVoices(voices);
+
+    // Favorites first (if any)
+    const favoriteList = [...filteredBrowser, ...filteredPremium].filter(v =>
+        favoriteVoices.includes(v.voice_id)
+    );
+
+    if (favoriteList.length > 0) {
+        const favGroup = document.createElement('optgroup');
+        favGroup.label = '⭐ Your Favorites';
+        favoriteList.forEach(voice => {
+            const option = document.createElement('option');
+            option.value = voice.voice_id;
+            option.textContent = `${voice.name} ★`;
+            option.dataset.source = voice.source;
+            favGroup.appendChild(option);
+        });
+        select.appendChild(favGroup);
+    }
+
+    // Browser voices (offline, free)
+    if (filteredBrowser.length > 0) {
         const browserGroup = document.createElement('optgroup');
-        browserGroup.label = '🌐 Browser Voices (FREE, Offline, No API)';
+        browserGroup.label = `🌐 Browser Voices (${filteredBrowser.length} available)`;
 
         // Group by language
         const byLang = {};
-        browserVoices.forEach(v => {
+        filteredBrowser.forEach(v => {
             const lang = v.lang.split('-')[0].toUpperCase();
             if (!byLang[lang]) byLang[lang] = [];
             byLang[lang].push(v);
@@ -209,7 +235,8 @@ function populateVoiceSelect(selectId) {
             byLang.EN.forEach(voice => {
                 const option = document.createElement('option');
                 option.value = voice.voice_id;
-                option.textContent = voice.name;
+                const star = favoriteVoices.includes(voice.voice_id) ? ' ★' : '';
+                option.textContent = voice.name + star;
                 option.dataset.source = 'browser';
                 browserGroup.appendChild(option);
             });
@@ -221,7 +248,8 @@ function populateVoiceSelect(selectId) {
             byLang[lang].forEach(voice => {
                 const option = document.createElement('option');
                 option.value = voice.voice_id;
-                option.textContent = `${voice.name} [${lang}]`;
+                const star = favoriteVoices.includes(voice.voice_id) ? ' ★' : '';
+                option.textContent = `${voice.name} [${lang}]${star}`;
                 option.dataset.source = 'browser';
                 browserGroup.appendChild(option);
             });
@@ -231,17 +259,17 @@ function populateVoiceSelect(selectId) {
     }
 
     // ElevenLabs voices (premium, online)
-    if (voices.length > 0) {
+    if (filteredPremium.length > 0) {
         // Group voices
         const categories = {};
-        voices.forEach(voice => {
+        filteredPremium.forEach(voice => {
             const cat = voice.category || 'Other';
             if (!categories[cat]) categories[cat] = [];
             categories[cat].push(voice);
         });
 
         // Add popular first
-        const popularVoices = voices.filter(v =>
+        const popularVoices = filteredPremium.filter(v =>
             v.name.toLowerCase().includes('morgan') ||
             v.name.toLowerCase().includes('david') ||
             v.name.toLowerCase().includes('rachel') ||
@@ -254,7 +282,8 @@ function populateVoiceSelect(selectId) {
             popularVoices.forEach(voice => {
                 const option = document.createElement('option');
                 option.value = voice.voice_id;
-                option.textContent = `${voice.name} (Premium)`;
+                const star = favoriteVoices.includes(voice.voice_id) ? ' ★' : '';
+                option.textContent = `${voice.name} (Premium)${star}`;
                 option.dataset.source = 'elevenlabs';
                 optgroup.appendChild(option);
             });
@@ -264,11 +293,12 @@ function populateVoiceSelect(selectId) {
         // Add by category
         Object.keys(categories).sort().forEach(cat => {
             const optgroup = document.createElement('optgroup');
-            optgroup.label = `${cat.charAt(0).toUpperCase() + cat.slice(1)} (Premium)`;
+            optgroup.label = `${cat.charAt(0).toUpperCase() + cat.slice(1)} (Premium - ${categories[cat].length})`;
             categories[cat].forEach(voice => {
                 const option = document.createElement('option');
                 option.value = voice.voice_id;
-                option.textContent = voice.name;
+                const star = favoriteVoices.includes(voice.voice_id) ? ' ★' : '';
+                option.textContent = voice.name + star;
                 option.dataset.source = 'elevenlabs';
                 optgroup.appendChild(option);
             });
@@ -283,6 +313,44 @@ function populateVoiceSelect(selectId) {
         offlineMsg.textContent = '📴 Offline Mode - Premium voices unavailable';
         select.insertBefore(offlineMsg, select.firstChild.nextSibling);
     }
+
+    // Show no results message
+    if (filteredBrowser.length === 0 && filteredPremium.length === 0 && (voiceSearchTerm || voiceFilters.gender !== 'all' || voiceFilters.language !== 'all')) {
+        const noResults = document.createElement('option');
+        noResults.disabled = true;
+        noResults.textContent = '🔍 No voices found - try different filters';
+        select.appendChild(noResults);
+    }
+}
+
+// Filter voices based on search and filters
+function filterVoices(voiceList) {
+    return voiceList.filter(voice => {
+        // Search filter
+        if (voiceSearchTerm) {
+            const searchLower = voiceSearchTerm.toLowerCase();
+            const matchesName = voice.name.toLowerCase().includes(searchLower);
+            const matchesLang = voice.lang && voice.lang.toLowerCase().includes(searchLower);
+            if (!matchesName && !matchesLang) return false;
+        }
+
+        // Source filter
+        if (voiceFilters.source !== 'all') {
+            if (voiceFilters.source !== voice.source) return false;
+        }
+
+        // Language filter
+        if (voiceFilters.language !== 'all') {
+            if (!voice.lang || !voice.lang.toLowerCase().startsWith(voiceFilters.language)) return false;
+        }
+
+        // Gender filter (only for ElevenLabs voices with labels)
+        if (voiceFilters.gender !== 'all' && voice.labels) {
+            if (voice.labels.gender !== voiceFilters.gender) return false;
+        }
+
+        return true;
+    });
 }
 
 function populateCompareVoices() {
@@ -332,10 +400,115 @@ function renderPresets() {
     }
 }
 
+// Enhanced preset system with ALL voice controls
+const enhancedPresets = {
+    excited: {
+        stability: 0.3,
+        similarity_boost: 0.75,
+        style: 0.8,
+        pitch: 1.2,  // Higher pitch
+        rate: 1.3,   // Faster
+        volume: 1.0,
+        emphasis: 'strong',
+        description: 'High energy and enthusiastic - faster, higher pitch'
+    },
+    calm: {
+        stability: 0.7,
+        similarity_boost: 0.85,
+        style: 0.2,
+        pitch: 0.9,  // Slightly lower
+        rate: 0.85,  // Slower
+        volume: 0.9,
+        emphasis: 'reduced',
+        description: 'Relaxed and soothing - slower, lower pitch'
+    },
+    serious: {
+        stability: 0.8,
+        similarity_boost: 0.9,
+        style: 0.1,
+        pitch: 0.85, // Lower pitch
+        rate: 0.9,   // Slightly slower
+        volume: 1.0,
+        emphasis: 'moderate',
+        description: 'Professional and formal - measured pace'
+    },
+    dramatic: {
+        stability: 0.4,
+        similarity_boost: 0.8,
+        style: 0.9,
+        pitch: 1.0,
+        rate: 0.8,   // Slower for emphasis
+        volume: 1.0,
+        emphasis: 'strong',
+        description: 'Theatrical and expressive - varied pace, dramatic pauses'
+    },
+    whisper: {
+        stability: 0.5,
+        similarity_boost: 0.95,
+        style: 0.5,
+        pitch: 0.95,
+        rate: 0.8,   // Slower
+        volume: 0.6, // Quieter
+        emphasis: 'reduced',
+        description: 'Soft and intimate - quiet, slow'
+    },
+    angry: {
+        stability: 0.3,
+        similarity_boost: 0.7,
+        style: 0.9,
+        pitch: 1.1,  // Slightly higher
+        rate: 1.2,   // Faster
+        volume: 1.0,
+        emphasis: 'strong',
+        description: 'Intense and forceful - louder, faster'
+    },
+    happy: {
+        stability: 0.4,
+        similarity_boost: 0.8,
+        style: 0.7,
+        pitch: 1.15, // Higher
+        rate: 1.1,   // Slightly faster
+        volume: 1.0,
+        emphasis: 'moderate',
+        description: 'Cheerful and upbeat - bright, energetic'
+    },
+    sad: {
+        stability: 0.6,
+        similarity_boost: 0.85,
+        style: 0.4,
+        pitch: 0.85, // Lower
+        rate: 0.75,  // Slower
+        volume: 0.85,
+        emphasis: 'reduced',
+        description: 'Melancholic and slow - quiet, drawn out'
+    },
+    robotic: {
+        stability: 0.9,
+        similarity_boost: 0.95,
+        style: 0.0,
+        pitch: 1.0,
+        rate: 1.0,
+        volume: 1.0,
+        emphasis: 'none',
+        description: 'Monotone and mechanical - no variation'
+    },
+    storyteller: {
+        stability: 0.5,
+        similarity_boost: 0.85,
+        style: 0.6,
+        pitch: 0.95,
+        rate: 0.9,   // Slightly slower for clarity
+        volume: 1.0,
+        emphasis: 'moderate',
+        description: 'Narrative style - clear, engaging pace'
+    }
+};
+
 function applyPreset(presetName) {
-    const preset = presets[presetName];
+    const preset = enhancedPresets[presetName] || presets[presetName];
     if (!preset) return;
 
+    // Apply ElevenLabs settings
     document.getElementById('stability').value = preset.stability;
     document.getElementById('similarity').value = preset.similarity_boost;
     document.getElementById('style').value = preset.style;
@@ -343,6 +516,31 @@ function applyPreset(presetName) {
     updateSliderValue('stabilityValue', preset.stability);
     updateSliderValue('similarityValue', preset.similarity_boost);
     updateSliderValue('styleValue', preset.style);
+
+    // Apply enhanced controls if they exist
+    if (preset.pitch !== undefined) {
+        const pitchSlider = document.getElementById('pitchControl');
+        if (pitchSlider) {
+            pitchSlider.value = preset.pitch;
+            updateSliderValue('pitchValue', preset.pitch);
+        }
+    }
+
+    if (preset.rate !== undefined) {
+        const rateSlider = document.getElementById('rateControl');
+        if (rateSlider) {
+            rateSlider.value = preset.rate;
+            updateSliderValue('rateValue', preset.rate);
+        }
+    }
+
+    if (preset.volume !== undefined) {
+        const volumeSlider = document.getElementById('volumeControl');
+        if (volumeSlider) {
+            volumeSlider.value = preset.volume;
+            updateSliderValue('volumeValue', preset.volume);
+        }
+    }
 
     // Visual feedback with Tailwind classes
     document.querySelectorAll('[data-preset]').forEach(btn => {
@@ -357,7 +555,7 @@ function applyPreset(presetName) {
     }
 
     currentPreset = presetName;
-    console.log(`✅ Applied ${presetName} preset`);
+    console.log(`✅ Applied ${presetName} preset with enhanced controls:`, preset);
 }
 
 // Online/Offline Detection
@@ -403,12 +601,25 @@ async function loadUserInfo() {
     console.log('✅ Voice system initialized');
 }
 
-// Character Counter
+// Character Counter + Reading Time
 function updateCharCount() {
     const textInput = document.getElementById('textInput');
     const charCount = document.getElementById('charCount');
     if (textInput && charCount) {
-        charCount.textContent = textInput.value.length;
+        const length = textInput.value.length;
+        const words = textInput.value.trim().split(/\s+/).filter(w => w.length > 0).length;
+        const readingTimeSeconds = Math.ceil(words / 2.5); // ~150 words per minute = 2.5 words/sec
+        const minutes = Math.floor(readingTimeSeconds / 60);
+        const seconds = readingTimeSeconds % 60;
+
+        let timeStr = '';
+        if (minutes > 0) {
+            timeStr = `${minutes}m ${seconds}s`;
+        } else {
+            timeStr = `${seconds}s`;
+        }
+
+        charCount.textContent = `${length} chars • ${words} words • ~${timeStr} audio`;
     }
 }
 
@@ -516,13 +727,17 @@ async function generateSpeechBrowser(text, voiceId, generateBtn, btnText) {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = browserVoice.nativeVoice;
 
-        // Apply settings (browser voices have limited control)
-        const stability = document.getElementById('stability').value;
-        const style = document.getElementById('style').value;
+        // Apply FULL control settings
+        const pitchControl = document.getElementById('pitchControl');
+        const rateControl = document.getElementById('rateControl');
+        const volumeControl = document.getElementById('volumeControl');
 
-        utterance.rate = 0.5 + (parseFloat(style) * 1.5); // 0.5 to 2
-        utterance.pitch = 1.0; // Fixed for now
-        utterance.volume = 1.0;
+        // Use enhanced controls if available, otherwise fall back to basic controls
+        utterance.pitch = pitchControl ? parseFloat(pitchControl.value) : 1.0;
+        utterance.rate = rateControl ? parseFloat(rateControl.value) : 1.0;
+        utterance.volume = volumeControl ? parseFloat(volumeControl.value) : 1.0;
+
+        console.log(`🎚️  Voice settings: pitch=${utterance.pitch}, rate=${utterance.rate}, volume=${utterance.volume}`);
 
         // Create audio recording from speech synthesis
         const chunks = [];
@@ -1317,5 +1532,204 @@ async function startCheckout(plan) {
     alert('All features are currently free! Just start using the app - no payment required.');
     console.log('Checkout disabled - plan:', plan);
 }
+
+// ========== NEW FEATURES ==========
+
+// Favorites Management
+function toggleFavorite(voiceId) {
+    const index = favoriteVoices.indexOf(voiceId);
+    if (index > -1) {
+        favoriteVoices.splice(index, 1);
+        console.log('❌ Removed from favorites:', voiceId);
+    } else {
+        favoriteVoices.push(voiceId);
+        console.log('⭐ Added to favorites:', voiceId);
+    }
+    localStorage.setItem('favoriteVoices', JSON.stringify(favoriteVoices));
+    populateVoiceSelect('voiceSelect');
+}
+
+function isFavorite(voiceId) {
+    return favoriteVoices.includes(voiceId);
+}
+
+// Voice Preview
+async function previewVoice() {
+    const voiceSelect = document.getElementById('voiceSelect');
+    const voiceId = voiceSelect?.value;
+
+    if (!voiceId) {
+        showError('Please select a voice first');
+        return;
+    }
+
+    const sampleText = "Hello! This is a preview of this voice. I hope you like how it sounds!";
+
+    // Find the voice
+    const voice = [...browserVoices, ...voices].find(v => v.voice_id === voiceId);
+    const isBrowserVoice = voiceId.startsWith('browser_');
+
+    if (isBrowserVoice) {
+        // Browser voice preview
+        if (!('speechSynthesis' in window)) {
+            showError('Browser TTS not supported');
+            return;
+        }
+
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(sampleText);
+        utterance.voice = voice.nativeVoice;
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        speechSynthesis.speak(utterance);
+        console.log('🎙️ Preview playing (browser voice)');
+    } else {
+        // ElevenLabs voice preview
+        try {
+            const response = await fetch(`${API_BASE}/api/text-to-speech`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: sampleText,
+                    voice_id: voiceId,
+                    stability: 0.5,
+                    similarity_boost: 0.85,
+                    style: 0.3
+                })
+            });
+
+            if (!response.ok) throw new Error('Preview failed');
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+            console.log('🎙️ Preview playing (ElevenLabs voice)');
+        } catch (error) {
+            console.error('Preview error:', error);
+            showError('Preview failed');
+        }
+    }
+}
+
+// Voice Search
+function searchVoices(searchTerm) {
+    voiceSearchTerm = searchTerm;
+    populateVoiceSelect('voiceSelect');
+}
+
+function filterVoicesByOption(filterType, value) {
+    voiceFilters[filterType] = value;
+    populateVoiceSelect('voiceSelect');
+}
+
+function clearVoiceFilters() {
+    voiceSearchTerm = '';
+    voiceFilters = { gender: 'all', language: 'all', source: 'all' };
+    const searchInput = document.getElementById('voiceSearch');
+    if (searchInput) searchInput.value = '';
+    populateVoiceSelect('voiceSelect');
+}
+
+// Audio History
+function saveToHistory(text, voiceId, voiceName, audioBlob) {
+    const historyItem = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+        voiceId,
+        voiceName,
+        // audioBlob can't be stored in localStorage, would need IndexedDB
+        charCount: text.length
+    };
+
+    audioHistory.unshift(historyItem);
+    if (audioHistory.length > 50) audioHistory.pop(); // Keep last 50
+    localStorage.setItem('audioHistory', JSON.stringify(audioHistory));
+    console.log('💾 Saved to history:', historyItem.id);
+}
+
+function clearHistory() {
+    if (confirm('Clear all audio history?')) {
+        audioHistory = [];
+        localStorage.setItem('audioHistory', JSON.stringify(audioHistory));
+        renderHistory();
+        console.log('🗑️  History cleared');
+    }
+}
+
+function renderHistory() {
+    // TODO: Add history UI panel
+    console.log('History items:', audioHistory.length);
+}
+
+// Keyboard Shortcuts
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter: Generate speech
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            const activeTab = document.querySelector('.tab-content:not(.hidden)');
+            if (activeTab?.id === 'tab-generator') {
+                generateSpeech();
+            }
+        }
+
+        // Ctrl/Cmd + P: Preview voice
+        if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+            e.preventDefault();
+            previewVoice();
+        }
+
+        // Ctrl/Cmd + F: Focus search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            const searchInput = document.getElementById('voiceSearch');
+            if (searchInput) searchInput.focus();
+        }
+
+        // Ctrl/Cmd + S: Toggle favorite
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            const voiceSelect = document.getElementById('voiceSelect');
+            if (voiceSelect && voiceSelect.value) {
+                toggleFavorite(voiceSelect.value);
+            }
+        }
+
+        // Esc: Clear audio / Cancel
+        if (e.key === 'Escape') {
+            speechSynthesis.cancel();
+            clearAudio();
+        }
+    });
+
+    console.log('⌨️  Keyboard shortcuts enabled');
+}
+
+// Playback Speed Control
+function setPlaybackSpeed(speed) {
+    const audioElement = document.getElementById('audioElement');
+    if (audioElement && audioElement.src) {
+        audioElement.playbackRate = speed;
+        console.log(`⚡ Playback speed: ${speed}x`);
+    }
+}
+
+// Show keyboard shortcuts guide
+function showShortcutsGuide() {
+    alert(`Keyboard Shortcuts:
+
+⌨️ Ctrl/Cmd + Enter: Generate voice-over
+⌨️ Ctrl/Cmd + P: Preview selected voice
+⌨️ Ctrl/Cmd + F: Search voices
+⌨️ Ctrl/Cmd + S: Toggle favorite (current voice)
+⌨️ Esc: Stop playback / Clear
+
+Tip: Use these shortcuts to work faster!`);
+}
+
+// Initialize keyboard shortcuts
+setupKeyboardShortcuts();
 
 console.log('🎙️ VoiceClone AI initialized successfully');
