@@ -3,11 +3,14 @@ const API_BASE = window.location.origin;
 
 // Global state
 let voices = [];
+let browserVoices = [];
+let allVoices = []; // Combined ElevenLabs + Browser voices
 let presets = {};
 let currentAudioBlob = null;
 let selectedFiles = [];
 let conversationMessages = [];
 let currentPreset = null;
+let isOnline = navigator.onLine;
 
 // Voice recording state
 let mediaRecorder = null;
@@ -23,12 +26,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initializeApp() {
+    // Load browser voices first (instant, offline)
+    await loadBrowserVoices();
+
+    // Then load ElevenLabs voices (requires internet)
     await loadVoices();
+
     await loadPresets();
     await loadUserInfo();
     setupEventListeners();
     setupDragAndDrop();
     addInitialConversationMessage();
+    setupOnlineOfflineDetection();
 }
 
 // Event Listeners
@@ -91,21 +100,89 @@ function switchTab(tabName) {
     }
 }
 
-// Load Voices
+// Load Browser Voices (Offline, Free)
+async function loadBrowserVoices() {
+    return new Promise((resolve) => {
+        if (!('speechSynthesis' in window)) {
+            console.warn('⚠️ Web Speech API not supported in this browser');
+            browserVoices = [];
+            resolve();
+            return;
+        }
+
+        const loadVoicesList = () => {
+            const systemVoices = speechSynthesis.getVoices();
+
+            browserVoices = systemVoices.map(voice => ({
+                voice_id: `browser_${voice.name.replace(/\s+/g, '_')}`,
+                name: `${voice.name} (Offline)`,
+                category: 'browser',
+                source: 'browser',
+                lang: voice.lang,
+                localService: voice.localService,
+                default: voice.default,
+                nativeVoice: voice // Store reference to native voice object
+            }));
+
+            console.log(`✅ Loaded ${browserVoices.length} browser voices (offline)`);
+
+            // Combine with ElevenLabs voices
+            combineVoices();
+            resolve();
+        };
+
+        // Chrome loads voices asynchronously
+        if (speechSynthesis.getVoices().length > 0) {
+            loadVoicesList();
+        } else {
+            speechSynthesis.addEventListener('voiceschanged', loadVoicesList, { once: true });
+            // Timeout fallback
+            setTimeout(() => {
+                if (browserVoices.length === 0) {
+                    loadVoicesList();
+                }
+            }, 1000);
+        }
+    });
+}
+
+// Load ElevenLabs Voices (Online, Premium)
 async function loadVoices() {
     try {
+        if (!navigator.onLine) {
+            console.log('📴 Offline mode - using browser voices only');
+            voices = [];
+            combineVoices();
+            return;
+        }
+
         const response = await fetch(`${API_BASE}/api/voices`);
         if (!response.ok) throw new Error('Failed to load voices');
 
         const data = await response.json();
         voices = data.voices || [];
 
-        populateVoiceSelect('voiceSelect');
-        console.log(`✅ Loaded ${voices.length} voices`);
+        // Mark as ElevenLabs voices
+        voices.forEach(v => {
+            v.source = 'elevenlabs';
+            v.category = v.category || 'premium';
+        });
+
+        combineVoices();
+        console.log(`✅ Loaded ${voices.length} ElevenLabs voices (online)`);
     } catch (error) {
-        console.error('Error loading voices:', error);
-        showError('Failed to load voices. Please refresh.');
+        console.error('Error loading ElevenLabs voices:', error);
+        console.log('ℹ️ Using browser voices only');
+        voices = [];
+        combineVoices();
     }
+}
+
+// Combine all voice sources
+function combineVoices() {
+    allVoices = [...browserVoices, ...voices];
+    populateVoiceSelect('voiceSelect');
+    console.log(`✅ Total voices available: ${allVoices.length}`);
 }
 
 function populateVoiceSelect(selectId) {
@@ -114,46 +191,98 @@ function populateVoiceSelect(selectId) {
 
     select.innerHTML = '<option value="">-- Select a Voice --</option>';
 
-    // Group voices
-    const categories = {};
-    voices.forEach(voice => {
-        const cat = voice.category || 'Other';
-        if (!categories[cat]) categories[cat] = [];
-        categories[cat].push(voice);
-    });
+    // Browser voices first (offline, free)
+    if (browserVoices.length > 0) {
+        const browserGroup = document.createElement('optgroup');
+        browserGroup.label = '🌐 Browser Voices (FREE, Offline, No API)';
 
-    // Add popular first
-    const popularVoices = voices.filter(v =>
-        v.name.toLowerCase().includes('morgan') ||
-        v.name.toLowerCase().includes('david') ||
-        v.name.toLowerCase().includes('rachel') ||
-        v.name.toLowerCase().includes('adam')
-    ).slice(0, 10);
-
-    if (popularVoices.length) {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = '⭐ Popular Voices';
-        popularVoices.forEach(voice => {
-            const option = document.createElement('option');
-            option.value = voice.voice_id;
-            option.textContent = `${voice.name}`;
-            optgroup.appendChild(option);
+        // Group by language
+        const byLang = {};
+        browserVoices.forEach(v => {
+            const lang = v.lang.split('-')[0].toUpperCase();
+            if (!byLang[lang]) byLang[lang] = [];
+            byLang[lang].push(v);
         });
-        select.appendChild(optgroup);
+
+        // Add English voices first
+        if (byLang.EN) {
+            byLang.EN.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = voice.name;
+                option.dataset.source = 'browser';
+                browserGroup.appendChild(option);
+            });
+        }
+
+        // Then other languages
+        Object.keys(byLang).sort().forEach(lang => {
+            if (lang === 'EN') return; // Already added
+            byLang[lang].forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = `${voice.name} [${lang}]`;
+                option.dataset.source = 'browser';
+                browserGroup.appendChild(option);
+            });
+        });
+
+        select.appendChild(browserGroup);
     }
 
-    // Add by category
-    Object.keys(categories).sort().forEach(cat => {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = cat.charAt(0).toUpperCase() + cat.slice(1);
-        categories[cat].forEach(voice => {
-            const option = document.createElement('option');
-            option.value = voice.voice_id;
-            option.textContent = voice.name;
-            optgroup.appendChild(option);
+    // ElevenLabs voices (premium, online)
+    if (voices.length > 0) {
+        // Group voices
+        const categories = {};
+        voices.forEach(voice => {
+            const cat = voice.category || 'Other';
+            if (!categories[cat]) categories[cat] = [];
+            categories[cat].push(voice);
         });
-        select.appendChild(optgroup);
-    });
+
+        // Add popular first
+        const popularVoices = voices.filter(v =>
+            v.name.toLowerCase().includes('morgan') ||
+            v.name.toLowerCase().includes('david') ||
+            v.name.toLowerCase().includes('rachel') ||
+            v.name.toLowerCase().includes('adam')
+        ).slice(0, 10);
+
+        if (popularVoices.length) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = '⭐ Popular Premium Voices (ElevenLabs)';
+            popularVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = `${voice.name} (Premium)`;
+                option.dataset.source = 'elevenlabs';
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        }
+
+        // Add by category
+        Object.keys(categories).sort().forEach(cat => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = `${cat.charAt(0).toUpperCase() + cat.slice(1)} (Premium)`;
+            categories[cat].forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = voice.name;
+                option.dataset.source = 'elevenlabs';
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        });
+    }
+
+    // Show offline indicator if no internet
+    if (!navigator.onLine && browserVoices.length > 0) {
+        const offlineMsg = document.createElement('option');
+        offlineMsg.disabled = true;
+        offlineMsg.textContent = '📴 Offline Mode - Premium voices unavailable';
+        select.insertBefore(offlineMsg, select.firstChild.nextSibling);
+    }
 }
 
 function populateCompareVoices() {
@@ -231,19 +360,47 @@ function applyPreset(presetName) {
     console.log(`✅ Applied ${presetName} preset`);
 }
 
+// Online/Offline Detection
+function setupOnlineOfflineDetection() {
+    window.addEventListener('online', () => {
+        isOnline = true;
+        console.log('🌐 Online - Premium voices available');
+        loadVoices(); // Reload ElevenLabs voices
+        updateOnlineStatus();
+    });
+
+    window.addEventListener('offline', () => {
+        isOnline = false;
+        console.log('📴 Offline - Browser voices only');
+        updateOnlineStatus();
+    });
+
+    updateOnlineStatus();
+}
+
+function updateOnlineStatus() {
+    const charCountEl = document.getElementById('characterCount');
+    if (!charCountEl) return;
+
+    const status = isOnline ? 'Online' : 'Offline';
+    const icon = isOnline ? '🌐' : '📴';
+    const color = isOnline ? 'green' : 'orange';
+
+    charCountEl.innerHTML = `
+        <span class="flex items-center space-x-2">
+            <span>${icon} Status: <strong class="text-${color}-600 dark:text-${color}-400">${status}</strong></span>
+            ${isOnline ?
+                '<span class="text-sm text-slate-500">• ElevenLabs + Browser Voices</span>' :
+                '<span class="text-sm text-slate-500">• Browser Voices Only (FREE)</span>'
+            }
+        </span>
+    `;
+}
+
 // User Info
 async function loadUserInfo() {
-    // Show unlimited access - no paywall
-    const charCountEl = document.getElementById('characterCount');
-    if (charCountEl) {
-        charCountEl.innerHTML = `
-            <span class="flex items-center space-x-2">
-                <span>All Features Unlocked:</span>
-                <strong class="text-purple-600 dark:text-purple-400">Unlimited Access</strong>
-            </span>
-        `;
-    }
-    console.log('✅ Free unlimited access enabled');
+    updateOnlineStatus();
+    console.log('✅ Voice system initialized');
 }
 
 // Character Counter
@@ -324,9 +481,107 @@ async function generateSpeech() {
         return;
     }
 
-    // Show loading
+    // Check if it's a browser voice (offline)
+    const isBrowserVoice = voiceId.startsWith('browser_');
+
+    if (isBrowserVoice) {
+        return generateSpeechBrowser(text, voiceId, generateBtn, btnText);
+    } else {
+        return generateSpeechElevenLabs(text, voiceId, generateBtn, btnText);
+    }
+}
+
+// Browser TTS (100% Offline, No API needed)
+async function generateSpeechBrowser(text, voiceId, generateBtn, btnText) {
     generateBtn.disabled = true;
-    btnText.textContent = 'Generating...';
+    btnText.textContent = 'Generating (Offline)...';
+
+    try {
+        if (!('speechSynthesis' in window)) {
+            throw new Error('Browser TTS not supported. Please use Chrome, Firefox, or Edge.');
+        }
+
+        // Find the browser voice
+        const browserVoice = browserVoices.find(v => v.voice_id === voiceId);
+        if (!browserVoice) {
+            throw new Error('Voice not found');
+        }
+
+        console.log('🌐 Generating with browser voice (offline):', browserVoice.name);
+
+        // Cancel any ongoing speech
+        speechSynthesis.cancel();
+
+        // Create utterance
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = browserVoice.nativeVoice;
+
+        // Apply settings (browser voices have limited control)
+        const stability = document.getElementById('stability').value;
+        const style = document.getElementById('style').value;
+
+        utterance.rate = 0.5 + (parseFloat(style) * 1.5); // 0.5 to 2
+        utterance.pitch = 1.0; // Fixed for now
+        utterance.volume = 1.0;
+
+        // Create audio recording from speech synthesis
+        const chunks = [];
+        let mediaRecorder;
+
+        // Use MediaRecorder to capture the audio
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const dest = audioContext.createMediaStreamDestination();
+
+        return new Promise((resolve, reject) => {
+            utterance.onstart = () => {
+                console.log('🎙️ Browser TTS started');
+            };
+
+            utterance.onend = async () => {
+                console.log('✅ Browser TTS completed');
+
+                try {
+                    // For browser voices, we'll play directly without recording for now
+                    // Show success message
+                    const audioCard = document.getElementById('audioPlayerCard');
+                    const audioElement = document.getElementById('audioElement');
+
+                    // Create a simple notification that it played
+                    showError('✅ Audio played successfully! (Browser voices play directly, download not available)', 'success');
+
+                    audioCard.classList.add('hidden');
+
+                    generateBtn.disabled = false;
+                    btnText.textContent = 'Generate Voice-Over';
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            };
+
+            utterance.onerror = (event) => {
+                console.error('❌ Browser TTS error:', event);
+                reject(new Error(`TTS Error: ${event.error}`));
+                generateBtn.disabled = false;
+                btnText.textContent = 'Generate Voice-Over';
+            };
+
+            // Speak it
+            speechSynthesis.speak(utterance);
+        });
+
+    } catch (error) {
+        console.error('Error generating browser speech:', error);
+        showError(error.message || 'Failed to generate speech with browser voice');
+        generateBtn.disabled = false;
+        btnText.textContent = 'Generate Voice-Over';
+    }
+}
+
+// ElevenLabs TTS (Premium, Online)
+async function generateSpeechElevenLabs(text, voiceId, generateBtn, btnText) {
+    generateBtn.disabled = true;
+    btnText.textContent = 'Generating (Premium)...';
 
     try {
         const stability = document.getElementById('stability').value;
@@ -369,7 +624,7 @@ async function generateSpeech() {
         // Update user info
         loadUserInfo();
 
-        console.log('✅ Audio generated successfully');
+        console.log('✅ Audio generated successfully (ElevenLabs)');
     } catch (error) {
         console.error('Error generating speech:', error);
         showError(error.message || 'Failed to generate speech');

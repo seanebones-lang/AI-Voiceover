@@ -8,8 +8,10 @@ A production-ready full-stack web application that converts text to natural-soun
 ## ✨ Features
 
 ### Core Features
-- **🎤 Voice Cloning** - Clone any voice with 30+ seconds of audio samples
-- **🎭 250+ Premium AI Voices** - Professional voices from ElevenLabs
+- **🌐 OFFLINE MODE** - 50-300+ browser voices work **WITHOUT internet** or API! 🆓
+- **🚀 100% FREE Option** - Use browser TTS completely free, no API costs
+- **🎤 Voice Cloning** - Clone any voice with 30+ seconds of audio samples (ElevenLabs)
+- **🎭 250+ Premium AI Voices** - Professional voices from ElevenLabs (optional)
 - **🎨 8 Emotion Presets** - Excited, calm, serious, dramatic, whisper, angry, happy, sad
 - **🎙️ Voice Recording** - Record directly in-browser with MediaRecorder API
 - **🗣️ Multi-Voice Conversations** - Create realistic dialogues with multiple speakers
@@ -17,6 +19,7 @@ A production-ready full-stack web application that converts text to natural-soun
 - **⚙️ Advanced Controls** - Fine-tune stability, similarity, and style parameters
 - **💾 Audio Download** - Save generated audio as MP3 files
 - **🌓 Dark Mode** - Beautiful light/dark theme with smooth transitions
+- **📴 Offline First** - Works completely offline with browser voices
 
 ### Technical Features
 - **🔒 Security** - Rate limiting, input validation, security headers
@@ -25,13 +28,16 @@ A production-ready full-stack web application that converts text to natural-soun
 - **⚡ Performance** - Streaming audio generation, optimized builds
 - **🛡️ Error Handling** - Comprehensive error handling and user-friendly messages
 - **📱 Responsive** - Works perfectly on desktop, tablet, and mobile
+- **🌐 Hybrid TTS** - Browser voices (free) + ElevenLabs (premium) + future self-hosted options
+- **📴 Works Offline** - No internet required for browser voices
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Node.js 14+ installed ([Download](https://nodejs.org/))
-- ElevenLabs API key ([Get free credits](https://elevenlabs.io))
+- **Optional:** ElevenLabs API key for premium voices ([Get free credits](https://elevenlabs.io))
+  - **Note:** Works 100% FREE without API key using browser voices!
 
 ### Installation
 
@@ -46,9 +52,11 @@ cd AI-Voiceover
 npm install
 ```
 
-3. **Configure environment variables**
+3. **Configure environment variables (OPTIONAL)**
 
-Copy the example environment file and add your API key:
+**For browser voices only (FREE):** Skip this step! The app works without any configuration.
+
+**For premium ElevenLabs voices:** Copy the example environment file and add your API key:
 ```bash
 cp .env.example .env
 ```
@@ -360,20 +368,46 @@ git push heroku main
 4. **Monitor usage** - Check ElevenLabs dashboard for unusual activity
 5. **Set up webhooks** - Get notified of suspicious activity
 
-## 📊 Usage Limits
+## 🌐 Voice Options & Pricing
 
-### ElevenLabs Free Tier
+### 1. Browser Voices (FREE, Offline, No API) 🆓
+- **Cost:** $0 forever
+- **Voices:** 50-300+ (depends on your OS/browser)
+- **Internet:** Not required
+- **Quality:** ⭐⭐⭐ (3/5) - Good, natural sounding
+- **Languages:** 40+ languages
+- **Best for:** MVP, testing, free tier users
+- **Available on:**
+  - Windows: 15-20 voices
+  - macOS: 80+ voices
+  - Linux: 30-50 voices
+  - Android: 100+ voices
+  - iOS: 80+ voices
+
+### 2. ElevenLabs Voices (Premium, Online) 💎
+
+**Free Tier:**
 - 10,000 characters/month
-- All voices available
+- All 250+ voices available
 - Basic features
 - No voice cloning
 
-### ElevenLabs Paid Tiers
+**Paid Tiers:**
 - 30,000+ characters/month
 - Voice cloning included
 - Higher rate limits
 - Commercial license
 - Priority support
+
+### 3. Future Self-Hosted Options (Planned) 🚀
+
+See `SELF_HOSTED_TTS.md` for detailed guide on:
+- **Piper TTS** - Fast, CPU-only, $5-10/month
+- **Coqui TTS** - Excellent quality, voice cloning, GPU required
+- **StyleTTS 2** - Best quality available, cutting-edge
+- And more!
+
+**When you're ready to go public without API dependency, we have you covered!**
 
 ## 🐛 Troubleshooting
 
