@@ -754,13 +754,25 @@ async function cloneVoice() {
     const name = document.getElementById('cloneName')?.value.trim();
     const description = document.getElementById('cloneDescription')?.value.trim();
 
+    console.log('🎤 Starting voice clone with:', { name, fileCount: selectedFiles.length });
+
     if (!name) {
         showCloneError('Please enter a voice name');
         return;
     }
 
     if (selectedFiles.length === 0) {
-        showCloneError('Please upload at least one audio file');
+        showCloneError('Please upload at least one audio file or record your voice');
+        return;
+    }
+
+    // Validate audio files
+    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+    console.log(`📊 Total audio size: ${totalSizeMB} MB`);
+
+    if (totalSize > 50 * 1024 * 1024) {
+        showCloneError(`Total file size (${totalSizeMB} MB) exceeds 50 MB limit`);
         return;
     }
 
@@ -775,22 +787,35 @@ async function cloneVoice() {
         formData.append('name', name);
         if (description) formData.append('description', description);
 
-        selectedFiles.forEach(file => {
+        selectedFiles.forEach((file, index) => {
+            console.log(`📎 Adding file ${index + 1}:`, file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
             formData.append('files', file);
         });
+
+        console.log('📤 Sending voice clone request to server...');
 
         const response = await fetch(`${API_BASE}/api/clone-voice`, {
             method: 'POST',
             body: formData
         });
 
-        const data = await response.json();
+        console.log('📥 Response status:', response.status);
 
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to clone voice');
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            console.error('Failed to parse response:', parseError);
+            throw new Error('Server returned invalid response');
         }
 
-        showCloneSuccess(`Voice "${name}" cloned successfully! Voice ID: ${data.voice_id}`);
+        if (!response.ok) {
+            console.error('❌ Clone failed:', data);
+            throw new Error(data.error || `Server error: ${response.status}`);
+        }
+
+        console.log('✅ Voice cloned successfully:', data);
+        showCloneSuccess(`🎉 Voice "${name}" cloned successfully!\n\nVoice ID: ${data.voice_id}\n\nYou can now use this voice in the "Text to Speech" tab.`);
 
         // Clear form
         document.getElementById('cloneName').value = '';
@@ -798,13 +823,23 @@ async function cloneVoice() {
         selectedFiles = [];
         renderFileList();
 
-        // Reload voices
+        // Reload voices to include the new one
+        console.log('🔄 Reloading voice list...');
         await loadVoices();
 
-        console.log('✅ Voice cloned:', data.voice_id);
+        // Switch to generator tab and auto-select the new voice
+        setTimeout(() => {
+            const voiceSelect = document.getElementById('voiceSelect');
+            if (voiceSelect && data.voice_id) {
+                voiceSelect.value = data.voice_id;
+                console.log('✅ Auto-selected cloned voice');
+            }
+        }, 1000);
+
+        console.log('✅ Voice clone complete:', data.voice_id);
     } catch (error) {
-        console.error('Error cloning voice:', error);
-        showCloneError(error.message || 'Failed to clone voice');
+        console.error('❌ Error cloning voice:', error);
+        showCloneError(error.message || 'Failed to clone voice. Please check the console for details.');
     } finally {
         cloneBtn.disabled = false;
         cloneBtnText.textContent = 'Clone Voice';
