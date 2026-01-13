@@ -113,6 +113,10 @@ class TTSRequest(BaseModel):
     speed: float = 1.0    # 0.5 to 2.0
     pitch: float = 0      # -20 to +20 semitones
     volume: float = 1.0   # 0 to 1
+    # Audio effects
+    reverb: float = 0     # 0 to 1 (dry to wet)
+    echo: float = 0       # 0 to 1 (amount)
+    noise_reduction: bool = False
 
 
 @app.on_event("startup")
@@ -163,30 +167,34 @@ async def list_cloned_voices():
 
 @app.post("/tts")
 async def generate_speech(request: TTSRequest):
-    """Generate speech with speed, pitch, and volume controls"""
+    """Generate speech with speed, pitch, volume and audio effects"""
     text = request.text.strip()
     voice_id = request.voice_id
     language = request.language
     speed = max(0.5, min(2.0, request.speed))      # Clamp 0.5-2.0
     pitch = max(-20, min(20, request.pitch))       # Clamp -20 to +20
     volume = max(0.0, min(1.0, request.volume))    # Clamp 0-1
+    reverb = max(0.0, min(1.0, request.reverb))    # Clamp 0-1
+    echo = max(0.0, min(1.0, request.echo))        # Clamp 0-1
+    noise_reduction = request.noise_reduction
     
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
     if len(text) > 5000:
         raise HTTPException(status_code=400, detail="Text too long")
     
-    logger.info(f"🎤 TTS: voice={voice_id}, speed={speed}, pitch={pitch}, volume={volume}")
+    logger.info(f"🎤 TTS: voice={voice_id}, speed={speed}, pitch={pitch}, vol={volume}, reverb={reverb}, echo={echo}")
     
     # Route to appropriate handler
+    effects = {"reverb": reverb, "echo": echo, "noise_reduction": noise_reduction}
     if voice_id.startswith("clone_"):
-        return await generate_cloned_speech(text, voice_id, language, speed, pitch, volume)
+        return await generate_cloned_speech(text, voice_id, language, speed, pitch, volume, effects)
     else:
-        return await generate_edge_speech(text, voice_id, speed, pitch, volume)
+        return await generate_edge_speech(text, voice_id, speed, pitch, volume, effects)
 
 
-async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: float, volume: float):
-    """Generate speech with edge-tts including speed/pitch/volume"""
+async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: float, volume: float, effects: dict):
+    """Generate speech with edge-tts including speed/pitch/volume and effects"""
     
     if not HAS_EDGE_TTS:
         raise HTTPException(status_code=500, detail="TTS engine unavailable")
@@ -216,9 +224,13 @@ async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: fl
             audio_data = f.read()
         os.unlink(output_path)
         
-        # Apply volume if not 1.0 and we have numpy
-        if volume != 1.0 and HAS_NUMPY:
+        # Apply volume
+        if volume != 1.0:
             audio_data = apply_volume_mp3(audio_data, volume)
+        
+        # Apply effects
+        if effects.get("reverb", 0) > 0 or effects.get("echo", 0) > 0 or effects.get("noise_reduction"):
+            audio_data = apply_audio_effects_mp3(audio_data, effects)
         
         logger.info(f"✅ Generated: {len(audio_data)} bytes")
         
@@ -233,7 +245,7 @@ async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: fl
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, pitch: float, volume: float):
+async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, pitch: float, volume: float, effects: dict):
     """Generate speech using cloned voice"""
     
     # Get voice metadata
@@ -254,7 +266,7 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
     if not reference_audio:
         # Fallback to edge-tts if no samples
         logger.warning(f"No samples for {voice_id}, using edge-tts fallback")
-        return await generate_edge_speech(text, "default_english", speed, pitch, volume)
+        return await generate_edge_speech(text, "default_english", speed, pitch, volume, effects)
     
     # Use XTTS if available
     if HAS_XTTS and tts_model:
@@ -282,6 +294,10 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
             if pitch != 0 or volume != 1.0:
                 audio_data = apply_audio_effects_wav(audio_data, pitch, volume)
             
+            # Apply effects
+            if effects.get("reverb", 0) > 0 or effects.get("echo", 0) > 0 or effects.get("noise_reduction"):
+                audio_data = apply_audio_effects_wav_full(audio_data, effects)
+            
             logger.info(f"✅ XTTS generated: {len(audio_data)} bytes")
             
             return Response(
@@ -294,7 +310,7 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
             logger.error(f"❌ XTTS error: {e}, falling back to edge-tts")
     
     # Fallback to edge-tts
-    return await generate_edge_speech(text, "default_english", speed, pitch, volume)
+    return await generate_edge_speech(text, "default_english", speed, pitch, volume, effects)
 
 
 def apply_volume_mp3(audio_data: bytes, volume: float) -> bytes:
@@ -362,6 +378,114 @@ def apply_audio_effects_wav(audio_data: bytes, pitch: float, volume: float) -> b
         return result
     except Exception as e:
         logger.warning(f"Audio effects failed: {e}")
+        return audio_data
+
+
+def apply_audio_effects_mp3(audio_data: bytes, effects: dict) -> bytes:
+    """Apply audio effects to MP3 using ffmpeg"""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_in:
+            tmp_in.write(audio_data)
+            input_path = tmp_in.name
+        
+        output_path = input_path.replace('.mp3', '_fx.mp3')
+        filters = []
+        
+        # Reverb using aecho (simulated reverb)
+        reverb = effects.get("reverb", 0)
+        if reverb > 0:
+            # aecho: in_gain|out_gain|delays|decays
+            delay = int(50 + reverb * 100)  # 50-150ms
+            decay = 0.3 + reverb * 0.4  # 0.3-0.7
+            filters.append(f'aecho=0.8:0.9:{delay}:{decay}')
+        
+        # Echo
+        echo = effects.get("echo", 0)
+        if echo > 0:
+            delay = int(200 + echo * 400)  # 200-600ms
+            decay = 0.3 + echo * 0.3  # 0.3-0.6
+            filters.append(f'aecho=0.8:0.7:{delay}:{decay}')
+        
+        # Noise reduction (highpass + lowpass)
+        if effects.get("noise_reduction"):
+            filters.append('highpass=f=80')
+            filters.append('lowpass=f=12000')
+            filters.append('afftdn=nf=-20')  # FFT-based denoise
+        
+        if filters:
+            filter_str = ','.join(filters)
+            cmd = ['ffmpeg', '-y', '-i', input_path, '-filter:a', filter_str, '-q:a', '2', output_path]
+            result = subprocess.run(cmd, capture_output=True)
+            
+            if result.returncode != 0:
+                # Try simpler filter if afftdn fails
+                filters = [f for f in filters if 'afftdn' not in f]
+                if filters:
+                    filter_str = ','.join(filters)
+                    cmd = ['ffmpeg', '-y', '-i', input_path, '-filter:a', filter_str, '-q:a', '2', output_path]
+                    subprocess.run(cmd, capture_output=True, check=True)
+                else:
+                    shutil.copy(input_path, output_path)
+        else:
+            shutil.copy(input_path, output_path)
+        
+        with open(output_path, 'rb') as f:
+            result_data = f.read()
+        
+        os.unlink(input_path)
+        os.unlink(output_path)
+        
+        return result_data
+    except Exception as e:
+        logger.warning(f"MP3 effects failed: {e}")
+        return audio_data
+
+
+def apply_audio_effects_wav_full(audio_data: bytes, effects: dict) -> bytes:
+    """Apply audio effects to WAV using ffmpeg"""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_in:
+            tmp_in.write(audio_data)
+            input_path = tmp_in.name
+        
+        output_path = input_path.replace('.wav', '_fx.wav')
+        filters = []
+        
+        # Reverb
+        reverb = effects.get("reverb", 0)
+        if reverb > 0:
+            delay = int(50 + reverb * 100)
+            decay = 0.3 + reverb * 0.4
+            filters.append(f'aecho=0.8:0.9:{delay}:{decay}')
+        
+        # Echo
+        echo = effects.get("echo", 0)
+        if echo > 0:
+            delay = int(200 + echo * 400)
+            decay = 0.3 + echo * 0.3
+            filters.append(f'aecho=0.8:0.7:{delay}:{decay}')
+        
+        # Noise reduction
+        if effects.get("noise_reduction"):
+            filters.append('highpass=f=80')
+            filters.append('lowpass=f=12000')
+        
+        if filters:
+            filter_str = ','.join(filters)
+            cmd = ['ffmpeg', '-y', '-i', input_path, '-filter:a', filter_str, output_path]
+            subprocess.run(cmd, capture_output=True, check=True)
+        else:
+            shutil.copy(input_path, output_path)
+        
+        with open(output_path, 'rb') as f:
+            result_data = f.read()
+        
+        os.unlink(input_path)
+        os.unlink(output_path)
+        
+        return result_data
+    except Exception as e:
+        logger.warning(f"WAV effects failed: {e}")
         return audio_data
 
 

@@ -13,6 +13,10 @@ interface TTSRequest {
   pitch?: number
   volume?: number
   language?: string
+  // Audio effects
+  reverb?: number
+  echo?: number
+  noise_reduction?: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -30,7 +34,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body: TTSRequest = await request.json()
-    const { text, voice_id, language = 'en', speed = 1.0, pitch = 0, volume = 1.0 } = body
+    const { 
+      text, voice_id, language = 'en', 
+      speed = 1.0, pitch = 0, volume = 1.0,
+      reverb = 0, echo = 0, noise_reduction = false
+    } = body
 
     // Validation
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
@@ -62,6 +70,9 @@ export async function POST(request: NextRequest) {
           speed,
           pitch,
           volume,
+          reverb,
+          echo,
+          noise_reduction,
         }),
         signal: controller.signal,
       })

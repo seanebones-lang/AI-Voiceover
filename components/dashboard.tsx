@@ -31,6 +31,17 @@ interface Voice {
 
 type TabType = 'tts' | 'clone' | 'conversation' | 'compare'
 
+// Helper function for time formatting
+function formatTimeAgo(date: Date): string {
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  
+  if (diff < 60000) return 'Just now'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+  return date.toLocaleDateString()
+}
+
 export function Dashboard() {
   // Active tab
   const [activeTab, setActiveTab] = useState<TabType>('tts')
@@ -46,6 +57,40 @@ export function Dashboard() {
   const [speed, setSpeed] = useState([1.0])
   const [pitch, setPitch] = useState([0])
   const [volume, setVolume] = useState([1.0])
+
+  // Audio Effects State
+  const [reverb, setReverb] = useState([0])
+  const [echo, setEcho] = useState([0])
+  const [noiseReduction, setNoiseReduction] = useState(false)
+  const [showEffects, setShowEffects] = useState(false)
+  
+  // History State
+  const [history, setHistory] = useState<Array<{
+    id: string
+    text: string
+    voiceId: string
+    voiceName: string
+    audioUrl: string
+    timestamp: Date
+  }>>([])
+  
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + Enter to generate
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && text.trim() && selectedVoice && !loading) {
+        e.preventDefault()
+        generateSpeech()
+      }
+      // Ctrl/Cmd + D to download
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && audioUrl) {
+        e.preventDefault()
+        downloadAudio()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [text, selectedVoice, loading, audioUrl])
 
   // Clone State
   const [cloneName, setCloneName] = useState('')
@@ -119,6 +164,9 @@ export function Dashboard() {
           speed: speed[0],
           pitch: pitch[0],
           volume: volume[0],
+          reverb: reverb[0],
+          echo: echo[0],
+          noise_reduction: noiseReduction,
         }),
       })
 
@@ -131,6 +179,17 @@ export function Dashboard() {
       const url = URL.createObjectURL(blob)
       setAudioBlob(blob)
       setAudioUrl(url)
+      
+      // Add to history
+      const voice = voices.find(v => v.voice_id === selectedVoice)
+      setHistory(prev => [{
+        id: Date.now().toString(),
+        text: text.trim(),
+        voiceId: selectedVoice,
+        voiceName: voice?.name || selectedVoice,
+        audioUrl: url,
+        timestamp: new Date()
+      }, ...prev].slice(0, 20)) // Keep last 20
     } catch (err) {
       console.error('Generation error:', err)
       setError(err instanceof Error ? err.message : 'Failed to generate speech')
@@ -418,6 +477,24 @@ export function Dashboard() {
                   <CardDescription>Enter your text and generate natural-sounding speech</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Quick Presets */}
+              <div className="flex flex-wrap gap-2">
+                <span className="text-xs text-muted-foreground mr-2 self-center">Try:</span>
+                {[
+                  { label: "Demo", text: "Hello! Welcome to NextEleven, the most advanced voice synthesis platform." },
+                  { label: "Narration", text: "In a world where technology and humanity converge, one voice stood apart from the rest." },
+                  { label: "Podcast", text: "Hey everyone! Welcome back to another episode. Today we're diving deep into a topic I know you've all been asking about." },
+                ].map(preset => (
+                  <button
+                    key={preset.label}
+                    onClick={() => setText(preset.text)}
+                    className="px-2.5 py-1 text-xs rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              
               {/* Voice Selection */}
               <div>
                     <label className="text-sm font-medium mb-2 block">Select Voice</label>
@@ -495,6 +572,48 @@ export function Dashboard() {
                     </div>
                     <Slider value={volume} onValueChange={setVolume} min={0} max={1} step={0.05} />
                   </div>
+                  
+                  {/* Audio Effects Section */}
+                  <div className="pt-4 border-t">
+                    <button 
+                      onClick={() => setShowEffects(!showEffects)}
+                      className="w-full flex items-center justify-between text-sm font-medium mb-3 hover:text-primary transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        Audio Effects
+                      </span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${showEffects ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    
+                    {showEffects && (
+                      <div className="space-y-4 animate-in slide-in-from-top-2">
+                        <div>
+                          <div className="flex justify-between mb-2">
+                            <label className="text-sm font-medium">Reverb</label>
+                            <span className="text-sm text-muted-foreground">{Math.round(reverb[0] * 100)}%</span>
+                          </div>
+                          <Slider value={reverb} onValueChange={setReverb} min={0} max={1} step={0.05} />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-2">
+                            <label className="text-sm font-medium">Echo</label>
+                            <span className="text-sm text-muted-foreground">{Math.round(echo[0] * 100)}%</span>
+                          </div>
+                          <Slider value={echo} onValueChange={setEcho} min={0} max={1} step={0.05} />
+                        </div>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={noiseReduction}
+                            onChange={(e) => setNoiseReduction(e.target.checked)}
+                            className="w-4 h-4 rounded border-input bg-background"
+                          />
+                          <span className="text-sm font-medium">Noise Reduction</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -524,10 +643,52 @@ export function Dashboard() {
                   <CardTitle>About</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground space-y-2">
-                  <p>Powered by <strong>edge-tts</strong> - Microsoft's neural TTS engine.</p>
-                  <p>100% self-hosted. No external API keys required.</p>
+                  <p>Powered by <strong>edge-tts</strong> + <strong>Coqui XTTS</strong></p>
+                  <p>100% self-hosted. No external API keys.</p>
+                  <p className="text-xs pt-2 border-t mt-3">
+                    <span className="text-primary">⌘/Ctrl + Enter</span> to generate<br/>
+                    <span className="text-primary">⌘/Ctrl + D</span> to download
+                  </p>
                 </CardContent>
               </Card>
+              
+              {/* History */}
+              {history.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Recent ({history.length})</CardTitle>
+                      <button 
+                        onClick={() => setHistory([])}
+                        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2 max-h-[250px] overflow-y-auto">
+                    {history.map((item) => (
+                      <div 
+                        key={item.id}
+                        className="group p-2 rounded-lg bg-secondary/30 hover:bg-secondary/60 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setAudioUrl(item.audioUrl)
+                          setText(item.text)
+                          setSelectedVoice(item.voiceId)
+                        }}
+                      >
+                        <p className="text-xs font-medium truncate">{item.text.substring(0, 40)}...</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-[10px] text-muted-foreground">{item.voiceName}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatTimeAgo(item.timestamp)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         )}
@@ -735,7 +896,7 @@ export function Dashboard() {
                   </div>
                 )}
 
-                <Button 
+                  <Button
                   className="w-full" 
                   size="lg" 
                   onClick={generateConversation}
@@ -743,7 +904,7 @@ export function Dashboard() {
                 >
                   <Icons.Play />
                   <span className="ml-2">{conversationLoading ? 'Generating...' : 'Generate Conversation'}</span>
-                </Button>
+                  </Button>
 
                 {/* Generated Audio Results */}
                 {conversationAudios.length > 0 && (
@@ -763,12 +924,12 @@ export function Dashboard() {
                         </div>
                       )
                     })}
-                  </div>
+                </div>
                 )}
               </CardContent>
             </Card>
           </div>
-        )}
+          )}
 
         {/* ============ COMPARE TAB ============ */}
         {activeTab === 'compare' && (
