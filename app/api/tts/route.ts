@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PiperTTS, PiperTTS as Piper } from '@/lib/tts/piper'
 import { ttsRateLimiter } from '@/lib/rate-limit'
 
+// Force dynamic rendering to avoid onnxruntime-node loading at build time
+export const dynamic = 'force-dynamic'
+
 // Cache for TTS instances
 const ttsInstances = new Map<string, PiperTTS>()
 

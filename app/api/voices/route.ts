@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { PiperTTS } from '@/lib/tts/piper'
 
+// Force dynamic rendering to avoid onnxruntime-node loading at build time
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const voices = PiperTTS.getAvailableVoices()
