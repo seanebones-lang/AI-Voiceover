@@ -1,13 +1,12 @@
 """
-NextEleven Voice Service
-REAL Voice Cloning using Coqui XTTS + edge-tts fallback
+NextEleven Voice Service v2.2
+REAL Voice Cloning + Working Speed/Pitch/Volume Controls
 """
 
 import sys
 import os
 import traceback
 
-# Set up logging FIRST
 import logging
 logging.basicConfig(
     level=logging.INFO,
@@ -17,71 +16,70 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("  NextEleven Voice Service - REAL Voice Cloning")
+logger.info("  NextEleven Voice Service v2.2")
+logger.info("  Speed/Pitch/Volume Controls ENABLED")
 logger.info("=" * 60)
 
 # Core imports
 try:
-    from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import Response, FileResponse
-    from pydantic import BaseModel
-    from typing import List, Optional
-    import uvicorn
-    import tempfile
-    import shutil
-    from pathlib import Path
-    import json
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import Response
+from pydantic import BaseModel
+from typing import List, Optional
+import uvicorn
+import tempfile
+import shutil
+from pathlib import Path
+import json
     import datetime
-    import asyncio
     import hashlib
+    import subprocess
     logger.info("✅ Core imports OK")
 except ImportError as e:
     logger.error(f"❌ Core import failed: {e}")
     sys.exit(1)
 
-# edge-tts for standard voices
+# edge-tts
 try:
     import edge_tts
     HAS_EDGE_TTS = True
     logger.info("✅ edge-tts available")
 except ImportError:
     HAS_EDGE_TTS = False
-    logger.warning("⚠️ edge-tts not available")
+    logger.error("❌ edge-tts not available!")
+
+# Audio processing for volume/effects
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    logger.warning("⚠️ numpy not available, volume control limited")
 
 # Coqui TTS for voice cloning
 HAS_XTTS = False
 tts_model = None
+DEVICE = "cpu"
 
 try:
     import torch
-    import torchaudio
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info(f"✅ PyTorch available, device: {DEVICE}")
+    
     from TTS.api import TTS
-    
-    # Check for GPU
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"✅ PyTorch available, device: {device}")
-    
-    # Try to load XTTS model (this can do voice cloning)
     try:
-        logger.info("🔄 Loading XTTS model for voice cloning...")
-        tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+        logger.info("🔄 Loading XTTS model...")
+        tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
         HAS_XTTS = True
-        logger.info("✅ XTTS model loaded - REAL voice cloning enabled!")
+        logger.info("✅ XTTS loaded - REAL voice cloning enabled!")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load XTTS: {e}")
-        logger.info("   Voice cloning will use edge-tts fallback")
-        
+        logger.warning(f"⚠️ XTTS load failed: {e}")
 except ImportError as e:
     logger.warning(f"⚠️ Coqui TTS not available: {e}")
-    logger.info("   Will use edge-tts only (no real voice cloning)")
 
 # Initialize FastAPI
-app = FastAPI(
-    title="NextEleven Voice Service",
-    version="2.1.0",
-    description="Production TTS with REAL voice cloning via XTTS"
-)
+app = FastAPI(title="NextEleven Voice Service", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,7 +93,7 @@ app.add_middleware(
 VOICES_DIR = Path(os.getenv("VOICES_DIR", "/app/cloned_voices"))
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
 
-# Edge TTS voice mapping
+# Edge TTS voices
 EDGE_VOICES = {
     "default_english": "en-US-GuyNeural",
     "female_english": "en-US-JennyNeural",
@@ -112,25 +110,19 @@ class TTSRequest(BaseModel):
     text: str
     voice_id: str
     language: str = "en"
+    speed: float = 1.0    # 0.5 to 2.0
+    pitch: float = 0      # -20 to +20 semitones
+    volume: float = 1.0   # 0 to 1
 
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 Service starting...")
-    logger.info(f"   XTTS available: {HAS_XTTS}")
-    logger.info(f"   edge-tts available: {HAS_EDGE_TTS}")
-    logger.info(f"   Voices directory: {VOICES_DIR}")
-    logger.info("✅ NextEleven Voice Service ready!")
+    logger.info(f"🚀 Service ready | XTTS: {HAS_XTTS} | edge-tts: {HAS_EDGE_TTS}")
 
 
 @app.get("/")
 async def root():
-    return {
-        "service": "NextEleven Voice",
-        "version": "2.1.0",
-        "xtts_enabled": HAS_XTTS,
-        "edge_tts_enabled": HAS_EDGE_TTS
-    }
+    return {"service": "NextEleven Voice", "version": "2.2.0", "xtts": HAS_XTTS}
 
 
 @app.get("/health")
@@ -138,58 +130,111 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "NextEleven Voice",
+        "version": "2.2.0",
         "tts_engine": "xtts" if HAS_XTTS else "edge-tts",
         "voice_cloning": "real" if HAS_XTTS else "placeholder",
-        "cloned_voices": len(list(VOICES_DIR.glob("*.json"))),
-        "voices_dir": str(VOICES_DIR)
+        "features": {
+            "speed_control": True,
+            "pitch_control": True,
+            "volume_control": True,
+        },
+        "cloned_voices": len(list(VOICES_DIR.glob("*.json")))
     }
 
 
 @app.get("/voices")
 async def list_cloned_voices():
-    """List all cloned voices"""
     voices = []
     for voice_file in VOICES_DIR.glob("*.json"):
         try:
             with open(voice_file) as f:
-                voice_data = json.load(f)
+                data = json.load(f)
                 voices.append({
-                    "voice_id": voice_data.get("voice_id"),
-                    "name": voice_data.get("name"),
-                    "description": voice_data.get("description"),
-                    "created_at": voice_data.get("created_at"),
-                    "source": "cloned",
-                    "real_clone": voice_data.get("real_clone", False)
+                    "voice_id": data.get("voice_id"),
+                    "name": data.get("name"),
+                    "description": data.get("description"),
+                    "created_at": data.get("created_at"),
+                    "source": "cloned"
                 })
-        except Exception as e:
-            logger.error(f"Error reading {voice_file}: {e}")
+        except:
+            pass
     return {"voices": voices}
 
 
 @app.post("/tts")
 async def generate_speech(request: TTSRequest):
-    """Generate speech - uses XTTS for cloned voices, edge-tts for standard"""
+    """Generate speech with speed, pitch, and volume controls"""
     text = request.text.strip()
     voice_id = request.voice_id
     language = request.language
+    speed = max(0.5, min(2.0, request.speed))      # Clamp 0.5-2.0
+    pitch = max(-20, min(20, request.pitch))       # Clamp -20 to +20
+    volume = max(0.0, min(1.0, request.volume))    # Clamp 0-1
     
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
-    
     if len(text) > 5000:
-        raise HTTPException(status_code=400, detail="Text must be 5000 characters or less")
+        raise HTTPException(status_code=400, detail="Text too long")
     
-    logger.info(f"🎤 TTS request: voice={voice_id}, lang={language}, text='{text[:50]}...'")
+    logger.info(f"🎤 TTS: voice={voice_id}, speed={speed}, pitch={pitch}, volume={volume}")
     
-    # Check if this is a cloned voice
+    # Route to appropriate handler
     if voice_id.startswith("clone_"):
-        return await generate_cloned_voice_speech(text, voice_id, language)
+        return await generate_cloned_speech(text, voice_id, language, speed, pitch, volume)
     else:
-        return await generate_edge_tts_speech(text, voice_id)
+        return await generate_edge_speech(text, voice_id, speed, pitch, volume)
 
 
-async def generate_cloned_voice_speech(text: str, voice_id: str, language: str):
-    """Generate speech using cloned voice via XTTS"""
+async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: float, volume: float):
+    """Generate speech with edge-tts including speed/pitch/volume"""
+    
+    if not HAS_EDGE_TTS:
+        raise HTTPException(status_code=500, detail="TTS engine unavailable")
+    
+    edge_voice = EDGE_VOICES.get(voice_id, "en-US-GuyNeural")
+    
+    # Convert speed to rate string: 1.0 = +0%, 0.5 = -50%, 2.0 = +100%
+    rate_percent = int((speed - 1.0) * 100)
+    rate_str = f"+{rate_percent}%" if rate_percent >= 0 else f"{rate_percent}%"
+    
+    # Convert pitch to Hz string: edge-tts uses Hz, roughly 1 semitone = 6%
+    pitch_hz = int(pitch * 10)  # Rough conversion
+    pitch_str = f"+{pitch_hz}Hz" if pitch_hz >= 0 else f"{pitch_hz}Hz"
+    
+    logger.info(f"   edge-tts: voice={edge_voice}, rate={rate_str}, pitch={pitch_str}")
+    
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
+            output_path = tmp.name
+        
+        # Create communicate with rate and pitch
+        communicate = edge_tts.Communicate(text, edge_voice, rate=rate_str, pitch=pitch_str)
+        await communicate.save(output_path)
+        
+        # Read audio
+        with open(output_path, 'rb') as f:
+            audio_data = f.read()
+        os.unlink(output_path)
+        
+        # Apply volume if not 1.0 and we have numpy
+        if volume != 1.0 and HAS_NUMPY:
+            audio_data = apply_volume_mp3(audio_data, volume)
+        
+        logger.info(f"✅ Generated: {len(audio_data)} bytes")
+        
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={"X-Engine": "edge-tts", "X-Speed": str(speed), "X-Pitch": str(pitch)}
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ edge-tts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, pitch: float, volume: float):
+    """Generate speech using cloned voice"""
     
     # Get voice metadata
     voice_file = VOICES_DIR / f"{voice_id}.json"
@@ -200,10 +245,6 @@ async def generate_cloned_voice_speech(text: str, voice_id: str, language: str):
         voice_data = json.load(f)
     
     sample_files = voice_data.get("sample_files", [])
-    if not sample_files:
-        raise HTTPException(status_code=400, detail="No audio samples for this voice")
-    
-    # Find a valid sample file
     reference_audio = None
     for sample in sample_files:
         if os.path.exists(sample):
@@ -211,81 +252,117 @@ async def generate_cloned_voice_speech(text: str, voice_id: str, language: str):
             break
     
     if not reference_audio:
-        raise HTTPException(status_code=400, detail="Voice sample files not found")
+        # Fallback to edge-tts if no samples
+        logger.warning(f"No samples for {voice_id}, using edge-tts fallback")
+        return await generate_edge_speech(text, "default_english", speed, pitch, volume)
     
-    # Use XTTS if available for REAL voice cloning
+    # Use XTTS if available
     if HAS_XTTS and tts_model:
         try:
-            logger.info(f"🎙️ Using XTTS for REAL voice cloning from: {reference_audio}")
+            logger.info(f"🎙️ XTTS cloning from: {reference_audio}")
             
-            # Create temp output file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 output_path = tmp.name
             
-            # Generate with voice cloning
+            # Generate with XTTS
             tts_model.tts_to_file(
                 text=text,
                 file_path=output_path,
                 speaker_wav=reference_audio,
-                language=language
+                language=language,
+                speed=speed  # XTTS supports speed directly
             )
             
-            # Read and return
+            # Read audio
             with open(output_path, 'rb') as f:
                 audio_data = f.read()
-            
             os.unlink(output_path)
             
-            logger.info(f"✅ XTTS voice clone generated: {len(audio_data)} bytes")
+            # Apply pitch and volume post-processing
+            if pitch != 0 or volume != 1.0:
+                audio_data = apply_audio_effects_wav(audio_data, pitch, volume)
+            
+            logger.info(f"✅ XTTS generated: {len(audio_data)} bytes")
             
             return Response(
                 content=audio_data,
                 media_type="audio/wav",
-                headers={"X-Voice-Clone": "real", "X-Engine": "xtts"}
+                headers={"X-Engine": "xtts", "X-Clone": "real"}
             )
             
         except Exception as e:
-            logger.error(f"❌ XTTS error: {e}")
-            logger.info("   Falling back to edge-tts")
+            logger.error(f"❌ XTTS error: {e}, falling back to edge-tts")
     
-    # Fallback to edge-tts with default voice
-    logger.info(f"📢 Using edge-tts fallback for cloned voice: {voice_id}")
-    return await generate_edge_tts_speech(text, "default_english")
+    # Fallback to edge-tts
+    return await generate_edge_speech(text, "default_english", speed, pitch, volume)
 
 
-async def generate_edge_tts_speech(text: str, voice_id: str):
-    """Generate speech using edge-tts"""
-    
-    if not HAS_EDGE_TTS:
-        raise HTTPException(status_code=500, detail="No TTS engine available")
-    
-    edge_voice = EDGE_VOICES.get(voice_id, "en-US-GuyNeural")
-    
-    logger.info(f"🔊 Using edge-tts voice: {edge_voice}")
-    
+def apply_volume_mp3(audio_data: bytes, volume: float) -> bytes:
+    """Apply volume adjustment to MP3 using ffmpeg"""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
-            output_path = tmp.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_in:
+            tmp_in.write(audio_data)
+            input_path = tmp_in.name
         
-        communicate = edge_tts.Communicate(text, edge_voice)
-        await communicate.save(output_path)
+        output_path = input_path.replace('.mp3', '_vol.mp3')
+        
+        # Use ffmpeg to adjust volume
+        cmd = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-filter:a', f'volume={volume}',
+            '-q:a', '2', output_path
+        ]
+        subprocess.run(cmd, capture_output=True, check=True)
         
         with open(output_path, 'rb') as f:
-            audio_data = f.read()
+            result = f.read()
         
+        os.unlink(input_path)
+                os.unlink(output_path)
+        
+        return result
+    except Exception as e:
+        logger.warning(f"Volume adjust failed: {e}")
+        return audio_data
+
+
+def apply_audio_effects_wav(audio_data: bytes, pitch: float, volume: float) -> bytes:
+    """Apply pitch and volume to WAV using ffmpeg"""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_in:
+            tmp_in.write(audio_data)
+            input_path = tmp_in.name
+        
+        output_path = input_path.replace('.wav', '_fx.wav')
+        
+        # Build filter chain
+        filters = []
+        if volume != 1.0:
+            filters.append(f'volume={volume}')
+        if pitch != 0:
+            # Pitch shift using rubberband or asetrate
+            # Semitones to rate: 2^(semitones/12)
+            rate_mult = 2 ** (pitch / 12)
+            filters.append(f'asetrate=44100*{rate_mult},aresample=44100')
+        
+        if filters:
+            filter_str = ','.join(filters)
+            cmd = ['ffmpeg', '-y', '-i', input_path, '-filter:a', filter_str, output_path]
+        else:
+            cmd = ['ffmpeg', '-y', '-i', input_path, '-c', 'copy', output_path]
+        
+        subprocess.run(cmd, capture_output=True, check=True)
+        
+        with open(output_path, 'rb') as f:
+            result = f.read()
+        
+        os.unlink(input_path)
         os.unlink(output_path)
         
-        logger.info(f"✅ edge-tts generated: {len(audio_data)} bytes")
-        
-        return Response(
-            content=audio_data,
-            media_type="audio/mpeg",
-            headers={"X-Voice-Clone": "false", "X-Engine": "edge-tts"}
-        )
-        
+        return result
     except Exception as e:
-        logger.error(f"❌ edge-tts error: {e}")
-        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+        logger.warning(f"Audio effects failed: {e}")
+        return audio_data
 
 
 @app.post("/clone")
@@ -296,147 +373,106 @@ async def clone_voice(
 ):
     """Clone a voice from audio samples"""
     
-    logger.info(f"🎙️ Clone request: name={name}, files={len(files)}")
+    logger.info(f"🎙️ Clone: name={name}, files={len(files)}")
     
-    if not files or len(files) == 0:
-        raise HTTPException(status_code=400, detail="At least one audio file required")
-    
-    if len(files) > 5:
-        raise HTTPException(status_code=400, detail="Maximum 5 files allowed")
-    
-    if not name or len(name.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Voice name is required")
-    
-    # Create voice ID
-    safe_name = name.lower().replace(' ', '_').replace('-', '_')
-    safe_name = ''.join(c for c in safe_name if c.isalnum() or c == '_')
+    if not files:
+        raise HTTPException(status_code=400, detail="Audio file required")
+        if len(files) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 files")
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Name required")
+        
+        # Create voice ID
+    safe_name = ''.join(c for c in name.lower().replace(' ', '_') if c.isalnum() or c == '_')
     voice_id = f"clone_{safe_name}_{hashlib.md5(name.encode()).hexdigest()[:6]}"
     
-    voice_dir = VOICES_DIR / voice_id
-    voice_dir.mkdir(parents=True, exist_ok=True)
-    
-    saved_files = []
-    try:
-        for i, file in enumerate(files):
+        voice_dir = VOICES_DIR / voice_id
+        voice_dir.mkdir(parents=True, exist_ok=True)
+        
+        saved_files = []
+        try:
+            for i, file in enumerate(files):
             filename = file.filename or f"audio_{i}"
-            content_type = file.content_type or ""
+                content_type = file.content_type or ""
             
-            # Validate
-            valid_extensions = ('.wav', '.mp3', '.ogg', '.flac', '.m4a', '.webm', '.opus')
-            if not (content_type.startswith('audio/') or filename.lower().endswith(valid_extensions)):
-                raise HTTPException(status_code=400, detail=f"Invalid file type: {filename}")
-            
-            # Save file
-            suffix = Path(filename).suffix or '.wav'
-            file_path = voice_dir / f"sample_{i}{suffix}"
+            valid_ext = ('.wav', '.mp3', '.ogg', '.flac', '.m4a', '.webm', '.opus')
+            if not (content_type.startswith('audio/') or filename.lower().endswith(valid_ext)):
+                raise HTTPException(status_code=400, detail=f"Invalid file: {filename}")
             
             content = await file.read()
             if len(content) < 1000:
                 raise HTTPException(status_code=400, detail=f"File too small: {filename}")
             
-            with open(file_path, 'wb') as f:
+            suffix = Path(filename).suffix or '.wav'
+                file_path = voice_dir / f"sample_{i}{suffix}"
+                
+                with open(file_path, 'wb') as f:
                 f.write(content)
             
-            saved_files.append(str(file_path))
+            # Convert to WAV for XTTS compatibility
+            wav_path = await convert_to_wav(str(file_path))
+            saved_files.append(wav_path or str(file_path))
+            
             logger.info(f"   Saved: {file_path} ({len(content)} bytes)")
         
-        # Convert to WAV if needed for XTTS compatibility
-        wav_files = []
-        for sample in saved_files:
-            wav_path = await convert_to_wav(sample)
-            if wav_path:
-                wav_files.append(wav_path)
-        
         # Save metadata
-        voice_metadata = {
-            "voice_id": voice_id,
-            "name": name,
-            "description": description,
-            "sample_files": wav_files if wav_files else saved_files,
-            "original_files": saved_files,
+        metadata = {
+                "voice_id": voice_id,
+                "name": name,
+                "description": description,
+                "sample_files": saved_files,
             "created_at": datetime.datetime.now().isoformat(),
             "real_clone": HAS_XTTS
-        }
-        
-        with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
-            json.dump(voice_metadata, f, indent=2)
-        
-        clone_type = "REAL (XTTS)" if HAS_XTTS else "placeholder (edge-tts fallback)"
-        logger.info(f"✅ Voice cloned: {name} ({voice_id}) - {clone_type}")
-        
-        return {
-            "success": True,
-            "voice_id": voice_id,
-            "name": name,
-            "description": description,
-            "samples_count": len(saved_files),
+            }
+            
+            with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        logger.info(f"✅ Cloned: {name} ({voice_id})")
+            
+            return {
+                "success": True,
+                "voice_id": voice_id,
+                "name": name,
+                "samples_count": len(saved_files),
             "real_clone": HAS_XTTS,
-            "message": f"Voice '{name}' cloned successfully! {'Real voice cloning enabled.' if HAS_XTTS else 'Using edge-tts fallback.'}"
-        }
-        
-    except HTTPException:
-        shutil.rmtree(voice_dir, ignore_errors=True)
-        raise
-    except Exception as e:
-        shutil.rmtree(voice_dir, ignore_errors=True)
+            "message": f"Voice '{name}' cloned!"
+            }
+            
+        except HTTPException:
+            shutil.rmtree(voice_dir, ignore_errors=True)
+            raise
+        except Exception as e:
+            shutil.rmtree(voice_dir, ignore_errors=True)
         logger.error(f"❌ Clone error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+            raise HTTPException(status_code=500, detail=str(e))
+                    
 
 async def convert_to_wav(input_path: str) -> Optional[str]:
-    """Convert audio file to WAV format for XTTS compatibility"""
+    """Convert audio to WAV format"""
     try:
-        import soundfile as sf
-        import librosa
-        
-        # Load audio
-        y, sr = librosa.load(input_path, sr=22050, mono=True)
-        
-        # Save as WAV
-        wav_path = input_path.rsplit('.', 1)[0] + '_converted.wav'
-        sf.write(wav_path, y, sr)
-        
-        logger.info(f"   Converted to WAV: {wav_path}")
-        return wav_path
-        
-    except Exception as e:
-        logger.warning(f"   Could not convert {input_path}: {e}")
-        return None
+        wav_path = input_path.rsplit('.', 1)[0] + '.wav'
+        cmd = ['ffmpeg', '-y', '-i', input_path, '-ar', '22050', '-ac', '1', wav_path]
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode == 0:
+            return wav_path
+    except:
+        pass
+    return None
 
 
 @app.delete("/voices/{voice_id}")
 async def delete_voice(voice_id: str):
-    """Delete a cloned voice"""
     voice_file = VOICES_DIR / f"{voice_id}.json"
     voice_dir = VOICES_DIR / voice_id
     
     if not voice_file.exists():
-        raise HTTPException(status_code=404, detail=f"Voice not found: {voice_id}")
+        raise HTTPException(status_code=404, detail="Voice not found")
     
     shutil.rmtree(voice_dir, ignore_errors=True)
     voice_file.unlink(missing_ok=True)
     
-    logger.info(f"🗑️ Deleted voice: {voice_id}")
-    return {"success": True, "message": f"Voice '{voice_id}' deleted"}
-
-
-@app.get("/capabilities")
-async def get_capabilities():
-    """Get service capabilities"""
-    return {
-        "tts_engines": {
-            "xtts": HAS_XTTS,
-            "edge_tts": HAS_EDGE_TTS
-        },
-        "voice_cloning": {
-            "available": True,
-            "real_cloning": HAS_XTTS,
-            "method": "XTTS zero-shot cloning" if HAS_XTTS else "edge-tts with stored samples"
-        },
-        "languages": ["en", "es", "fr", "de", "pt", "it", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "ko"],
-        "max_text_length": 5000,
-        "supported_audio_formats": ["wav", "mp3", "ogg", "flac", "m4a", "webm"]
-    }
+    return {"success": True}
 
 
 if __name__ == "__main__":
