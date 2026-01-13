@@ -23,10 +23,13 @@ FROM python:3.11-slim AS python-builder
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies with retries and no-install-recommends
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python requirements
@@ -38,14 +41,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Node.js for Next.js runtime
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install system dependencies for audio processing
-RUN apt-get update && apt-get install -y \
+# Install curl first (needed for nodesource), then Node.js and ffmpeg
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
     ffmpeg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
