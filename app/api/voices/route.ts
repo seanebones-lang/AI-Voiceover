@@ -15,52 +15,84 @@ interface Voice {
   description?: string
 }
 
-// Default built-in voices from YourTTS/XTTS
+// Default voices using edge-tts (Microsoft TTS)
 const DEFAULT_VOICES: Voice[] = [
+  // English voices
   {
     voice_id: 'default_english',
-    name: 'Default English',
+    name: 'Guy (US English)',
     language: 'en',
-    gender: 'neutral',
-    source: 'yourtts',
+    gender: 'male',
+    source: 'edge-tts',
     category: 'standard',
-    description: 'Default YourTTS English voice'
+    description: 'Natural US English male voice'
   },
+  {
+    voice_id: 'female_english',
+    name: 'Jenny (US English)',
+    language: 'en',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural US English female voice'
+  },
+  {
+    voice_id: 'male_british',
+    name: 'Ryan (British)',
+    language: 'en',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural British English male voice'
+  },
+  {
+    voice_id: 'female_british',
+    name: 'Sonia (British)',
+    language: 'en',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural British English female voice'
+  },
+  // Spanish
   {
     voice_id: 'default_spanish',
-    name: 'Default Spanish',
+    name: 'Alvaro (Spanish)',
     language: 'es',
-    gender: 'neutral',
-    source: 'yourtts',
+    gender: 'male',
+    source: 'edge-tts',
     category: 'standard',
-    description: 'Default YourTTS Spanish voice'
+    description: 'Natural Spanish male voice'
   },
+  // French
   {
     voice_id: 'default_french',
-    name: 'Default French',
+    name: 'Henri (French)',
     language: 'fr',
-    gender: 'neutral',
-    source: 'yourtts',
+    gender: 'male',
+    source: 'edge-tts',
     category: 'standard',
-    description: 'Default YourTTS French voice'
+    description: 'Natural French male voice'
   },
+  // German
   {
     voice_id: 'default_german',
-    name: 'Default German',
+    name: 'Conrad (German)',
     language: 'de',
-    gender: 'neutral',
-    source: 'yourtts',
+    gender: 'male',
+    source: 'edge-tts',
     category: 'standard',
-    description: 'Default YourTTS German voice'
+    description: 'Natural German male voice'
   },
+  // Portuguese
   {
     voice_id: 'default_portuguese',
-    name: 'Default Portuguese',
+    name: 'Antonio (Portuguese)',
     language: 'pt',
-    gender: 'neutral',
-    source: 'yourtts',
+    gender: 'male',
+    source: 'edge-tts',
     category: 'standard',
-    description: 'Default YourTTS Portuguese voice'
+    description: 'Natural Brazilian Portuguese male voice'
   }
 ]
 
