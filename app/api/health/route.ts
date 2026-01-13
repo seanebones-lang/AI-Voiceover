@@ -4,8 +4,28 @@ export const dynamic = 'force-dynamic'
 
 const XTTS_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8081'
 
+interface SidecarStatus {
+  status: string
+  url: string
+  error?: string
+  service?: string
+  tts_engine?: string
+  cloned_voices?: number
+}
+
 export async function GET() {
-  const health = {
+  const health: {
+    status: string
+    timestamp: string
+    services: {
+      nextjs: { status: string; version: string }
+      sidecar: SidecarStatus
+    }
+    environment: {
+      NODE_ENV: string | undefined
+      XTTS_URL: string
+    }
+  } = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     services: {
