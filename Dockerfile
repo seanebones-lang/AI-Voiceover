@@ -81,8 +81,8 @@ RUN mkdir -p models/piper models/xtts uploads
 # Download models (optional - can be done at runtime)
 # RUN npm run download-models || true
 
-# Expose ports
-EXPOSE 3000 8000
+# Expose ports (8080 for Next.js via Railway, 8081 for internal XTTS sidecar)
+EXPOSE 8080 8081
 
 # Start both services
 COPY docker-entrypoint.sh /docker-entrypoint.sh

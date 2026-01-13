@@ -237,5 +237,6 @@ async def generate_speech(request: TTSRequest):
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
+    # Use XTTS_PORT for internal sidecar, not PORT (which Railway uses for main app)
+    port = int(os.getenv("XTTS_PORT", 8081))
     uvicorn.run(app, host="0.0.0.0", port=port)

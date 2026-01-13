@@ -3,7 +3,7 @@
  * Communicates with Python FastAPI service for voice cloning
  */
 
-const XTTS_SIDECAR_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8000'
+const XTTS_SIDECAR_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8081'
 
 export interface CloneVoiceRequest {
   name: string

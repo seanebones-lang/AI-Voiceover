@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { XTTSClient } from '@/lib/tts/xtts-client'
 import { cloneRateLimiter } from '@/lib/rate-limit'
 
-const xttsClient = new XTTSClient(process.env.XTTS_SIDECAR_URL || 'http://localhost:8000')
+const xttsClient = new XTTSClient(process.env.XTTS_SIDECAR_URL || 'http://localhost:8081')
 
 export async function POST(request: NextRequest) {
   try {
