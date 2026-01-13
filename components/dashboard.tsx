@@ -148,11 +148,53 @@ export function Dashboard() {
   const [compareAudio2, setCompareAudio2] = useState<string | null>(null)
   const [compareLoading1, setCompareLoading1] = useState(false)
   const [compareLoading2, setCompareLoading2] = useState(false)
+  
+  // Voice preview
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
 
   // Load voices on mount
   useEffect(() => {
     loadVoices()
   }, [])
+
+  async function previewVoice(voiceId: string) {
+    if (previewLoading) return
+    setPreviewLoading(true)
+    
+    try {
+      // Stop any currently playing preview
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause()
+        previewAudioRef.current = null
+      }
+      
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'Hello! This is a preview of how this voice sounds.',
+          voice_id: voiceId,
+          speed: 1.0,
+          pitch: 0,
+          volume: 1.0,
+        }),
+      })
+      
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        previewAudioRef.current = audio
+        audio.play()
+        audio.onended = () => URL.revokeObjectURL(url)
+      }
+    } catch (err) {
+      console.error('Preview failed:', err)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   async function loadVoices() {
     try {
@@ -551,12 +593,13 @@ export function Dashboard() {
               
               {/* Voice Selection */}
               <div>
-                    <label className="text-sm font-medium mb-2 block">Select Voice</label>
-                    <select
+                <label className="text-sm font-medium mb-2 block">Select Voice</label>
+                <div className="flex gap-2">
+                  <select
                   value={selectedVoice}
-                      onChange={(e) => setSelectedVoice(e.target.value)}
-                      className="w-full px-4 py-3 rounded-lg border bg-background"
-                    >
+                    onChange={(e) => setSelectedVoice(e.target.value)}
+                    className="flex-1 px-4 py-3 rounded-lg border bg-background"
+                  >
                       <option value="">Select a voice...</option>
                       {voices.filter(v => v.source === 'cloned').length > 0 && (
                         <optgroup label="🎤 Cloned Voices">
@@ -565,14 +608,32 @@ export function Dashboard() {
                           ))}
                         </optgroup>
                       )}
-                      <optgroup label="🌐 Standard Voices">
-                        {voices.filter(v => v.source !== 'cloned').map(v => (
-                          <option key={v.voice_id} value={v.voice_id}>
-                            {v.name} ({v.language || 'en'})
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
+                    <optgroup label="🌐 Standard Voices">
+                      {voices.filter(v => v.source !== 'cloned').map(v => (
+                        <option key={v.voice_id} value={v.voice_id}>
+                          {v.name} ({v.language || 'en'})
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => selectedVoice && previewVoice(selectedVoice)}
+                    disabled={!selectedVoice || previewLoading}
+                    title="Preview voice"
+                    className="shrink-0"
+                  >
+                    {previewLoading ? (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                    ) : (
+                      <Icons.Play />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {/* Text Input */}
@@ -591,9 +652,9 @@ export function Dashboard() {
               </div>
 
               {/* Generate Button */}
-              <Button 
-                onClick={generateSpeech} 
-                disabled={loading || !text.trim() || !selectedVoice} 
+              <Button
+                onClick={generateSpeech}
+                disabled={loading || !text.trim() || !selectedVoice}
                 className={`w-full relative overflow-hidden ${loading ? 'animate-pulse-glow' : ''}`} 
                 size="lg"
               >
