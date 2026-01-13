@@ -1,0 +1,6 @@
+NEXTAUTH_SECRET=v5IZ1o//BsqA0tq5N0aotYOqanvKhrQa4/y4ut3RIqg=
+NEXTAUTH_URL=https://your-app.railway.app
+UPSTASH_REDIS_REST_URL=your-upstash-redis-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-token
+XTTS_SIDECAR_URL=http://localhost:8000
+NODE_ENV=production
