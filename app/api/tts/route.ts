@@ -4,6 +4,8 @@ import { ttsRateLimiter } from '@/lib/rate-limit'
 // Force dynamic rendering to avoid onnxruntime-node loading at build time
 export const dynamic = 'force-dynamic'
 
+const XTTS_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8081'
+
 // Lazy import to avoid loading onnxruntime-node at build time
 async function getPiperTTS() {
   const { PiperTTS } = await import('@/lib/tts/piper')
@@ -19,6 +21,7 @@ interface TTSRequest {
   speed?: number
   pitch?: number
   volume?: number
+  language?: string
 }
 
 async function getTTSInstance(voiceId: string): Promise<any | null> {
@@ -37,6 +40,28 @@ async function getTTSInstance(voiceId: string): Promise<any | null> {
   const tts = new PiperTTS(voiceId, voice.modelPath)
   ttsInstances.set(voiceId, tts)
   return tts
+}
+
+// Generate TTS using cloned voice via XTTS sidecar
+async function generateClonedVoiceTTS(text: string, voiceId: string, language: string = 'en') {
+  const response = await fetch(`${XTTS_URL}/tts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      language,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'TTS generation failed' }))
+    throw new Error(error.detail || 'Failed to generate cloned voice TTS')
+  }
+
+  return response
 }
 
 export async function POST(request: NextRequest) {
@@ -65,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: TTSRequest = await request.json()
-    const { text, voice_id, speed = 1.0, pitch = 0, volume = 1.0 } = body
+    const { text, voice_id, speed = 1.0, pitch = 0, volume = 1.0, language = 'en' } = body
 
     // Validation
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
@@ -89,7 +114,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get TTS instance
+    const startTime = Date.now()
+
+    // Check if this is a cloned voice (starts with "clone_")
+    if (voice_id.startsWith('clone_')) {
+      console.log(`🎤 Using cloned voice: ${voice_id}`)
+      
+      try {
+        const xttsResponse = await generateClonedVoiceTTS(text, voice_id, language)
+        const audioBuffer = await xttsResponse.arrayBuffer()
+        const latency = Date.now() - startTime
+
+        console.log(`✓ Cloned voice TTS generated: ${text.substring(0, 50)}... (${latency}ms)`)
+
+        return new NextResponse(audioBuffer, {
+          headers: {
+            'Content-Type': 'audio/wav',
+            'Content-Disposition': `attachment; filename="cloned-voiceover-${Date.now()}.wav"`,
+            'Content-Length': audioBuffer.byteLength.toString(),
+            'X-Generation-Latency': latency.toString(),
+            'X-Voice-Type': 'cloned',
+            'X-RateLimit-Limit': limit.toString(),
+            'X-RateLimit-Remaining': (remaining - 1).toString(),
+            'X-RateLimit-Reset': reset.toString(),
+          },
+        })
+      } catch (error) {
+        console.error('Cloned voice TTS error:', error)
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : 'Failed to generate cloned voice audio' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Otherwise, use Piper TTS for standard voices
     const tts = await getTTSInstance(voice_id)
     if (!tts) {
       return NextResponse.json(
@@ -105,7 +164,6 @@ export async function POST(request: NextRequest) {
 
     // Synthesize speech
     const PiperTTS = await getPiperTTS()
-    const startTime = Date.now()
     const audioBuffer = await tts.synthesize(text, { speed, pitch, volume })
     const latency = Date.now() - startTime
 
@@ -121,6 +179,7 @@ export async function POST(request: NextRequest) {
         'Content-Disposition': `attachment; filename="voiceover-${Date.now()}.wav"`,
         'Content-Length': wavBuffer.length.toString(),
         'X-Generation-Latency': latency.toString(),
+        'X-Voice-Type': 'piper',
         'X-RateLimit-Limit': limit.toString(),
         'X-RateLimit-Remaining': (remaining - 1).toString(),
         'X-RateLimit-Reset': reset.toString(),
