@@ -82,7 +82,13 @@ export function Dashboard() {
       setAudioUrl(url)
     } catch (error) {
       console.error('Generation error:', error)
-      alert(error instanceof Error ? error.message : 'Failed to generate speech')
+      const errorMsg = error instanceof Error ? error.message : 'Failed to generate speech'
+      // Show more helpful error message
+      if (errorMsg.includes('temporarily unavailable') || errorMsg.includes('fetch failed')) {
+        alert('TTS service is starting up. Please wait 10-20 seconds and try again.')
+      } else {
+        alert(errorMsg)
+      }
     } finally {
       setLoading(false)
     }
