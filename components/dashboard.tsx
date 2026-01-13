@@ -66,6 +66,9 @@ export function Dashboard() {
     voiceId: string
     text: string
   }>>([{ id: 1, speaker: '', voiceId: '', text: '' }])
+  const [conversationLoading, setConversationLoading] = useState(false)
+  const [conversationAudios, setConversationAudios] = useState<string[]>([])
+  const [conversationError, setConversationError] = useState<string | null>(null)
 
   // Compare State
   const [compareText, setCompareText] = useState('')
@@ -73,6 +76,8 @@ export function Dashboard() {
   const [compareVoice2, setCompareVoice2] = useState('')
   const [compareAudio1, setCompareAudio1] = useState<string | null>(null)
   const [compareAudio2, setCompareAudio2] = useState<string | null>(null)
+  const [compareLoading1, setCompareLoading1] = useState(false)
+  const [compareLoading2, setCompareLoading2] = useState(false)
 
   // Load voices on mount
   useEffect(() => {
@@ -265,13 +270,58 @@ export function Dashboard() {
     setConversationMessages(prev => prev.filter(msg => msg.id !== id))
   }
 
+  async function generateConversation() {
+    const validMessages = conversationMessages.filter(m => m.text.trim() && m.voiceId)
+    
+    if (validMessages.length === 0) {
+      setConversationError('Please add at least one message with text and voice')
+      return
+    }
+
+    setConversationLoading(true)
+    setConversationError(null)
+    setConversationAudios([])
+
+    try {
+      const audioUrls: string[] = []
+      
+      for (const msg of validMessages) {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: msg.text.trim(),
+            voice_id: msg.voiceId,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to generate audio for ${msg.speaker || 'speaker'}`)
+        }
+
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        audioUrls.push(url)
+      }
+
+      setConversationAudios(audioUrls)
+    } catch (err) {
+      setConversationError(err instanceof Error ? err.message : 'Failed to generate conversation')
+    } finally {
+      setConversationLoading(false)
+    }
+  }
+
   // ============ Compare Functions ============
   async function generateCompare(voiceNum: 1 | 2) {
     const voiceId = voiceNum === 1 ? compareVoice1 : compareVoice2
     if (!compareText.trim() || !voiceId) {
-      setError('Please enter text and select both voices')
+      setError('Please enter text and select a voice')
       return
     }
+
+    if (voiceNum === 1) setCompareLoading1(true)
+    else setCompareLoading2(true)
 
     try {
       const response = await fetch('/api/tts', {
@@ -289,6 +339,9 @@ export function Dashboard() {
       else setCompareAudio2(url)
     } catch (err) {
       setError('Failed to generate comparison audio')
+    } finally {
+      if (voiceNum === 1) setCompareLoading1(false)
+      else setCompareLoading2(false)
     }
   }
 
@@ -357,19 +410,19 @@ export function Dashboard() {
 
         {/* ============ TTS TAB ============ */}
         {activeTab === 'tts' && (
-          <div className="grid lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Text to Speech</CardTitle>
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Text to Speech</CardTitle>
                   <CardDescription>Enter your text and generate natural-sounding speech</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Voice Selection */}
-                  <div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Voice Selection */}
+              <div>
                     <label className="text-sm font-medium mb-2 block">Select Voice</label>
                     <select
-                      value={selectedVoice}
+                  value={selectedVoice}
                       onChange={(e) => setSelectedVoice(e.target.value)}
                       className="w-full px-4 py-3 rounded-lg border bg-background"
                     >
@@ -389,35 +442,35 @@ export function Dashboard() {
                         ))}
                       </optgroup>
                     </select>
-                  </div>
+              </div>
 
-                  {/* Text Input */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
+              {/* Text Input */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
                       <label className="text-sm font-medium">Your Text</label>
                       <span className="text-xs text-muted-foreground">{charCount} chars • {wordCount} words</span>
-                    </div>
-                    <textarea
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      placeholder="Type or paste your text here..."
-                      className="w-full min-h-[200px] px-4 py-3 rounded-lg border bg-background resize-none"
-                      maxLength={5000}
-                    />
-                  </div>
+                </div>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Type or paste your text here..."
+                  className="w-full min-h-[200px] px-4 py-3 rounded-lg border bg-background resize-none"
+                  maxLength={5000}
+                />
+              </div>
 
-                  {/* Generate Button */}
+              {/* Generate Button */}
                   <Button onClick={generateSpeech} disabled={loading || !text.trim()} className="w-full" size="lg">
                     <Icons.Wand2 />
                     <span className="ml-2">{loading ? 'Generating...' : 'Generate Voice-Over'}</span>
-                  </Button>
-                </CardContent>
-              </Card>
+              </Button>
+            </CardContent>
+          </Card>
 
               {/* Voice Settings */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Voice Settings</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>Voice Settings</CardTitle>
                   <CardDescription>Fine-tune the voice characteristics</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -488,11 +541,11 @@ export function Dashboard() {
                   <Icons.Mic />
                   Clone Your Voice
                 </CardTitle>
-                <CardDescription>
+              <CardDescription>
                   Upload 1-5 audio samples (30+ seconds total) of clear speech for best results
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
                 {/* Success/Error Messages */}
                 {cloneSuccess && (
                   <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 text-primary flex items-center gap-2">
@@ -507,7 +560,7 @@ export function Dashboard() {
                 )}
 
                 {/* Voice Name */}
-                <div>
+              <div>
                   <label className="text-sm font-medium mb-2 block">Voice Name *</label>
                   <input
                     type="text"
@@ -529,11 +582,11 @@ export function Dashboard() {
                     placeholder="e.g., Professional narrator voice"
                     className="w-full px-4 py-3 rounded-lg border bg-background"
                     maxLength={100}
-                  />
-                </div>
+                />
+              </div>
 
                 {/* Recording */}
-                <div>
+              <div>
                   <label className="text-sm font-medium mb-2 block">Record Your Voice</label>
                   <div className="p-6 rounded-lg border border-dashed border-border bg-card text-center">
                     <div className="flex flex-col items-center gap-4">
@@ -582,7 +635,7 @@ export function Dashboard() {
                         <span>Choose Files</span>
                       </Button>
                     </label>
-                  </div>
+              </div>
                 </div>
 
                 {/* File List */}
@@ -597,7 +650,7 @@ export function Dashboard() {
                         </button>
                       </div>
                     ))}
-                  </div>
+              </div>
                 )}
 
                 {/* Clone Button */}
@@ -610,9 +663,9 @@ export function Dashboard() {
                   <Icons.Mic />
                   <span className="ml-2">{cloneLoading ? 'Cloning...' : 'Clone Voice'}</span>
                 </Button>
-              </CardContent>
-            </Card>
-          </div>
+            </CardContent>
+          </Card>
+        </div>
         )}
 
         {/* ============ CONVERSATION TAB ============ */}
@@ -676,10 +729,42 @@ export function Dashboard() {
                   Add Speaker
                 </button>
 
-                <Button className="w-full" size="lg">
+                {conversationError && (
+                  <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
+                    {conversationError}
+                  </div>
+                )}
+
+                <Button 
+                  className="w-full" 
+                  size="lg" 
+                  onClick={generateConversation}
+                  disabled={conversationLoading}
+                >
                   <Icons.Play />
-                  <span className="ml-2">Generate Conversation</span>
+                  <span className="ml-2">{conversationLoading ? 'Generating...' : 'Generate Conversation'}</span>
                 </Button>
+
+                {/* Generated Audio Results */}
+                {conversationAudios.length > 0 && (
+                  <div className="space-y-3 pt-4 border-t">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <Icons.Volume2 />
+                      Generated Conversation
+                    </h4>
+                    {conversationAudios.map((url, index) => {
+                      const msg = conversationMessages.filter(m => m.text.trim() && m.voiceId)[index]
+                      return (
+                        <div key={index} className="p-3 rounded-lg bg-card border">
+                          <p className="text-sm text-muted-foreground mb-2">
+                            {msg?.speaker || `Speaker ${index + 1}`}: "{msg?.text?.substring(0, 50)}..."
+                          </p>
+                          <audio src={url} controls className="w-full" />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -688,8 +773,8 @@ export function Dashboard() {
         {/* ============ COMPARE TAB ============ */}
         {activeTab === 'compare' && (
           <div className="max-w-4xl mx-auto space-y-6">
-            <Card>
-              <CardHeader>
+          <Card>
+            <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Icons.Layers />
                   Voice Comparison
@@ -697,7 +782,7 @@ export function Dashboard() {
                 <CardDescription>
                   Compare how different voices sound with the same text
                 </CardDescription>
-              </CardHeader>
+            </CardHeader>
               <CardContent className="space-y-6">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Comparison Text</label>
@@ -725,7 +810,9 @@ export function Dashboard() {
                         <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
                       ))}
                     </select>
-                    <Button onClick={() => generateCompare(1)} className="w-full mb-3">Generate A</Button>
+                    <Button onClick={() => generateCompare(1)} className="w-full mb-3" disabled={compareLoading1}>
+                      {compareLoading1 ? 'Generating...' : 'Generate A'}
+                    </Button>
                     {compareAudio1 && <audio src={compareAudio1} controls className="w-full" />}
                   </div>
 
@@ -742,13 +829,30 @@ export function Dashboard() {
                         <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
                       ))}
                     </select>
-                    <Button onClick={() => generateCompare(2)} variant="secondary" className="w-full mb-3">Generate B</Button>
+                    <Button onClick={() => generateCompare(2)} variant="secondary" className="w-full mb-3" disabled={compareLoading2}>
+                      {compareLoading2 ? 'Generating...' : 'Generate B'}
+                    </Button>
                     {compareAudio2 && <audio src={compareAudio2} controls className="w-full" />}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+
+                {/* Generate Both Button */}
+                <Button 
+                  onClick={async () => {
+                    await Promise.all([generateCompare(1), generateCompare(2)])
+                  }} 
+                  className="w-full mt-4" 
+                  size="lg"
+                  disabled={compareLoading1 || compareLoading2 || !compareVoice1 || !compareVoice2 || !compareText.trim()}
+                >
+                  <Icons.Play />
+                  <span className="ml-2">
+                    {(compareLoading1 || compareLoading2) ? 'Generating...' : 'Generate Both & Compare'}
+                  </span>
+                </Button>
+            </CardContent>
+          </Card>
+        </div>
         )}
       </main>
 
@@ -757,7 +861,7 @@ export function Dashboard() {
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>© 2026 NextEleven LLC. All Rights Reserved.</p>
           <p className="text-xs mt-1">100% Self-Hosted • No External APIs • Full Privacy</p>
-        </div>
+      </div>
       </footer>
     </div>
   )
