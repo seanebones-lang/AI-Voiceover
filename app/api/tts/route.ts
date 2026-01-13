@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PiperTTS, PiperTTS as Piper } from '@/lib/tts/piper'
 import { ttsRateLimiter } from '@/lib/rate-limit'
 
 // Force dynamic rendering to avoid onnxruntime-node loading at build time
 export const dynamic = 'force-dynamic'
 
-// Cache for TTS instances
-const ttsInstances = new Map<string, PiperTTS>()
+// Lazy import to avoid loading onnxruntime-node at build time
+async function getPiperTTS() {
+  const { PiperTTS } = await import('@/lib/tts/piper')
+  return PiperTTS
+}
+
+// Cache for TTS instances - use any to avoid importing the type at build time
+const ttsInstances = new Map<string, any>()
 
 interface TTSRequest {
   text: string
@@ -16,11 +21,12 @@ interface TTSRequest {
   volume?: number
 }
 
-function getTTSInstance(voiceId: string): PiperTTS | null {
+async function getTTSInstance(voiceId: string): Promise<any | null> {
   if (ttsInstances.has(voiceId)) {
     return ttsInstances.get(voiceId)!
   }
 
+  const PiperTTS = await getPiperTTS()
   const voices = PiperTTS.getAvailableVoices()
   const voice = voices.find(v => v.id === voiceId)
   
@@ -84,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get TTS instance
-    const tts = getTTSInstance(voice_id)
+    const tts = await getTTSInstance(voice_id)
     if (!tts) {
       return NextResponse.json(
         { error: `Voice not found: ${voice_id}` },
@@ -98,6 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Synthesize speech
+    const PiperTTS = await getPiperTTS()
     const startTime = Date.now()
     const audioBuffer = await tts.synthesize(text, { speed, pitch, volume })
     const latency = Date.now() - startTime
