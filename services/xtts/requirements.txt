@@ -1,16 +1,7 @@
-# Core dependencies (required)
+# Core dependencies only - minimal and reliable
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 edge-tts>=6.1.9
 aiofiles>=23.2.1
 numpy>=1.24.0
-
-# Optional: Uncomment for real voice cloning (requires ~4GB RAM)
-# TTS>=0.22.0
-# torch>=2.0.0
-# torchaudio>=2.0.0
-
-# Audio processing (lightweight)
-scipy>=1.10.0
-soundfile>=0.12.0
