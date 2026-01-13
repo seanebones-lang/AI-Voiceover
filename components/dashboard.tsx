@@ -762,10 +762,38 @@ export function Dashboard() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <audio src={audioUrl} controls className="w-full" />
-                    <Button onClick={downloadAudio} variant="outline" className="w-full">
-                      <Icons.Download />
-                      <span className="ml-2">Download MP3</span>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button onClick={downloadAudio} variant="outline" className="flex-1">
+                        <Icons.Download />
+                        <span className="ml-2">Download</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={async () => {
+                          if (audioBlob) {
+                            try {
+                              await navigator.clipboard.write([
+                                new ClipboardItem({ [audioBlob.type]: audioBlob })
+                              ])
+                              // Show brief success state
+                              const btn = document.activeElement as HTMLButtonElement
+                              if (btn) {
+                                const originalText = btn.innerHTML
+                                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="ml-2">Copied!</span>'
+                                setTimeout(() => btn.innerHTML = originalText, 1500)
+                              }
+                            } catch {
+                              // Fallback: copy text instead
+                              await navigator.clipboard.writeText(text)
+                            }
+                          }
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        <span className="ml-2">Copy</span>
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
