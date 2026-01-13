@@ -178,6 +178,8 @@ export function Dashboard() {
   const [cloneLoading, setCloneLoading] = useState(false)
   const [cloneError, setCloneError] = useState<string | null>(null)
   const [cloneSuccess, setCloneSuccess] = useState<string | null>(null)
+  const [cloneQualityWarnings, setCloneQualityWarnings] = useState<string[]>([])
+  const [cloneRecommendations, setCloneRecommendations] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -529,7 +531,9 @@ export function Dashboard() {
         throw new Error(data.error || 'Clone failed')
       }
 
-      setCloneSuccess(`Voice "${cloneName}" cloned successfully! Voice ID: ${data.voice_id}`)
+      setCloneSuccess(data.message || `Voice "${cloneName}" cloned successfully!`)
+      setCloneQualityWarnings(data.quality_warnings || [])
+      setCloneRecommendations(data.recommendations || [])
       setCloneName('')
       setCloneDescription('')
       setCloneFiles([])
@@ -1221,9 +1225,27 @@ export function Dashboard() {
             <CardContent className="space-y-6">
                 {/* Success/Error Messages */}
                 {cloneSuccess && (
-                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 text-primary flex items-center gap-2">
-                    <Icons.Check />
-                    {cloneSuccess}
+                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 text-primary space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Icons.Check />
+                      <span className="font-medium">{cloneSuccess}</span>
+                    </div>
+                    {cloneQualityWarnings.length > 0 && (
+                      <div className="text-sm text-yellow-500 mt-2">
+                        <p className="font-medium">Quality Notes:</p>
+                        <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
+                          {cloneQualityWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {cloneRecommendations.length > 0 && (
+                      <div className="text-sm text-muted-foreground mt-2">
+                        <p className="font-medium">Tips for better results:</p>
+                        <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
+                          {cloneRecommendations.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
                 {cloneError && (

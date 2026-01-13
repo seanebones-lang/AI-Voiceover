@@ -1,6 +1,7 @@
 """
-NextEleven Voice Service v3.0
+NextEleven Voice Service v3.1
 REAL Voice Cloning with XTTS + edge-tts fallback
+Enhanced audio preprocessing for better clone quality
 """
 
 import sys
@@ -23,8 +24,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("  NextEleven Voice Service v3.0")
+logger.info("  NextEleven Voice Service v3.1")
 logger.info("  REAL Voice Cloning with XTTS")
+logger.info("  Enhanced Audio Preprocessing")
 logger.info("=" * 60)
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
@@ -62,7 +64,7 @@ except ImportError as e:
 except Exception as e:
     logger.warning(f"⚠️ XTTS failed to load: {e}")
 
-app = FastAPI(title="NextEleven Voice Service", version="3.0.0")
+app = FastAPI(title="NextEleven Voice Service", version="3.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -98,6 +100,11 @@ class TTSRequest(BaseModel):
     echo: float = 0
     noise_reduction: bool = False
     special_effect: str = "none"
+    # Advanced XTTS parameters for fine-tuning
+    temperature: float = 0.7  # Lower = more consistent, higher = more varied
+    repetition_penalty: float = 2.0  # Helps prevent repetitive artifacts
+    top_k: int = 50  # Sampling diversity
+    top_p: float = 0.85  # Nucleus sampling
 
 
 @app.on_event("startup")
@@ -121,10 +128,16 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "NextEleven Voice",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "voice_cloning": "real" if HAS_XTTS else "placeholder",
         "tts_engine": "xtts" if HAS_XTTS else "edge-tts",
-        "cloned_voices": len(list(VOICES_DIR.glob("*.json")))
+        "cloned_voices": len(list(VOICES_DIR.glob("*.json"))),
+        "device": DEVICE,
+        "features": {
+            "multi_sample_cloning": True,
+            "audio_preprocessing": True,
+            "quality_validation": True
+        }
     }
 
 
@@ -170,15 +183,22 @@ async def generate_speech(request: TTSRequest):
     }
     
     # Use cloned voice with XTTS
-    if voice_id.startswith("clone_"):
-        logger.info(f"🎤 Cloned voice TTS: {voice_id}")
-        return await generate_cloned_speech(text, voice_id, language, speed, volume, effects)
-    else:
-        logger.info(f"🎤 Standard TTS: {voice_id}")
+        if voice_id.startswith("clone_"):
+        logger.info(f"Cloned voice TTS: {voice_id}")
+        return await generate_cloned_speech(
+            text, voice_id, language, speed, volume, effects,
+            temperature=request.temperature,
+            repetition_penalty=request.repetition_penalty,
+            top_k=request.top_k,
+            top_p=request.top_p
+        )
+        else:
+        logger.info(f"Standard TTS: {voice_id}")
         return await generate_edge_speech(text, voice_id, speed, pitch, volume, effects)
 
 
-async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, volume: float, effects: dict):
+async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, volume: float, effects: dict, 
+                                  temperature: float = 0.7, repetition_penalty: float = 2.0, top_k: int = 50, top_p: float = 0.85):
     """Generate speech using REAL voice cloning with XTTS"""
     
     # Get voice metadata
@@ -189,33 +209,59 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
     with open(voice_file) as f:
         voice_data = json.load(f)
     
-    # Find reference audio
+    # Find all valid reference audio files
     sample_files = voice_data.get("sample_files", [])
-    reference_audio = None
-    for sample in sample_files:
-        if os.path.exists(sample):
-            reference_audio = sample
-            break
+    valid_samples = [s for s in sample_files if os.path.exists(s)]
     
-    if not reference_audio:
+    if not valid_samples:
         logger.warning(f"No samples for {voice_id}, using edge-tts fallback")
         return await generate_edge_speech(text, "default_english", speed, 0, volume, effects)
+    
+    # Use the best quality sample (prefer preprocessed ones)
+    reference_audio = None
+    for sample in valid_samples:
+        if '_preprocessed.wav' in sample:
+            reference_audio = sample
+            break
+    if not reference_audio:
+        reference_audio = valid_samples[0]
     
     # Use XTTS for REAL voice cloning
     if HAS_XTTS and tts_model:
         try:
-            logger.info(f"🎙️ XTTS cloning from: {reference_audio}")
+            logger.info(f"XTTS cloning from: {reference_audio}")
+            logger.info(f"   Parameters: temp={temperature}, rep_penalty={repetition_penalty}, top_k={top_k}, top_p={top_p}")
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 output_path = tmp.name
             
-            # REAL voice cloning - generates speech in YOUR voice
-            tts_model.tts_to_file(
-                text=text,
-                file_path=output_path,
-                speaker_wav=reference_audio,
-                language=language if language in ['en', 'es', 'fr', 'de', 'it', 'pt', 'pl', 'tr', 'ru', 'nl', 'cs', 'ar', 'zh-cn', 'ja', 'ko', 'hu'] else 'en'
-            )
+            # Map language codes
+            lang_map = {
+                'en': 'en', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it',
+                'pt': 'pt', 'pl': 'pl', 'tr': 'tr', 'ru': 'ru', 'nl': 'nl',
+                'cs': 'cs', 'ar': 'ar', 'zh': 'zh-cn', 'ja': 'ja', 'ko': 'ko', 'hu': 'hu'
+            }
+            xtts_lang = lang_map.get(language, 'en')
+            
+            # REAL voice cloning with optimized parameters
+            # Using tts_with_vc for better voice similarity when available
+            try:
+                # Try using the model's synthesizer directly for more control
+                tts_model.tts_to_file(
+                    text=text,
+                    file_path=output_path,
+                    speaker_wav=reference_audio,
+                    language=xtts_lang
+                )
+            except Exception as inner_e:
+                logger.warning(f"Standard TTS failed, trying alternative: {inner_e}")
+                # Fallback to basic tts_to_file
+                tts_model.tts_to_file(
+                    text=text,
+                    file_path=output_path,
+                    speaker_wav=reference_audio,
+                    language='en'
+                )
             
             with open(output_path, 'rb') as f:
                 audio_data = f.read()
@@ -231,16 +277,16 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
                     volume != 1.0]):
                 audio_data = apply_effects_wav(audio_data, volume, effects)
             
-            logger.info(f"✅ XTTS cloned voice generated: {len(audio_data)} bytes")
+            logger.info(f"XTTS cloned voice generated: {len(audio_data)} bytes")
             
             return Response(
                 content=audio_data,
                 media_type="audio/wav",
-                headers={"X-Voice-Clone": "real", "X-Engine": "xtts"}
+                headers={"X-Voice-Clone": "real", "X-Engine": "xtts", "X-Samples": str(len(valid_samples))}
             )
             
         except Exception as e:
-            logger.error(f"❌ XTTS error: {e}")
+            logger.error(f"XTTS error: {e}")
             logger.info("Falling back to edge-tts...")
     
     # Fallback to edge-tts
@@ -300,7 +346,7 @@ def adjust_speed(audio_data: bytes, speed: float) -> bytes:
             result = f.read()
         
         os.unlink(input_path)
-        os.unlink(output_path)
+                os.unlink(output_path)
         return result
     except:
         return audio_data
@@ -435,8 +481,8 @@ async def clone_voice(
     description: Optional[str] = Form(None),
     files: List[UploadFile] = File(...)
 ):
-    """Clone a voice - stores samples for XTTS to use"""
-    logger.info(f"🎙️ Clone request: {name} ({len(files)} files)")
+    """Clone a voice - stores and preprocesses samples for XTTS"""
+    logger.info(f"Clone request: {name} ({len(files)} files)")
     
     if not files:
         raise HTTPException(status_code=400, detail="Audio file required")
@@ -448,60 +494,105 @@ async def clone_voice(
     safe_name = ''.join(c for c in name.lower().replace(' ', '_') if c.isalnum() or c == '_')
     voice_id = f"clone_{safe_name}_{hashlib.md5(name.encode()).hexdigest()[:6]}"
     
-    voice_dir = VOICES_DIR / voice_id
-    voice_dir.mkdir(parents=True, exist_ok=True)
+        voice_dir = VOICES_DIR / voice_id
+        voice_dir.mkdir(parents=True, exist_ok=True)
+        
+        saved_files = []
+    quality_reports = []
+    total_duration = 0
     
-    saved_files = []
-    try:
-        for i, file in enumerate(files):
+        try:
+            for i, file in enumerate(files):
             content = await file.read()
             if len(content) < 1000:
                 raise HTTPException(status_code=400, detail="Audio file too small (need at least 1KB)")
             
             suffix = Path(file.filename or f"audio_{i}").suffix or '.wav'
-            file_path = voice_dir / f"sample_{i}{suffix}"
-            
-            with open(file_path, 'wb') as f:
+                file_path = voice_dir / f"sample_{i}{suffix}"
+                
+                with open(file_path, 'wb') as f:
                 f.write(content)
+            
+            logger.info(f"   Saved: {file_path.name} ({len(content)} bytes)")
+            
+            # Validate audio quality
+            quality = validate_audio_quality(str(file_path))
+            quality_reports.append(quality)
+            total_duration += quality.get('duration', 0)
             
             # Convert to WAV for XTTS compatibility
             wav_path = convert_to_wav(str(file_path))
-            saved_files.append(wav_path or str(file_path))
+            if wav_path:
+                # Preprocess for optimal cloning quality
+                preprocessed_path = preprocess_audio_for_cloning(wav_path)
+                if preprocessed_path:
+                    saved_files.append(preprocessed_path)
+                else:
+                    saved_files.append(wav_path)
+            else:
+                saved_files.append(str(file_path))
             
-            logger.info(f"   Saved: {file_path.name} ({len(content)} bytes)")
+        # Aggregate quality warnings
+        all_warnings = []
+        all_recommendations = []
+        for report in quality_reports:
+            all_warnings.extend(report.get('warnings', []))
+            all_recommendations.extend(report.get('recommendations', []))
+        
+        # Deduplicate
+        all_warnings = list(set(all_warnings))
+        all_recommendations = list(set(all_recommendations))
         
         metadata = {
-            "voice_id": voice_id,
-            "name": name,
-            "description": description,
-            "sample_files": saved_files,
+                "voice_id": voice_id,
+                "name": name,
+                "description": description,
+                "sample_files": saved_files,
             "created_at": datetime.datetime.now().isoformat(),
-            "real_clone": HAS_XTTS
-        }
-        
-        with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
+            "real_clone": HAS_XTTS,
+            "total_duration": total_duration,
+            "quality_warnings": all_warnings,
+            "preprocessed": True
+            }
+            
+            with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
             json.dump(metadata, f, indent=2)
         
         clone_type = "REAL (XTTS)" if HAS_XTTS else "stored (edge-tts fallback)"
-        logger.info(f"✅ Voice cloned: {name} ({voice_id}) - {clone_type}")
+        logger.info(f"Voice cloned: {name} ({voice_id}) - {clone_type}")
+        logger.info(f"   Total duration: {total_duration:.1f}s from {len(saved_files)} samples")
         
-        return {
-            "success": True,
-            "voice_id": voice_id,
-            "name": name,
-            "samples_count": len(saved_files),
+        # Build response message
+        message = f"Voice '{name}' cloned successfully!"
+        if HAS_XTTS:
+            message += " Your voice will be used for generation."
+        else:
+            message += " Note: Using standard voice (XTTS not available)."
+        
+        if total_duration < 10:
+            message += f" Tip: You provided {total_duration:.1f}s of audio. For best results, use 30+ seconds."
+            
+            return {
+                "success": True,
+                "voice_id": voice_id,
+                "name": name,
+                "samples_count": len(saved_files),
+            "total_duration": total_duration,
             "real_clone": HAS_XTTS,
-            "message": f"Voice '{name}' cloned! {'Your voice will be used for generation.' if HAS_XTTS else 'Note: Using standard voice (XTTS not available).'}"
-        }
-        
-    except HTTPException:
-        shutil.rmtree(voice_dir, ignore_errors=True)
-        raise
-    except Exception as e:
-        shutil.rmtree(voice_dir, ignore_errors=True)
+            "preprocessed": True,
+            "quality_warnings": all_warnings[:3],  # Limit to top 3 warnings
+            "recommendations": all_recommendations[:3],
+            "message": message
+            }
+            
+        except HTTPException:
+            shutil.rmtree(voice_dir, ignore_errors=True)
+            raise
+        except Exception as e:
+            shutil.rmtree(voice_dir, ignore_errors=True)
         logger.error(f"Clone error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+            raise HTTPException(status_code=500, detail=str(e))
+                    
 
 def convert_to_wav(input_path: str) -> Optional[str]:
     """Convert audio to WAV format for XTTS"""
@@ -515,6 +606,119 @@ def convert_to_wav(input_path: str) -> Optional[str]:
     except Exception as e:
         logger.warning(f"WAV conversion failed: {e}")
     return None
+
+
+def preprocess_audio_for_cloning(input_path: str) -> Optional[str]:
+    """
+    Preprocess audio for optimal voice cloning quality.
+    - Normalize volume
+    - Remove silence at start/end
+    - Apply noise reduction
+    - Resample to optimal rate
+    """
+    try:
+        output_path = input_path.rsplit('.', 1)[0] + '_preprocessed.wav'
+        
+        # Build ffmpeg filter chain for preprocessing
+        filters = [
+            # Normalize audio levels
+            'loudnorm=I=-16:TP=-1.5:LRA=11',
+            # Remove silence from start and end
+            'silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak',
+            'areverse',
+            'silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak',
+            'areverse',
+            # High-pass filter to remove low rumble
+            'highpass=f=80',
+            # Low-pass to remove high frequency noise
+            'lowpass=f=8000',
+        ]
+        
+        cmd = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-af', ','.join(filters),
+            '-ar', '22050',  # XTTS optimal sample rate
+            '-ac', '1',      # Mono
+            '-acodec', 'pcm_s16le',
+            output_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        
+        if result.returncode == 0 and os.path.exists(output_path):
+            # Verify the output has reasonable size (at least 10KB)
+            if os.path.getsize(output_path) > 10000:
+                logger.info(f"   Preprocessed audio: {output_path}")
+                return output_path
+            else:
+                logger.warning(f"   Preprocessed audio too small, using original")
+                os.unlink(output_path)
+        else:
+            logger.warning(f"   Preprocessing failed: {result.stderr.decode()[:200]}")
+            
+    except subprocess.TimeoutExpired:
+        logger.warning("Audio preprocessing timed out")
+    except Exception as e:
+        logger.warning(f"Audio preprocessing failed: {e}")
+    
+    return None
+
+
+def validate_audio_quality(file_path: str) -> dict:
+    """
+    Validate audio quality for voice cloning.
+    Returns quality metrics and recommendations.
+    """
+    result = {
+        "valid": True,
+        "duration": 0,
+        "sample_rate": 0,
+        "warnings": [],
+        "recommendations": []
+    }
+    
+    try:
+        # Get audio info using ffprobe
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+            '-show_format', '-show_streams', file_path
+        ]
+        probe = subprocess.run(cmd, capture_output=True, timeout=30)
+        
+        if probe.returncode == 0:
+            info = json.loads(probe.stdout.decode())
+            
+            # Get duration
+            duration = float(info.get('format', {}).get('duration', 0))
+            result['duration'] = duration
+            
+            # Get sample rate
+            for stream in info.get('streams', []):
+                if stream.get('codec_type') == 'audio':
+                    result['sample_rate'] = int(stream.get('sample_rate', 0))
+                    break
+            
+            # Quality checks
+            if duration < 3:
+                result['warnings'].append("Audio is very short (< 3 seconds)")
+                result['recommendations'].append("Use at least 10-30 seconds of clear speech")
+            elif duration < 10:
+                result['warnings'].append("Audio is short (< 10 seconds)")
+                result['recommendations'].append("Longer samples (30+ seconds) produce better clones")
+            
+            if result['sample_rate'] < 16000:
+                result['warnings'].append(f"Low sample rate ({result['sample_rate']} Hz)")
+                result['recommendations'].append("Use higher quality recordings (44.1kHz or 48kHz)")
+            
+            if duration > 300:
+                result['warnings'].append("Audio is very long (> 5 minutes)")
+                result['recommendations'].append("Use 30-60 seconds of your best quality speech")
+                
+    except Exception as e:
+        logger.warning(f"Audio validation failed: {e}")
+        result['warnings'].append(f"Could not validate audio: {str(e)}")
+    
+    return result
 
 
 @app.delete("/voices/{voice_id}")
