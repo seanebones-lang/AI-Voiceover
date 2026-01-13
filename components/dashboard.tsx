@@ -67,6 +67,54 @@ export function Dashboard() {
   // Special Effects
   const [specialEffect, setSpecialEffect] = useState<string>('none')
   
+  // Advanced Settings
+  const [outputFormat, setOutputFormat] = useState<'mp3' | 'wav'>('mp3')
+  const [autoTrimSilence, setAutoTrimSilence] = useState(true)
+  const [addBreathing, setAddBreathing] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
+  const [batchAudios, setBatchAudios] = useState<string[]>([])
+  
+  // Presets
+  const [savedPresets, setSavedPresets] = useState<Array<{
+    id: string
+    name: string
+    voiceId: string
+    speed: number
+    pitch: number
+    volume: number
+    reverb: number
+    echo: number
+    effect: string
+  }>>([])
+  
+  // Stats
+  const [totalGenerations, setTotalGenerations] = useState(0)
+  const [totalCharacters, setTotalCharacters] = useState(0)
+  
+  // Auto-save text to localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('nexteleven_draft')
+    if (saved) setText(saved)
+  }, [])
+  
+  useEffect(() => {
+    if (text) localStorage.setItem('nexteleven_draft', text)
+  }, [text])
+  
+  // Load presets from localStorage
+  useEffect(() => {
+    const presets = localStorage.getItem('nexteleven_presets')
+    if (presets) setSavedPresets(JSON.parse(presets))
+    
+    const stats = localStorage.getItem('nexteleven_stats')
+    if (stats) {
+      const { gens, chars } = JSON.parse(stats)
+      setTotalGenerations(gens || 0)
+      setTotalCharacters(chars || 0)
+    }
+  }, [])
+  
   // History State
   const [history, setHistory] = useState<Array<{
     id: string
@@ -218,6 +266,15 @@ export function Dashboard() {
       setError('Please enter text and select a voice')
       return
     }
+    
+    // Batch mode - split by paragraphs
+    if (batchMode) {
+      const paragraphs = text.split(/\n\n+/).filter(p => p.trim())
+      if (paragraphs.length > 1) {
+        await generateBatch(paragraphs)
+        return
+      }
+    }
 
     setLoading(true)
     setAudioUrl(null)
@@ -261,6 +318,16 @@ export function Dashboard() {
         audioUrl: url,
         timestamp: new Date()
       }, ...prev].slice(0, 20)) // Keep last 20
+      
+      // Update stats
+      const newGens = totalGenerations + 1
+      const newChars = totalCharacters + text.trim().length
+      setTotalGenerations(newGens)
+      setTotalCharacters(newChars)
+      localStorage.setItem('nexteleven_stats', JSON.stringify({ gens: newGens, chars: newChars }))
+      
+      // Clear draft after successful generation
+      localStorage.removeItem('nexteleven_draft')
     } catch (err) {
       console.error('Generation error:', err)
       setError(err instanceof Error ? err.message : 'Failed to generate speech')
@@ -274,11 +341,100 @@ export function Dashboard() {
     const url = URL.createObjectURL(audioBlob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `nexteleven-${Date.now()}.mp3`
+    a.download = `nexteleven-${Date.now()}.${outputFormat}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  // ============ Preset Functions ============
+  function saveCurrentAsPreset() {
+    const name = prompt('Enter preset name:')
+    if (!name) return
+    
+    const newPreset = {
+      id: Date.now().toString(),
+      name,
+      voiceId: selectedVoice,
+      speed: speed[0],
+      pitch: pitch[0],
+      volume: volume[0],
+      reverb: reverb[0],
+      echo: echo[0],
+      effect: specialEffect
+    }
+    
+    const updated = [...savedPresets, newPreset]
+    setSavedPresets(updated)
+    localStorage.setItem('nexteleven_presets', JSON.stringify(updated))
+  }
+  
+  function loadPreset(preset: typeof savedPresets[0]) {
+    setSelectedVoice(preset.voiceId)
+    setSpeed([preset.speed])
+    setPitch([preset.pitch])
+    setVolume([preset.volume])
+    setReverb([preset.reverb])
+    setEcho([preset.echo])
+    setSpecialEffect(preset.effect)
+  }
+  
+  function deletePreset(id: string) {
+    const updated = savedPresets.filter(p => p.id !== id)
+    setSavedPresets(updated)
+    localStorage.setItem('nexteleven_presets', JSON.stringify(updated))
+  }
+  
+  // ============ Batch Generation ============
+  async function generateBatch(paragraphs: string[]) {
+    setLoading(true)
+    setBatchAudios([])
+    setBatchProgress({ current: 0, total: paragraphs.length })
+    setError(null)
+    
+    const audios: string[] = []
+    
+    for (let i = 0; i < paragraphs.length; i++) {
+      setBatchProgress({ current: i + 1, total: paragraphs.length })
+      
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: paragraphs[i].trim(),
+            voice_id: selectedVoice,
+            speed: speed[0],
+            pitch: pitch[0],
+            volume: volume[0],
+            reverb: reverb[0],
+            echo: echo[0],
+            noise_reduction: noiseReduction,
+            special_effect: specialEffect,
+          }),
+        })
+        
+        if (response.ok) {
+          const blob = await response.blob()
+          const url = URL.createObjectURL(blob)
+          audios.push(url)
+        }
+      } catch (err) {
+        console.error(`Batch item ${i} failed:`, err)
+      }
+    }
+    
+    setBatchAudios(audios)
+    setLoading(false)
+    
+    // Update stats
+    const totalChars = paragraphs.reduce((sum, p) => sum + p.length, 0)
+    const newGens = totalGenerations + paragraphs.length
+    const newChars = totalCharacters + totalChars
+    setTotalGenerations(newGens)
+    setTotalCharacters(newChars)
+    localStorage.setItem('nexteleven_stats', JSON.stringify({ gens: newGens, chars: newChars }))
   }
 
   // ============ Voice Clone Functions ============
@@ -488,7 +644,7 @@ export function Dashboard() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
                 <Icons.Volume2 />
-              </div>
+      </div>
               <div>
                 <h1 className="text-xl font-bold">NextEleven</h1>
                 <p className="text-xs text-muted-foreground">Studio-Quality Voice AI</p>
@@ -643,17 +799,53 @@ export function Dashboard() {
               {/* Text Input */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium">Your Text</label>
-                      <span className="text-xs text-muted-foreground">{charCount} chars • {wordCount} words</span>
+                  <label className="text-sm font-medium">Your Text</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={batchMode}
+                        onChange={(e) => setBatchMode(e.target.checked)}
+                        className="w-3 h-3"
+                      />
+                      <span className="text-muted-foreground">Batch mode</span>
+                  </label>
+                    <span className="text-xs text-muted-foreground">{charCount} chars • {wordCount} words</span>
+                  </div>
                 </div>
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Type or paste your text here..."
+                  placeholder={batchMode 
+                    ? "Type or paste your text here...\n\nSeparate paragraphs with blank lines for batch processing." 
+                    : "Type or paste your text here..."
+                  }
                   className="w-full min-h-[200px] px-4 py-3 rounded-lg border bg-background resize-none"
                   maxLength={5000}
                 />
+                {batchMode && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    📦 Batch mode: {text.split(/\n\n+/).filter(p => p.trim()).length} paragraphs detected
+                  </p>
+                )}
               </div>
+              
+              {/* Batch Results */}
+              {batchAudios.length > 0 && (
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20 space-y-3">
+                  <h4 className="font-medium flex items-center gap-2">
+                    📦 Batch Results ({batchAudios.length} clips)
+                  </h4>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {batchAudios.map((url, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-6">{i + 1}.</span>
+                        <audio src={url} controls className="flex-1 h-8" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Generate Button */}
               <Button
@@ -668,12 +860,20 @@ export function Dashboard() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                     </svg>
-                    <span className="ml-2">Generating...</span>
+                    <span className="ml-2">
+                      {batchProgress.total > 0 
+                        ? `Processing ${batchProgress.current}/${batchProgress.total}...` 
+                        : 'Generating...'}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Icons.Wand2 />
-                    <span className="ml-2">Generate Voice-Over</span>
+                    <span className="ml-2">
+                      {batchMode && text.split(/\n\n+/).filter(p => p.trim()).length > 1
+                        ? `Generate ${text.split(/\n\n+/).filter(p => p.trim()).length} Clips`
+                        : 'Generate Voice-Over'}
+                    </span>
                   </>
                 )}
               </Button>
@@ -685,25 +885,25 @@ export function Dashboard() {
             <CardHeader>
               <CardTitle>Voice Settings</CardTitle>
                   <CardDescription>Fine-tune the voice characteristics</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
                     <div className="flex justify-between mb-2">
-                      <label className="text-sm font-medium">Speed</label>
+                  <label className="text-sm font-medium">Speed</label>
                       <span className="text-sm text-muted-foreground">{speed[0].toFixed(2)}x</span>
-                    </div>
+                </div>
                     <Slider value={speed} onValueChange={setSpeed} min={0.5} max={2.0} step={0.1} />
-                  </div>
-                  <div>
+              </div>
+              <div>
                     <div className="flex justify-between mb-2">
-                      <label className="text-sm font-medium">Pitch</label>
+                  <label className="text-sm font-medium">Pitch</label>
                       <span className="text-sm text-muted-foreground">{pitch[0] > 0 ? '+' : ''}{pitch[0]} st</span>
-                    </div>
+                </div>
                     <Slider value={pitch} onValueChange={setPitch} min={-20} max={20} step={1} />
-                  </div>
-                  <div>
+              </div>
+              <div>
                     <div className="flex justify-between mb-2">
-                      <label className="text-sm font-medium">Volume</label>
+                  <label className="text-sm font-medium">Volume</label>
                       <span className="text-sm text-muted-foreground">{Math.round(volume[0] * 100)}%</span>
                     </div>
                     <Slider value={volume} onValueChange={setVolume} min={0} max={1} step={0.05} />
@@ -718,7 +918,7 @@ export function Dashboard() {
                       <span className="flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         Audio Effects
-                      </span>
+                  </span>
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${showEffects ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                     
@@ -728,7 +928,7 @@ export function Dashboard() {
                           <div className="flex justify-between mb-2">
                             <label className="text-sm font-medium">Reverb</label>
                             <span className="text-sm text-muted-foreground">{Math.round(reverb[0] * 100)}%</span>
-                          </div>
+                </div>
                           <Slider value={reverb} onValueChange={setReverb} min={0} max={1} step={0.05} />
                         </div>
                         <div>
@@ -782,31 +982,31 @@ export function Dashboard() {
                         </div>
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
             {/* Audio Player Sidebar */}
-            <div className="space-y-6">
-              {audioUrl && (
+        <div className="space-y-6">
+          {audioUrl && (
                 <Card className="border-primary/30 bg-primary/5">
-                  <CardHeader>
+              <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Icons.Volume2 />
-                      Generated Audio
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                  Generated Audio
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                     <audio src={audioUrl} controls className="w-full" />
-                    <div className="flex gap-2">
+                <div className="flex gap-2">
                       <Button onClick={downloadAudio} variant="outline" className="flex-1">
                         <Icons.Download />
                         <span className="ml-2">Download</span>
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        className="flex-1"
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
                         onClick={async () => {
                           if (audioBlob) {
                             try {
@@ -829,17 +1029,78 @@ export function Dashboard() {
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                         <span className="ml-2">Copy</span>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
+              {/* Stats Card */}
+              <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
+                <CardContent className="pt-4">
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <div className="text-2xl font-bold text-primary">{totalGenerations}</div>
+                      <div className="text-xs text-muted-foreground">Generations</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-primary">{totalCharacters.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Characters</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Presets Card */}
               <Card>
-                <CardHeader>
-                  <CardTitle>About</CardTitle>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">⭐ Presets</CardTitle>
+                    <button
+                      onClick={saveCurrentAsPreset}
+                      disabled={!selectedVoice}
+                      className="text-xs text-primary hover:underline disabled:opacity-50"
+                    >
+                      + Save Current
+                    </button>
+                  </div>
                 </CardHeader>
-                <CardContent className="text-sm text-muted-foreground space-y-2">
+                <CardContent>
+                  {savedPresets.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      No presets saved yet.<br/>Configure your voice settings and click "Save Current"
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedPresets.map(preset => (
+                        <div 
+                          key={preset.id}
+                          className="group flex items-center justify-between p-2 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                        >
+                          <button
+                            onClick={() => loadPreset(preset)}
+                            className="flex-1 text-left text-sm font-medium truncate"
+                          >
+                            {preset.name}
+                          </button>
+                          <button
+                            onClick={() => deletePreset(preset.id)}
+                            className="opacity-0 group-hover:opacity-100 text-destructive text-xs ml-2"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+          <Card>
+            <CardHeader>
+                  <CardTitle className="text-sm">About</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-2">
                   <p>Powered by <strong>edge-tts</strong> + <strong>Coqui XTTS</strong></p>
                   <p>100% self-hosted. No external API keys.</p>
                   <p className="text-xs pt-2 border-t mt-3">
@@ -1079,7 +1340,7 @@ export function Dashboard() {
                           <Icons.Trash />
                         </button>
                       )}
-                    </div>
+      </div>
                     <select
                       value={msg.voiceId}
                       onChange={(e) => updateConversationMessage(msg.id, 'voiceId', e.target.value)}
