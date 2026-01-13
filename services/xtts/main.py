@@ -1,12 +1,12 @@
 """
-Voice Cloning Sidecar Service
-FastAPI service for handling voice cloning with Coqui TTS
-Supports XTTS-v2 (GPU) and YourTTS (CPU-friendly)
+NextEleven Voice Service
+Fast TTS using edge-tts (Microsoft Edge TTS)
+Voice cloning via local file storage
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
@@ -16,12 +16,13 @@ import shutil
 from pathlib import Path
 import logging
 import json
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Voice Cloning Service", version="2.0.0")
+app = FastAPI(title="NextEleven Voice Service", version="2.0.0")
 
 # CORS middleware
 app.add_middleware(
@@ -32,13 +33,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global model cache
-tts_model = None
-model_type = None  # 'xtts' or 'yourtts'
-
 # Storage for cloned voices
 VOICES_DIR = Path("/app/cloned_voices")
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Edge TTS voice mapping
+EDGE_VOICES = {
+    "default_english": "en-US-GuyNeural",
+    "default_spanish": "es-ES-AlvaroNeural",
+    "default_french": "fr-FR-HenriNeural",
+    "default_german": "de-DE-ConradNeural",
+    "default_portuguese": "pt-BR-AntonioNeural",
+    "female_english": "en-US-JennyNeural",
+    "female_british": "en-GB-SoniaNeural",
+    "male_british": "en-GB-RyanNeural",
+}
 
 
 class TTSRequest(BaseModel):
@@ -47,60 +56,20 @@ class TTSRequest(BaseModel):
     language: str = "en"
 
 
-def get_model_type():
-    """Determine which model to use based on available resources"""
-    import torch
-    if torch.cuda.is_available():
-        return "xtts"  # Use XTTS-v2 with GPU
-    else:
-        return "yourtts"  # Use YourTTS for CPU (faster)
-
-
-async def load_tts_model():
-    """Load TTS model (lazy loading)"""
-    global tts_model, model_type
-    
-    if tts_model is not None:
-        return
-    
-    try:
-        from TTS.api import TTS
-        import torch
-        
-        model_type = get_model_type()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        if model_type == "xtts":
-            logger.info("Loading XTTS-v2 model (GPU detected)...")
-            tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-        else:
-            logger.info("Loading YourTTS model (CPU mode)...")
-            # YourTTS is faster on CPU and still supports voice cloning
-            tts_model = TTS("tts_models/multilingual/multi-dataset/your_tts").to(device)
-        
-        logger.info(f"✓ {model_type.upper()} model loaded on {device}")
-        
-    except Exception as e:
-        logger.error(f"Failed to load TTS model: {e}")
-        raise
-
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize on startup"""
-    logger.info("Voice Cloning service started")
+    logger.info("NextEleven Voice Service started")
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    import torch
     return {
         "status": "healthy",
-        "model_loaded": tts_model is not None,
-        "model_type": model_type,
-        "gpu_available": torch.cuda.is_available(),
+        "service": "NextEleven Voice",
+        "tts_engine": "edge-tts",
         "cloned_voices": len(list(VOICES_DIR.glob("*.json")))
     }
 
@@ -126,6 +95,65 @@ async def list_cloned_voices():
     return {"voices": voices}
 
 
+@app.post("/tts")
+async def generate_speech(request: TTSRequest):
+    """
+    Generate speech using edge-tts
+    
+    - voice_id: Standard voice or cloned voice ID
+    - text: Text to speak
+    - language: Language code
+    """
+    try:
+        import edge_tts
+        
+        text = request.text
+        voice_id = request.voice_id
+        
+        # Determine the edge-tts voice to use
+        if voice_id.startswith("clone_"):
+            # For cloned voices, use a similar sounding edge voice
+            # TODO: Implement proper voice cloning playback
+            edge_voice = "en-US-GuyNeural"
+            logger.info(f"Cloned voice requested: {voice_id}, using placeholder")
+        else:
+            # Map to edge-tts voice
+            edge_voice = EDGE_VOICES.get(voice_id, "en-US-GuyNeural")
+        
+        logger.info(f"Generating TTS: voice={edge_voice}, text='{text[:50]}...'")
+        
+        # Create temp file for output
+        output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        output_path = output_file.name
+        output_file.close()
+        
+        try:
+            # Generate audio using edge-tts
+            communicate = edge_tts.Communicate(text, edge_voice)
+            await communicate.save(output_path)
+            
+            logger.info(f"✓ TTS generated successfully")
+            
+            # Return audio file
+            return FileResponse(
+                output_path,
+                media_type="audio/mpeg",
+                filename=f"nexteleven_output.mp3"
+            )
+            
+        except Exception as e:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+            logger.error(f"TTS generation error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+        
+    except ImportError:
+        raise HTTPException(status_code=500, detail="edge-tts not installed")
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
+
+
 @app.post("/clone")
 async def clone_voice(
     name: str = Form(...),
@@ -136,12 +164,9 @@ async def clone_voice(
     Clone a voice from reference audio files
     
     - Upload 1-5 audio files (WAV, MP3, etc.)
-    - At least 6 seconds of clear speech recommended
-    - Returns a voice_id to use for TTS
+    - Stores the audio samples for later playback reference
     """
     try:
-        await load_tts_model()
-        
         if not files or len(files) == 0:
             raise HTTPException(status_code=400, detail="At least one audio file required")
         
@@ -159,7 +184,8 @@ async def clone_voice(
             for i, file in enumerate(files):
                 # Validate file type
                 content_type = file.content_type or ""
-                if not (content_type.startswith('audio/') or file.filename.endswith(('.wav', '.mp3', '.ogg', '.flac', '.m4a'))):
+                if not (content_type.startswith('audio/') or 
+                        file.filename.endswith(('.wav', '.mp3', '.ogg', '.flac', '.m4a', '.webm'))):
                     raise HTTPException(status_code=400, detail=f"Invalid file type: {file.filename}")
                 
                 # Save file
@@ -177,8 +203,7 @@ async def clone_voice(
                 "name": name,
                 "description": description,
                 "sample_files": saved_files,
-                "created_at": datetime.datetime.now().isoformat(),
-                "model_type": model_type
+                "created_at": datetime.datetime.now().isoformat()
             }
             
             with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
@@ -192,11 +217,10 @@ async def clone_voice(
                 "name": name,
                 "description": description,
                 "samples_count": len(saved_files),
-                "message": f"Voice '{name}' cloned successfully! Use voice_id '{voice_id}' for TTS."
+                "message": f"Voice '{name}' saved successfully! Use voice_id '{voice_id}' for reference."
             }
             
         except HTTPException:
-            # Cleanup on error
             shutil.rmtree(voice_dir, ignore_errors=True)
             raise
         except Exception as e:
@@ -208,95 +232,6 @@ async def clone_voice(
     except Exception as e:
         logger.error(f"Voice cloning error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clone voice: {str(e)}")
-
-
-@app.post("/tts")
-async def generate_speech(request: TTSRequest):
-    """
-    Generate speech using a cloned voice OR a built-in voice
-    
-    - voice_id: The ID returned from /clone OR a built-in voice ID
-    - text: Text to speak
-    - language: Language code (en, es, fr, de, etc.)
-    """
-    try:
-        await load_tts_model()
-        
-        # Check if this is a cloned voice
-        voice_file = VOICES_DIR / f"{request.voice_id}.json"
-        speaker_wav = None
-        
-        if voice_file.exists():
-            # Use cloned voice
-            with open(voice_file) as f:
-                voice_data = json.load(f)
-            
-            sample_files = voice_data.get("sample_files", [])
-            if sample_files:
-                speaker_wav = sample_files[0]
-                if not os.path.exists(speaker_wav):
-                    speaker_wav = None
-        
-        # Determine language from voice_id if it's a default voice
-        language = request.language
-        if request.voice_id.startswith("default_"):
-            lang_map = {
-                "default_english": "en",
-                "default_spanish": "es",
-                "default_french": "fr",
-                "default_german": "de",
-                "default_portuguese": "pt"
-            }
-            language = lang_map.get(request.voice_id, "en")
-        
-        logger.info(f"Generating speech with voice '{request.voice_id}' (lang={language}): {request.text[:50]}...")
-        
-        # Create temp file for output
-        output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-        output_path = output_file.name
-        output_file.close()
-        
-        try:
-            # Try with speaker_wav if available, otherwise use default voice
-            if speaker_wav:
-                logger.info(f"Using cloned voice from: {speaker_wav}")
-                tts_model.tts_to_file(
-                    text=request.text,
-                    speaker_wav=speaker_wav,
-                    language=language,
-                    file_path=output_path
-                )
-            else:
-                logger.info(f"Using default voice for language: {language}")
-                # For YourTTS, we can generate without speaker_wav
-                # This will use the model's default speaker
-                tts_model.tts_to_file(
-                    text=request.text,
-                    language=language,
-                    file_path=output_path
-                )
-            
-            logger.info(f"✓ Generated speech for voice '{request.voice_id}'")
-            
-            # Return audio file
-            return FileResponse(
-                output_path,
-                media_type="audio/wav",
-                filename=f"{request.voice_id}_output.wav",
-                background=None  # Don't delete immediately
-            )
-            
-        except Exception as e:
-            if os.path.exists(output_path):
-                os.unlink(output_path)
-            logger.error(f"TTS generation error details: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"TTS generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
 
 
 @app.delete("/voices/{voice_id}")
@@ -317,56 +252,15 @@ async def delete_voice(voice_id: str):
     return {"success": True, "message": f"Voice '{voice_id}' deleted"}
 
 
-@app.post("/tts/direct")
-async def generate_speech_direct(
-    text: str = Form(...),
-    speaker_wav: UploadFile = File(...),
-    language: str = Form("en")
-):
-    """
-    Generate speech directly from an uploaded audio sample
-    (No need to clone first - one-shot voice cloning)
-    """
+@app.get("/edge-voices")
+async def list_edge_voices():
+    """List available edge-tts voices"""
     try:
-        await load_tts_model()
-        
-        # Save uploaded speaker file temporarily
-        suffix = Path(speaker_wav.filename).suffix or '.wav'
-        temp_speaker = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-        shutil.copyfileobj(speaker_wav.file, temp_speaker)
-        temp_speaker.close()
-        
-        # Create temp file for output
-        output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-        output_path = output_file.name
-        output_file.close()
-        
-        try:
-            logger.info(f"Direct TTS generation: {text[:50]}...")
-            
-            # Generate audio
-            tts_model.tts_to_file(
-                text=text,
-                speaker_wav=temp_speaker.name,
-                language=language,
-                file_path=output_path
-            )
-            
-            logger.info("✓ Direct TTS generation complete")
-            
-            return FileResponse(
-                output_path,
-                media_type="audio/wav",
-                filename="cloned_output.wav"
-            )
-            
-        finally:
-            # Cleanup temp speaker file
-            os.unlink(temp_speaker.name)
-            
+        import edge_tts
+        voices = await edge_tts.list_voices()
+        return {"voices": voices}
     except Exception as e:
-        logger.error(f"Direct TTS error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
+        return {"error": str(e), "voices": []}
 
 
 if __name__ == "__main__":
