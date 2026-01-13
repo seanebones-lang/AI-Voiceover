@@ -1,53 +1,61 @@
 # Multi-stage Dockerfile for Railway deployment
+# Supports REAL voice cloning via Coqui XTTS
+
 # Stage 1: Node.js application
 FROM node:22-alpine AS node-builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 COPY tsconfig.json ./
 COPY next.config.js ./
 
-# Install dependencies
 RUN npm ci --legacy-peer-deps
 
-# Copy source code
 COPY . .
 
-# Build Next.js app
 RUN npm run build
 
-# Stage 2: Python XTTS sidecar
+# Stage 2: Python with TTS dependencies
 FROM python:3.11-slim AS python-builder
 
 WORKDIR /app
 
-# Install system dependencies with retries and no-install-recommends
+# Install build dependencies for audio processing
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential \
     git \
     curl \
+    libsndfile1 \
+    libsndfile1-dev \
+    ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python requirements
+# Copy and install Python requirements
 COPY services/xtts/requirements.txt ./services/xtts/
-RUN pip install --no-cache-dir -r services/xtts/requirements.txt
+
+# Install PyTorch CPU-only version first (smaller than full version)
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install other requirements
+RUN pip install --no-cache-dir -r services/xtts/requirements.txt || \
+    pip install --no-cache-dir fastapi uvicorn python-multipart edge-tts aiofiles numpy
 
 # Stage 3: Final production image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl first (needed for nodesource), then Node.js and ffmpeg
+# Install runtime dependencies
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
     ffmpeg \
+    libsndfile1 \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
@@ -75,23 +83,22 @@ COPY scripts ./scripts
 # Copy Python sidecar
 COPY services/xtts ./services/xtts
 
-# Create directories for models and uploads
-RUN mkdir -p models/piper models/xtts uploads
+# Create directories
+RUN mkdir -p models/piper models/xtts uploads cloned_voices
 
-# Download Piper TTS voice models from Hugging Face
-RUN curl -L -o models/piper/en_US-amy-medium.onnx \
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx" \
-    && curl -L -o models/piper/en_US-lessac-medium.onnx \
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
-    && curl -L -o models/piper/en_GB-alan-medium.onnx \
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx" \
-    || echo "Warning: Could not download all voice models"
+# Pre-download XTTS model during build (optional, makes startup faster)
+# Disabled by default as it's ~2GB - will download on first use instead
+# RUN python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')" || echo "XTTS pre-download skipped"
 
-# Expose ports (8080 for Next.js via Railway, 8081 for internal XTTS sidecar)
+# Expose ports
 EXPOSE 8080 8081
 
-# Start both services
+# Entrypoint
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+# Set environment for optimal performance
+ENV PYTORCH_ENABLE_MPS_FALLBACK=1
+ENV OMP_NUM_THREADS=4
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
