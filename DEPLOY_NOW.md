@@ -1,250 +1,131 @@
-# 🚀 Deploy to Vercel in 2 Minutes!
+# 🚀 Quick Railway Deployment Guide
 
-Your app is **100% ready** for deployment. Everything is configured. Just follow these simple steps:
+## Your Railway Project
+- **Project**: `loyal-acceptance`
+- **Environment**: `production`
+- **Token**: Configured ✅
 
----
+## Deployment Steps
 
-## ⚡ Quick Deploy (2 Minutes)
+### Option 1: Railway Dashboard (Recommended - 5 minutes)
 
-### Step 1: Login to Vercel
-```bash
-vercel login
-```
-- This will open your browser
-- Sign in with GitHub (recommended) or Email
-- Return to terminal after login
+1. **Go to Railway Dashboard**
+   - Visit: https://railway.app
+   - Login with your account
 
-### Step 2: Deploy!
-```bash
-vercel
-```
+2. **Select Your Project**
+   - Click on project: **loyal-acceptance**
 
-**That's it!** Vercel will:
-- ✅ Detect your project
-- ✅ Build everything
-- ✅ Deploy to production
-- ✅ Give you a live URL
+3. **Create New Service**
+   - Click **"New"** → **"GitHub Repo"**
+   - Select your repository: `AI-Voiceover`
+   - Railway will auto-detect:
+     - ✅ Dockerfile
+     - ✅ railway.toml
+     - ✅ Port 3000
 
-### Step 3: Add Environment Variable
+4. **Set Environment Variables**
+   Go to your service → **Variables** tab → Add these:
 
-After deployment, add your API key:
+   ```
+   NEXTAUTH_SECRET=<generate-random-secret>
+   NEXTAUTH_URL=https://your-service.railway.app
+   UPSTASH_REDIS_REST_URL=<your-upstash-redis-url>
+   UPSTASH_REDIS_REST_TOKEN=<your-upstash-redis-token>
+   XTTS_SIDECAR_URL=http://localhost:8000
+   NODE_ENV=production
+   ```
 
-**Option A: Via CLI (Fastest)**
-```bash
-vercel env add ELEVENLABS_API_KEY
-```
-- Paste: `sk_5ac106062e19304d8fb2fda7799bdcdbbfe136cbae778191`
-- Select: Production
-- Press Enter
+   **To generate NEXTAUTH_SECRET:**
+   ```bash
+   openssl rand -base64 32
+   ```
 
-**Option B: Via Dashboard**
-1. Go to https://vercel.com/dashboard
-2. Click your project
-3. Go to Settings → Environment Variables
-4. Add:
-   - Name: `ELEVENLABS_API_KEY`
-   - Value: `sk_5ac106062e19304d8fb2fda7799bdcdbbfe136cbae778191`
-   - Environment: Production
-5. Click Save
+5. **Deploy**
+   - Railway will automatically deploy
+   - Or click **"Deploy"** button
+   - Watch logs in real-time
 
-### Step 4: Redeploy (Apply Environment Variable)
-```bash
-vercel --prod
-```
+6. **Get Your URL**
+   - Railway will assign a URL like: `https://your-service.up.railway.app`
+   - Update `NEXTAUTH_URL` with this URL
 
----
-
-## 🎉 You're Live!
-
-Your app will be at:
-```
-https://your-project-name.vercel.app
-```
-
-Vercel will show you the URL after deployment!
-
----
-
-## 🔧 What I Already Configured
-
-✅ **vercel.json** - All routing configured
-✅ **package.json** - All dependencies listed
-✅ **Environment variables** - Structure ready
-✅ **Static files** - Public folder configured
-✅ **API routes** - All endpoints ready
-
-**Everything works out of the box!**
-
----
-
-## 📝 Quick Commands Reference
+### Option 2: Railway CLI (If you have terminal access)
 
 ```bash
-# Login to Vercel
-vercel login
+# Set token
+export RAILWAY_TOKEN=e3d1ece9-2889-448b-a047-3ba37ae0cccf
 
-# Deploy to preview
-vercel
+# Link to service (interactive - select service)
+railway service link
 
-# Deploy to production
-vercel --prod
+# Set environment variables
+railway variables --set "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+railway variables --set "XTTS_SIDECAR_URL=http://localhost:8000"
+railway variables --set "NODE_ENV=production"
 
-# Check deployment status
-vercel ls
-
-# View logs
-vercel logs
-
-# Add environment variable
-vercel env add ELEVENLABS_API_KEY
-
-# Remove deployment
-vercel remove
+# Deploy
+railway up
 ```
 
----
+## Required Environment Variables
 
-## 🌐 Alternative: Deploy via Vercel Dashboard
+| Variable | Description | How to Get |
+|----------|-------------|------------|
+| `NEXTAUTH_SECRET` | Session secret | Generate: `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | Your app URL | Set after Railway assigns URL |
+| `UPSTASH_REDIS_REST_URL` | Redis URL | From Upstash dashboard |
+| `UPSTASH_REDIS_REST_TOKEN` | Redis token | From Upstash dashboard |
+| `XTTS_SIDECAR_URL` | XTTS service | `http://localhost:8000` |
+| `NODE_ENV` | Environment | `production` |
 
-Don't want to use CLI? Deploy from the web:
+## What Happens During Deployment
 
-1. **Go to** https://vercel.com/new
-2. **Import** your GitHub repository
-3. **Add Environment Variable:**
-   - `ELEVENLABS_API_KEY` = `sk_5ac106062e19304d8fb2fda7799bdcdbbfe136cbae778191`
-4. **Click Deploy**
+1. **Build Stage**
+   - Railway builds Docker image
+   - Installs Node.js dependencies
+   - Installs Python dependencies
+   - Downloads XTTS model (~1.5GB, first time only)
 
-Done! No command line needed.
+2. **Runtime**
+   - Next.js starts on port 3000
+   - XTTS sidecar starts on port 8000 (internal)
+   - Both services run in same container
 
----
+3. **Health Check**
+   - Visit: `https://your-app.railway.app/api/voices`
+   - Should return list of available voices
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
-### "Build failed"
-- Make sure you ran `npm install` locally first
-- Check that all files are committed and pushed
+### Build Fails
+- Check Railway logs
+- Verify Dockerfile syntax
+- Check Python dependencies
 
-### "Environment variable not found"
-- Make sure you added `ELEVENLABS_API_KEY`
-- Redeploy after adding the variable
+### Service Won't Start
+- Check environment variables
+- Verify ports are configured
+- Check service logs
 
-### "API routes not working"
-- This is normal on first deploy
-- Add environment variable
-- Redeploy with `vercel --prod`
+### XTTS Not Working
+- Verify Python service started
+- Check `XTTS_SIDECAR_URL` is correct
+- Model downloads on first run (takes time)
 
-### "File upload not working"
-**Note:** File uploads (voice cloning) may have limitations on Vercel's serverless functions due to:
-- 10MB request size limit
-- Serverless function timeout (10s on free tier)
+## Monitoring
 
-**Solution for voice cloning:**
-- Upgrade to Vercel Pro ($20/mo) for 4.5MB limit increase
-- Or use alternative hosting (Railway, Heroku) for full file upload support
-- Text-to-speech works perfectly on free tier!
+- **Logs**: Railway dashboard → Service → Logs
+- **Metrics**: Railway dashboard → Metrics
+- **Health**: `https://your-app.railway.app/api/voices`
 
----
+## Next Steps After Deployment
 
-## 💡 After Deployment
-
-### Test Your Live App:
-1. Visit your Vercel URL
-2. Try text-to-speech (should work immediately)
-3. Test all 8 emotion presets
-4. Try voice comparison
-5. Test conversation builder
-
-### Set Up Custom Domain (Optional):
-1. Go to Project Settings → Domains
-2. Add your domain
-3. Update DNS records
-4. SSL auto-configured!
-
-### Monitor Usage:
-- Vercel Dashboard shows:
-  - Visitors
-  - Bandwidth
-  - Function invocations
-  - Build logs
+1. ✅ Test TTS endpoint: `POST /api/tts`
+2. ✅ Test voice cloning: `POST /api/clone`
+3. ✅ Set up custom domain (optional)
+4. ✅ Configure monitoring/alerts
 
 ---
 
-## 🎯 What Works on Vercel Free Tier
-
-✅ **Perfect for:**
-- Text-to-speech generation
-- 250+ voices
-- Emotion presets
-- Voice comparison
-- Conversation builder
-- All UI features
-- Up to 100GB bandwidth/month
-- 100 GB-hours serverless functions
-
-⚠️ **Limitations:**
-- Voice cloning (file upload) limited to smaller files
-- Consider upgrading for heavy file uploads
-
-**Recommendation:** Start on free tier, upgrade if you get traction!
-
----
-
-## 🚀 Production Checklist
-
-Before sharing your app:
-
-- [x] App deployed to Vercel
-- [x] Environment variable added
-- [x] Test text-to-speech
-- [x] Test all features
-- [ ] Add Google Analytics (optional)
-- [ ] Set up custom domain (optional)
-- [ ] Add Stripe for payments
-- [ ] Launch on Product Hunt
-- [ ] Share on social media!
-
----
-
-## 💰 Vercel Pricing
-
-**Hobby (Free):**
-- Perfect for testing
-- 100GB bandwidth
-- Unlimited projects
-- SSL certificates
-- **Recommended to start**
-
-**Pro ($20/month):**
-- More bandwidth
-- Better performance
-- Team features
-- **Upgrade when making money**
-
----
-
-## 🎉 You're Ready!
-
-Run these 3 commands and you're live:
-
-```bash
-vercel login
-vercel
-vercel env add ELEVENLABS_API_KEY
-```
-
-Then paste your API key and redeploy:
-```bash
-vercel --prod
-```
-
-**Your AI Voice-Over Generator will be live in 2 minutes!** 🚀
-
----
-
-## 📞 Need Help?
-
-- Vercel Docs: https://vercel.com/docs
-- Vercel Support: https://vercel.com/support
-- This project's issues: Check GitHub
-
-**Good luck! Make that $10k! 💰**
+**Your Railway token is configured and ready!** 🎉
