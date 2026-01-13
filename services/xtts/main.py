@@ -183,7 +183,7 @@ async def generate_speech(request: TTSRequest):
     }
     
     # Use cloned voice with XTTS
-        if voice_id.startswith("clone_"):
+    if voice_id.startswith("clone_"):
         logger.info(f"Cloned voice TTS: {voice_id}")
         return await generate_cloned_speech(
             text, voice_id, language, speed, volume, effects,
@@ -192,7 +192,7 @@ async def generate_speech(request: TTSRequest):
             top_k=request.top_k,
             top_p=request.top_p
         )
-        else:
+    else:
         logger.info(f"Standard TTS: {voice_id}")
         return await generate_edge_speech(text, voice_id, speed, pitch, volume, effects)
 
@@ -346,7 +346,7 @@ def adjust_speed(audio_data: bytes, speed: float) -> bytes:
             result = f.read()
         
         os.unlink(input_path)
-                os.unlink(output_path)
+        os.unlink(output_path)
         return result
     except:
         return audio_data
@@ -494,23 +494,23 @@ async def clone_voice(
     safe_name = ''.join(c for c in name.lower().replace(' ', '_') if c.isalnum() or c == '_')
     voice_id = f"clone_{safe_name}_{hashlib.md5(name.encode()).hexdigest()[:6]}"
     
-        voice_dir = VOICES_DIR / voice_id
-        voice_dir.mkdir(parents=True, exist_ok=True)
-        
-        saved_files = []
+    voice_dir = VOICES_DIR / voice_id
+    voice_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_files = []
     quality_reports = []
     total_duration = 0
     
-        try:
-            for i, file in enumerate(files):
+    try:
+        for i, file in enumerate(files):
             content = await file.read()
             if len(content) < 1000:
                 raise HTTPException(status_code=400, detail="Audio file too small (need at least 1KB)")
             
             suffix = Path(file.filename or f"audio_{i}").suffix or '.wav'
-                file_path = voice_dir / f"sample_{i}{suffix}"
-                
-                with open(file_path, 'wb') as f:
+            file_path = voice_dir / f"sample_{i}{suffix}"
+            
+            with open(file_path, 'wb') as f:
                 f.write(content)
             
             logger.info(f"   Saved: {file_path.name} ({len(content)} bytes)")
@@ -531,7 +531,7 @@ async def clone_voice(
                     saved_files.append(wav_path)
             else:
                 saved_files.append(str(file_path))
-            
+        
         # Aggregate quality warnings
         all_warnings = []
         all_recommendations = []
@@ -544,18 +544,18 @@ async def clone_voice(
         all_recommendations = list(set(all_recommendations))
         
         metadata = {
-                "voice_id": voice_id,
-                "name": name,
-                "description": description,
-                "sample_files": saved_files,
+            "voice_id": voice_id,
+            "name": name,
+            "description": description,
+            "sample_files": saved_files,
             "created_at": datetime.datetime.now().isoformat(),
             "real_clone": HAS_XTTS,
             "total_duration": total_duration,
             "quality_warnings": all_warnings,
             "preprocessed": True
-            }
-            
-            with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
+        }
+        
+        with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
             json.dump(metadata, f, indent=2)
         
         clone_type = "REAL (XTTS)" if HAS_XTTS else "stored (edge-tts fallback)"
@@ -571,27 +571,27 @@ async def clone_voice(
         
         if total_duration < 10:
             message += f" Tip: You provided {total_duration:.1f}s of audio. For best results, use 30+ seconds."
-            
-            return {
-                "success": True,
-                "voice_id": voice_id,
-                "name": name,
-                "samples_count": len(saved_files),
+        
+        return {
+            "success": True,
+            "voice_id": voice_id,
+            "name": name,
+            "samples_count": len(saved_files),
             "total_duration": total_duration,
             "real_clone": HAS_XTTS,
             "preprocessed": True,
-            "quality_warnings": all_warnings[:3],  # Limit to top 3 warnings
+            "quality_warnings": all_warnings[:3],
             "recommendations": all_recommendations[:3],
             "message": message
-            }
-            
-        except HTTPException:
-            shutil.rmtree(voice_dir, ignore_errors=True)
-            raise
-        except Exception as e:
-            shutil.rmtree(voice_dir, ignore_errors=True)
+        }
+        
+    except HTTPException:
+        shutil.rmtree(voice_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(voice_dir, ignore_errors=True)
         logger.error(f"Clone error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
                     
 
 def convert_to_wav(input_path: str) -> Optional[str]:
