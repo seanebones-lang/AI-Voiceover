@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`✓ TTS generated: ${text.substring(0, 50)}... (${latency}ms)`)
 
-    // Return audio as stream
-    return new NextResponse(wavBuffer, {
+    // Return audio as stream (convert Buffer to Uint8Array for Next.js 15 compatibility)
+    return new NextResponse(new Uint8Array(wavBuffer), {
       headers: {
         'Content-Type': 'audio/wav',
         'Content-Disposition': `attachment; filename="voiceover-${Date.now()}.wav"`,
