@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-const XTTS_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8081'
+// Force port 8081 - the Python sidecar port
+const XTTS_URL = 'http://localhost:8081'
 
 interface SidecarStatus {
   status: string
