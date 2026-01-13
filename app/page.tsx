@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
+import { Dashboard } from '@/components/dashboard'
 
 export default function Home() {
-  // Redirect to the full-featured static HTML frontend
-  redirect('/index.html')
+  return <Dashboard />
 }

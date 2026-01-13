@@ -3,14 +3,26 @@ import { NextResponse } from "next/server"
 
 export default auth((req) => {
   // Public routes that don't require auth
-  const publicRoutes = ["/", "/api/tts", "/api/voices"]
+  const publicRoutes = [
+    "/",
+    "/login",
+    "/api/tts",
+    "/api/voices",
+    "/api/clone",
+    "/api/clone-voice",
+    "/playground",
+    "/index.html",
+  ]
   
-  if (publicRoutes.some(route => req.nextUrl.pathname.startsWith(route))) {
+  const pathname = req.nextUrl.pathname
+  
+  // Allow public routes
+  if (publicRoutes.some(route => pathname === route || pathname.startsWith(route + "/"))) {
     return NextResponse.next()
   }
 
   // Protected routes require auth
-  if (!req.auth && req.nextUrl.pathname.startsWith("/dashboard")) {
+  if (!req.auth && pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
@@ -18,5 +30,5 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 }
