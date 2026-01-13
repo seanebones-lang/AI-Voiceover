@@ -62,7 +62,10 @@ export function Dashboard() {
   const [reverb, setReverb] = useState([0])
   const [echo, setEcho] = useState([0])
   const [noiseReduction, setNoiseReduction] = useState(false)
-  const [showEffects, setShowEffects] = useState(false)
+  const [showEffects, setShowEffects] = useState(true) // Show by default now
+  
+  // Special Effects
+  const [specialEffect, setSpecialEffect] = useState<string>('none')
   
   // History State
   const [history, setHistory] = useState<Array<{
@@ -234,6 +237,7 @@ export function Dashboard() {
           reverb: reverb[0],
           echo: echo[0],
           noise_reduction: noiseReduction,
+          special_effect: specialEffect,
         }),
       })
 
@@ -743,6 +747,39 @@ export function Dashboard() {
                           />
                           <span className="text-sm font-medium">Noise Reduction</span>
                         </label>
+                        
+                        {/* Special Effects */}
+                        <div className="pt-4 border-t">
+                          <label className="text-sm font-medium mb-3 block">🎭 Special Effect</label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { id: 'none', label: 'None', icon: '🔇' },
+                              { id: 'robot', label: 'Robot', icon: '🤖' },
+                              { id: 'radio', label: 'Radio', icon: '📻' },
+                              { id: 'whisper', label: 'Whisper', icon: '🤫' },
+                              { id: 'deep', label: 'Deep', icon: '🎸' },
+                              { id: 'chipmunk', label: 'Chipmunk', icon: '🐿️' },
+                              { id: 'cave', label: 'Cave', icon: '🦇' },
+                              { id: 'telephone', label: 'Phone', icon: '☎️' },
+                              { id: 'underwater', label: 'Underwater', icon: '🐠' },
+                              { id: 'megaphone', label: 'Megaphone', icon: '📢' },
+                            ].map(effect => (
+                              <button
+                                key={effect.id}
+                                onClick={() => setSpecialEffect(effect.id)}
+                                className={`p-2 rounded-lg text-xs font-medium transition-all ${
+                                  specialEffect === effect.id
+                                    ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-background'
+                                    : 'bg-secondary hover:bg-secondary/80'
+                                }`}
+                              >
+                                <span className="text-base">{effect.icon}</span>
+                                <br />
+                                {effect.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

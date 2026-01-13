@@ -17,6 +17,8 @@ interface TTSRequest {
   reverb?: number
   echo?: number
   noise_reduction?: boolean
+  // Special effects
+  special_effect?: string // 'none' | 'robot' | 'radio' | 'whisper' | 'deep' | 'chipmunk' | 'cave' | 'telephone'
 }
 
 export async function POST(request: NextRequest) {
@@ -37,7 +39,8 @@ export async function POST(request: NextRequest) {
     const { 
       text, voice_id, language = 'en', 
       speed = 1.0, pitch = 0, volume = 1.0,
-      reverb = 0, echo = 0, noise_reduction = false
+      reverb = 0, echo = 0, noise_reduction = false,
+      special_effect = 'none'
     } = body
 
     // Validation
@@ -73,6 +76,7 @@ export async function POST(request: NextRequest) {
           reverb,
           echo,
           noise_reduction,
+          special_effect,
         }),
         signal: controller.signal,
       })

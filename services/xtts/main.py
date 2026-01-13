@@ -117,6 +117,8 @@ class TTSRequest(BaseModel):
     reverb: float = 0     # 0 to 1 (dry to wet)
     echo: float = 0       # 0 to 1 (amount)
     noise_reduction: bool = False
+    # Special effects
+    special_effect: str = "none"  # none, robot, radio, whisper, deep, chipmunk, cave, telephone
 
 
 @app.on_event("startup")
@@ -183,10 +185,17 @@ async def generate_speech(request: TTSRequest):
     if len(text) > 5000:
         raise HTTPException(status_code=400, detail="Text too long")
     
-    logger.info(f"🎤 TTS: voice={voice_id}, speed={speed}, pitch={pitch}, vol={volume}, reverb={reverb}, echo={echo}")
+    special_effect = request.special_effect
+    
+    logger.info(f"🎤 TTS: voice={voice_id}, speed={speed}, pitch={pitch}, vol={volume}, fx={special_effect}")
     
     # Route to appropriate handler
-    effects = {"reverb": reverb, "echo": echo, "noise_reduction": noise_reduction}
+    effects = {
+        "reverb": reverb, 
+        "echo": echo, 
+        "noise_reduction": noise_reduction,
+        "special_effect": special_effect
+    }
     if voice_id.startswith("clone_"):
         return await generate_cloned_speech(text, voice_id, language, speed, pitch, volume, effects)
     else:
@@ -228,8 +237,14 @@ async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: fl
         if volume != 1.0:
             audio_data = apply_volume_mp3(audio_data, volume)
         
-        # Apply effects
-        if effects.get("reverb", 0) > 0 or effects.get("echo", 0) > 0 or effects.get("noise_reduction"):
+        # Apply effects (including special effects)
+        has_effects = (
+            effects.get("reverb", 0) > 0 or 
+            effects.get("echo", 0) > 0 or 
+            effects.get("noise_reduction") or
+            effects.get("special_effect", "none") != "none"
+        )
+        if has_effects:
             audio_data = apply_audio_effects_mp3(audio_data, effects)
         
         logger.info(f"✅ Generated: {len(audio_data)} bytes")
@@ -391,26 +406,28 @@ def apply_audio_effects_mp3(audio_data: bytes, effects: dict) -> bytes:
         output_path = input_path.replace('.mp3', '_fx.mp3')
         filters = []
         
+        # Special effects first
+        special = effects.get("special_effect", "none")
+        filters.extend(get_special_effect_filters(special))
+        
         # Reverb using aecho (simulated reverb)
         reverb = effects.get("reverb", 0)
         if reverb > 0:
-            # aecho: in_gain|out_gain|delays|decays
-            delay = int(50 + reverb * 100)  # 50-150ms
-            decay = 0.3 + reverb * 0.4  # 0.3-0.7
+            delay = int(50 + reverb * 100)
+            decay = 0.3 + reverb * 0.4
             filters.append(f'aecho=0.8:0.9:{delay}:{decay}')
         
         # Echo
         echo = effects.get("echo", 0)
         if echo > 0:
-            delay = int(200 + echo * 400)  # 200-600ms
-            decay = 0.3 + echo * 0.3  # 0.3-0.6
+            delay = int(200 + echo * 400)
+            decay = 0.3 + echo * 0.3
             filters.append(f'aecho=0.8:0.7:{delay}:{decay}')
         
-        # Noise reduction (highpass + lowpass)
+        # Noise reduction
         if effects.get("noise_reduction"):
             filters.append('highpass=f=80')
             filters.append('lowpass=f=12000')
-            filters.append('afftdn=nf=-20')  # FFT-based denoise
         
         if filters:
             filter_str = ','.join(filters)
@@ -418,10 +435,11 @@ def apply_audio_effects_mp3(audio_data: bytes, effects: dict) -> bytes:
             result = subprocess.run(cmd, capture_output=True)
             
             if result.returncode != 0:
-                # Try simpler filter if afftdn fails
-                filters = [f for f in filters if 'afftdn' not in f]
-                if filters:
-                    filter_str = ','.join(filters)
+                logger.warning(f"ffmpeg failed: {result.stderr.decode()[:200]}")
+                # Fallback - try without complex filters
+                simple_filters = [f for f in filters if 'crusher' not in f and 'tremolo' not in f and 'vibrato' not in f]
+                if simple_filters:
+                    filter_str = ','.join(simple_filters)
                     cmd = ['ffmpeg', '-y', '-i', input_path, '-filter:a', filter_str, '-q:a', '2', output_path]
                     subprocess.run(cmd, capture_output=True, check=True)
                 else:
@@ -450,6 +468,10 @@ def apply_audio_effects_wav_full(audio_data: bytes, effects: dict) -> bytes:
         
         output_path = input_path.replace('.wav', '_fx.wav')
         filters = []
+        
+        # Special effects first (they transform the voice character)
+        special = effects.get("special_effect", "none")
+        filters.extend(get_special_effect_filters(special))
         
         # Reverb
         reverb = effects.get("reverb", 0)
@@ -487,6 +509,79 @@ def apply_audio_effects_wav_full(audio_data: bytes, effects: dict) -> bytes:
     except Exception as e:
         logger.warning(f"WAV effects failed: {e}")
         return audio_data
+
+
+def get_special_effect_filters(effect: str) -> list:
+    """Get ffmpeg filters for special voice effects"""
+    if effect == "robot":
+        # Robotic voice: ring modulation + slight distortion
+        return [
+            'asetrate=44100*0.9,aresample=44100',  # Slight pitch down
+            'tremolo=f=40:d=0.7',  # Ring modulation
+            'highpass=f=200',
+            'lowpass=f=4000'
+        ]
+    elif effect == "radio":
+        # Old radio effect: bandpass + distortion + noise
+        return [
+            'highpass=f=300',
+            'lowpass=f=3000',
+            'acrusher=bits=8:mode=log:aa=1',  # Bit crushing
+            'volume=1.5'
+        ]
+    elif effect == "whisper":
+        # Whisper: breathy, high freq boost
+        return [
+            'highpass=f=500',
+            'lowpass=f=8000',
+            'volume=0.7',
+            'aecho=0.8:0.5:30:0.3'  # Light breathiness
+        ]
+    elif effect == "deep":
+        # Deep voice: pitch down significantly
+        return [
+            'asetrate=44100*0.7,aresample=44100',
+            'lowpass=f=3500',
+            'volume=1.2'
+        ]
+    elif effect == "chipmunk":
+        # Chipmunk: pitch up significantly
+        return [
+            'asetrate=44100*1.5,aresample=44100',
+            'highpass=f=200',
+            'volume=0.9'
+        ]
+    elif effect == "cave":
+        # Cave/cavern: heavy reverb
+        return [
+            'aecho=0.8:0.9:100:0.5',
+            'aecho=0.8:0.7:200:0.4',
+            'lowpass=f=6000'
+        ]
+    elif effect == "telephone":
+        # Old telephone: narrow band + distortion
+        return [
+            'highpass=f=400',
+            'lowpass=f=3400',
+            'volume=1.3',
+            'acrusher=bits=6:mode=log:aa=0'
+        ]
+    elif effect == "underwater":
+        # Underwater: heavy lowpass + warble
+        return [
+            'lowpass=f=800',
+            'vibrato=f=6:d=0.5',
+            'volume=0.8'
+        ]
+    elif effect == "megaphone":
+        # Megaphone: distortion + narrow band
+        return [
+            'highpass=f=500',
+            'lowpass=f=4000',
+            'volume=2',
+            'alimiter=limit=0.8'
+        ]
+    return []
 
 
 @app.post("/clone")
