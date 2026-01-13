@@ -1,0 +1,5 @@
+{
+  "service": "ai-voiceover",
+  "project": "loyal-acceptance",
+  "environment": "production"
+}
