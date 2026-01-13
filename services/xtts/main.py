@@ -213,33 +213,43 @@ async def clone_voice(
 @app.post("/tts")
 async def generate_speech(request: TTSRequest):
     """
-    Generate speech using a cloned voice
+    Generate speech using a cloned voice OR a built-in voice
     
-    - voice_id: The ID returned from /clone
+    - voice_id: The ID returned from /clone OR a built-in voice ID
     - text: Text to speak
     - language: Language code (en, es, fr, de, etc.)
     """
     try:
         await load_tts_model()
         
-        # Find voice metadata
+        # Check if this is a cloned voice
         voice_file = VOICES_DIR / f"{request.voice_id}.json"
-        if not voice_file.exists():
-            raise HTTPException(status_code=404, detail=f"Voice not found: {request.voice_id}")
+        speaker_wav = None
         
-        with open(voice_file) as f:
-            voice_data = json.load(f)
+        if voice_file.exists():
+            # Use cloned voice
+            with open(voice_file) as f:
+                voice_data = json.load(f)
+            
+            sample_files = voice_data.get("sample_files", [])
+            if sample_files:
+                speaker_wav = sample_files[0]
+                if not os.path.exists(speaker_wav):
+                    speaker_wav = None
         
-        sample_files = voice_data.get("sample_files", [])
-        if not sample_files:
-            raise HTTPException(status_code=400, detail="No audio samples found for this voice")
+        # Determine language from voice_id if it's a default voice
+        language = request.language
+        if request.voice_id.startswith("default_"):
+            lang_map = {
+                "default_english": "en",
+                "default_spanish": "es",
+                "default_french": "fr",
+                "default_german": "de",
+                "default_portuguese": "pt"
+            }
+            language = lang_map.get(request.voice_id, "en")
         
-        # Use first sample as reference
-        speaker_wav = sample_files[0]
-        if not os.path.exists(speaker_wav):
-            raise HTTPException(status_code=400, detail="Voice sample file not found")
-        
-        logger.info(f"Generating speech with voice '{request.voice_id}': {request.text[:50]}...")
+        logger.info(f"Generating speech with voice '{request.voice_id}' (lang={language}): {request.text[:50]}...")
         
         # Create temp file for output
         output_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
@@ -247,13 +257,24 @@ async def generate_speech(request: TTSRequest):
         output_file.close()
         
         try:
-            # Generate audio using cloned voice
-            tts_model.tts_to_file(
-                text=request.text,
-                speaker_wav=speaker_wav,
-                language=request.language,
-                file_path=output_path
-            )
+            # Try with speaker_wav if available, otherwise use default voice
+            if speaker_wav:
+                logger.info(f"Using cloned voice from: {speaker_wav}")
+                tts_model.tts_to_file(
+                    text=request.text,
+                    speaker_wav=speaker_wav,
+                    language=language,
+                    file_path=output_path
+                )
+            else:
+                logger.info(f"Using default voice for language: {language}")
+                # For YourTTS, we can generate without speaker_wav
+                # This will use the model's default speaker
+                tts_model.tts_to_file(
+                    text=request.text,
+                    language=language,
+                    file_path=output_path
+                )
             
             logger.info(f"✓ Generated speech for voice '{request.voice_id}'")
             
@@ -268,6 +289,7 @@ async def generate_speech(request: TTSRequest):
         except Exception as e:
             if os.path.exists(output_path):
                 os.unlink(output_path)
+            logger.error(f"TTS generation error details: {str(e)}")
             raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
         
     except HTTPException:

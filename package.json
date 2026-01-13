@@ -1,7 +1,7 @@
 {
-  "name": "ai-voiceover-next",
+  "name": "nexteleven",
   "version": "2.0.0",
-  "description": "Enterprise-grade self-hosted TTS and voice cloning with Next.js 15",
+  "description": "NextEleven - Studio-quality self-hosted voice AI with cloning and TTS",
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
