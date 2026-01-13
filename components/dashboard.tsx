@@ -790,12 +790,33 @@ export function Dashboard() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm">Recent ({history.length})</CardTitle>
-                      <button 
-                        onClick={() => setHistory([])}
-                        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        Clear
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const data = history.map(h => ({
+                              text: h.text,
+                              voice: h.voiceName,
+                              timestamp: h.timestamp.toISOString()
+                            }))
+                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `nexteleven-history-${new Date().toISOString().slice(0,10)}.json`
+                            a.click()
+                          }}
+                          className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                          title="Export history"
+                        >
+                          Export
+                        </button>
+                        <button 
+                          onClick={() => setHistory([])}
+                          className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          Clear
+                        </button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2 max-h-[250px] overflow-y-auto">
