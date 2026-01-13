@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { XTTSClient } from '@/lib/tts/xtts-client'
 import { cloneRateLimiter } from '@/lib/rate-limit'
 
-const xttsClient = new XTTSClient(process.env.XTTS_SIDECAR_URL || 'http://localhost:8081')
+// Force port 8081 - the Python sidecar port
+const xttsClient = new XTTSClient('http://localhost:8081')
 
 export async function POST(request: NextRequest) {
   try {

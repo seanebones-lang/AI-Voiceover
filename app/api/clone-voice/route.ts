@@ -4,7 +4,8 @@ import { cloneRateLimiter } from '@/lib/rate-limit'
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
 
-const XTTS_URL = process.env.XTTS_SIDECAR_URL || 'http://localhost:8081'
+// Force port 8081 - the Python sidecar port
+const XTTS_URL = 'http://localhost:8081'
 
 export async function POST(request: NextRequest) {
   try {
