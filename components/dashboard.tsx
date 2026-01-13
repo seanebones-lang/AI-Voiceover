@@ -767,13 +767,13 @@ export function Dashboard() {
                   >
                       <option value="">Select a voice...</option>
                       {voices.filter(v => v.source === 'cloned').length > 0 && (
-                        <optgroup label="🎤 Cloned Voices">
+                        <optgroup label="Cloned Voices">
                           {voices.filter(v => v.source === 'cloned').map(v => (
                             <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
                           ))}
                         </optgroup>
                       )}
-                    <optgroup label="🌐 Standard Voices">
+                    <optgroup label="Standard Voices">
                       {voices.filter(v => v.source !== 'cloned').map(v => (
                         <option key={v.voice_id} value={v.voice_id}>
                           {v.name} ({v.language || 'en'})
@@ -806,15 +806,15 @@ export function Dashboard() {
                 <label className="text-sm font-medium mb-2 block">Language</label>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { code: 'en', label: '🇺🇸 English', flag: '🇺🇸' },
-                    { code: 'es', label: '🇪🇸 Spanish', flag: '🇪🇸' },
-                    { code: 'fr', label: '🇫🇷 French', flag: '🇫🇷' },
-                    { code: 'de', label: '🇩🇪 German', flag: '🇩🇪' },
-                    { code: 'it', label: '🇮🇹 Italian', flag: '🇮🇹' },
-                    { code: 'pt', label: '🇧🇷 Portuguese', flag: '🇧🇷' },
-                    { code: 'ja', label: '🇯🇵 Japanese', flag: '🇯🇵' },
-                    { code: 'ko', label: '🇰🇷 Korean', flag: '🇰🇷' },
-                    { code: 'zh', label: '🇨🇳 Chinese', flag: '🇨🇳' },
+                    { code: 'en', label: 'English' },
+                    { code: 'es', label: 'Spanish' },
+                    { code: 'fr', label: 'French' },
+                    { code: 'de', label: 'German' },
+                    { code: 'it', label: 'Italian' },
+                    { code: 'pt', label: 'Portuguese' },
+                    { code: 'ja', label: 'Japanese' },
+                    { code: 'ko', label: 'Korean' },
+                    { code: 'zh', label: 'Chinese' },
                   ].map(lang => (
                     <button
                       key={lang.code}
@@ -825,7 +825,7 @@ export function Dashboard() {
                           : 'bg-secondary hover:bg-secondary/80'
                       }`}
                     >
-                      {lang.flag} {lang.code.toUpperCase()}
+                      {lang.code.toUpperCase()}
                     </button>
                   ))}
                 </div>
@@ -860,7 +860,7 @@ export function Dashboard() {
                 />
                 {batchMode && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    📦 Batch mode: {text.split(/\n\n+/).filter(p => p.trim()).length} paragraphs detected
+                    Batch mode: {text.split(/\n\n+/).filter(p => p.trim()).length} paragraphs detected
                   </p>
                 )}
               </div>
@@ -869,7 +869,7 @@ export function Dashboard() {
               {batchAudios.length > 0 && (
                 <div className="p-4 rounded-lg bg-primary/10 border border-primary/20 space-y-3">
                   <h4 className="font-medium flex items-center gap-2">
-                    📦 Batch Results ({batchAudios.length} clips)
+                    Batch Results ({batchAudios.length} clips)
                   </h4>
                   <div className="space-y-2 max-h-[200px] overflow-y-auto">
                     {batchAudios.map((url, i) => (
@@ -985,31 +985,29 @@ export function Dashboard() {
                         
                         {/* Special Effects */}
                         <div className="pt-4 border-t">
-                          <label className="text-sm font-medium mb-3 block">🎭 Special Effect</label>
+                          <label className="text-sm font-medium mb-3 block">Special Effect</label>
                           <div className="grid grid-cols-3 gap-2">
                             {[
-                              { id: 'none', label: 'None', icon: '🔇' },
-                              { id: 'robot', label: 'Robot', icon: '🤖' },
-                              { id: 'radio', label: 'Radio', icon: '📻' },
-                              { id: 'whisper', label: 'Whisper', icon: '🤫' },
-                              { id: 'deep', label: 'Deep', icon: '🎸' },
-                              { id: 'chipmunk', label: 'Chipmunk', icon: '🐿️' },
-                              { id: 'cave', label: 'Cave', icon: '🦇' },
-                              { id: 'telephone', label: 'Phone', icon: '☎️' },
-                              { id: 'underwater', label: 'Underwater', icon: '🐠' },
-                              { id: 'megaphone', label: 'Megaphone', icon: '📢' },
+                              { id: 'none', label: 'None' },
+                              { id: 'robot', label: 'Robot' },
+                              { id: 'radio', label: 'Radio' },
+                              { id: 'whisper', label: 'Whisper' },
+                              { id: 'deep', label: 'Deep' },
+                              { id: 'chipmunk', label: 'Chipmunk' },
+                              { id: 'cave', label: 'Cave' },
+                              { id: 'telephone', label: 'Phone' },
+                              { id: 'underwater', label: 'Underwater' },
+                              { id: 'megaphone', label: 'Megaphone' },
                             ].map(effect => (
                               <button
                                 key={effect.id}
                                 onClick={() => setSpecialEffect(effect.id)}
-                                className={`p-2 rounded-lg text-xs font-medium transition-all ${
+                                className={`p-2.5 rounded-lg text-xs font-medium transition-all ${
                                   specialEffect === effect.id
                                     ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-background'
                                     : 'bg-secondary hover:bg-secondary/80'
                                 }`}
                               >
-                                <span className="text-base">{effect.icon}</span>
-                                <br />
                                 {effect.label}
                               </button>
                             ))}
@@ -1090,7 +1088,7 @@ export function Dashboard() {
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm">⭐ Presets</CardTitle>
+                    <CardTitle className="text-sm">Saved Presets</CardTitle>
                     <button
                       onClick={saveCurrentAsPreset}
                       disabled={!selectedVoice}
@@ -1276,7 +1274,7 @@ export function Dashboard() {
                         {isRecording ? <Icons.Square /> : <Icons.Mic />}
                       </button>
                       <p className="text-sm text-muted-foreground">
-                        {isRecording ? '🔴 Recording... Click to stop' : 'Click to start recording'}
+                        {isRecording ? 'Recording... Click to stop' : 'Click to start recording'}
                       </p>
                       {recordedBlob && (
                         <div className="w-full space-y-2">
