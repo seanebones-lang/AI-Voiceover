@@ -1,10 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    turbo: {
-      resolveAlias: {
-        'onnxruntime-node': 'onnxruntime-node',
-      },
+  turbopack: {
+    resolveAlias: {
+      'onnxruntime-node': 'onnxruntime-node',
     },
   },
   webpack: (config, { isServer }) => {
@@ -17,13 +15,6 @@ const nextConfig = {
   },
   // Allow large model files
   serverExternalPackages: ['onnxruntime-node'],
-  // Increase body size limit for audio uploads
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-    responseLimit: false,
-  },
 }
 
 module.exports = nextConfig

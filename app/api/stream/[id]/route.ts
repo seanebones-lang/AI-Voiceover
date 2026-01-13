@@ -4,10 +4,12 @@ import { NextRequest, NextResponse } from 'next/server'
 // Real implementation would use Server-Sent Events or WebSocket
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
+  
   return NextResponse.json(
-    { error: 'Streaming not yet implemented' },
+    { error: 'Streaming not yet implemented', streamId: id },
     { status: 501 }
   )
 }
