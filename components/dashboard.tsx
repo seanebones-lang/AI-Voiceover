@@ -74,6 +74,31 @@ export function Dashboard() {
     timestamp: Date
   }>>([])
   
+  // Service health state
+  const [serviceHealth, setServiceHealth] = useState<'checking' | 'healthy' | 'degraded' | 'offline'>('checking')
+  
+  // Check service health
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/health')
+        const data = await res.json()
+        if (data.status === 'healthy' || data.status === 'ok') {
+          setServiceHealth('healthy')
+        } else if (data.status === 'degraded') {
+          setServiceHealth('degraded')
+        } else {
+          setServiceHealth('offline')
+        }
+      } catch {
+        setServiceHealth('offline')
+      }
+    }
+    checkHealth()
+    const interval = setInterval(checkHealth, 30000) // Check every 30s
+    return () => clearInterval(interval)
+  }, [])
+  
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -423,9 +448,27 @@ export function Dashboard() {
                 <p className="text-xs text-muted-foreground">Studio-Quality Voice AI</p>
               </div>
             </div>
-            <span className="px-3 py-1 text-xs font-mono rounded-full bg-primary/20 text-primary border border-primary/30">
-              v2.0 Self-Hosted
-            </span>
+            <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border ${
+                serviceHealth === 'healthy' ? 'bg-green-500/10 text-green-500 border-green-500/30' :
+                serviceHealth === 'degraded' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30' :
+                serviceHealth === 'offline' ? 'bg-red-500/10 text-red-500 border-red-500/30' :
+                'bg-muted text-muted-foreground border-border'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  serviceHealth === 'healthy' ? 'bg-green-500 animate-pulse' :
+                  serviceHealth === 'degraded' ? 'bg-yellow-500' :
+                  serviceHealth === 'offline' ? 'bg-red-500' :
+                  'bg-muted-foreground animate-pulse'
+                }`} />
+                {serviceHealth === 'checking' ? 'Checking...' :
+                 serviceHealth === 'healthy' ? 'Online' :
+                 serviceHealth === 'degraded' ? 'Degraded' : 'Offline'}
+              </div>
+              <span className="px-3 py-1 text-xs font-mono rounded-full bg-primary/20 text-primary border border-primary/30">
+                v2.2
+              </span>
+            </div>
           </div>
         </div>
       </header>
