@@ -92,6 +92,9 @@ export function Dashboard() {
   const [totalGenerations, setTotalGenerations] = useState(0)
   const [totalCharacters, setTotalCharacters] = useState(0)
   
+  // Language
+  const [language, setLanguage] = useState('en')
+  
   // Auto-save text to localStorage
   useEffect(() => {
     const saved = localStorage.getItem('nexteleven_draft')
@@ -288,6 +291,7 @@ export function Dashboard() {
         body: JSON.stringify({
           text: text.trim(),
           voice_id: selectedVoice,
+          language,
           speed: speed[0],
           pitch: pitch[0],
           volume: volume[0],
@@ -405,6 +409,7 @@ export function Dashboard() {
           body: JSON.stringify({
             text: paragraphs[i].trim(),
             voice_id: selectedVoice,
+            language,
             speed: speed[0],
             pitch: pitch[0],
             volume: volume[0],
@@ -793,6 +798,36 @@ export function Dashboard() {
                       <Icons.Play />
                     )}
                   </Button>
+                </div>
+              </div>
+              
+              {/* Language Selector */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Language</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { code: 'en', label: '🇺🇸 English', flag: '🇺🇸' },
+                    { code: 'es', label: '🇪🇸 Spanish', flag: '🇪🇸' },
+                    { code: 'fr', label: '🇫🇷 French', flag: '🇫🇷' },
+                    { code: 'de', label: '🇩🇪 German', flag: '🇩🇪' },
+                    { code: 'it', label: '🇮🇹 Italian', flag: '🇮🇹' },
+                    { code: 'pt', label: '🇧🇷 Portuguese', flag: '🇧🇷' },
+                    { code: 'ja', label: '🇯🇵 Japanese', flag: '🇯🇵' },
+                    { code: 'ko', label: '🇰🇷 Korean', flag: '🇰🇷' },
+                    { code: 'zh', label: '🇨🇳 Chinese', flag: '🇨🇳' },
+                  ].map(lang => (
+                    <button
+                      key={lang.code}
+                      onClick={() => setLanguage(lang.code)}
+                      className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                        language === lang.code
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary hover:bg-secondary/80'
+                      }`}
+                    >
+                      {lang.flag} {lang.code.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
               </div>
 
