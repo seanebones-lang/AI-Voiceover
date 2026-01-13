@@ -4,6 +4,9 @@ import Credentials from "next-auth/providers/credentials"
 import type { NextAuthConfig } from "next-auth"
 
 export const config = {
+  // Trust the host in production (Railway, Vercel, etc.)
+  trustHost: true,
+  
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
