@@ -78,8 +78,14 @@ COPY services/xtts ./services/xtts
 # Create directories for models and uploads
 RUN mkdir -p models/piper models/xtts uploads
 
-# Download models (optional - can be done at runtime)
-# RUN npm run download-models || true
+# Download Piper TTS voice models from Hugging Face
+RUN curl -L -o models/piper/en_US-amy-medium.onnx \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx" \
+    && curl -L -o models/piper/en_US-lessac-medium.onnx \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
+    && curl -L -o models/piper/en_GB-alan-medium.onnx \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx" \
+    || echo "Warning: Could not download all voice models"
 
 # Expose ports (8080 for Next.js via Railway, 8081 for internal XTTS sidecar)
 EXPOSE 8080 8081
