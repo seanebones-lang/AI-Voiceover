@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
+import { config, checkServiceHealth } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
-
-// Force port 8081 - the Python sidecar port
-const XTTS_URL = 'http://localhost:8081'
 
 interface SidecarStatus {
   status: string
@@ -15,62 +13,102 @@ interface SidecarStatus {
 }
 
 export async function GET() {
+  const startTime = Date.now()
+  
   const health: {
     status: string
     timestamp: string
+    uptime: number
     services: {
       nextjs: { status: string; version: string }
-      sidecar: SidecarStatus
+      xtts: SidecarStatus
+      ttsV2?: SidecarStatus
+      rag?: SidecarStatus
     }
     environment: {
       NODE_ENV: string | undefined
-      XTTS_URL: string
+      isRailway: boolean
+      environment: string
     }
+    latency: number
   } = {
     status: 'ok',
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
     services: {
       nextjs: { status: 'healthy', version: '15.x' },
-      sidecar: { status: 'unknown', url: XTTS_URL }
+      xtts: { status: 'unknown', url: config.services.xtts.url }
     },
     environment: {
       NODE_ENV: process.env.NODE_ENV,
-      XTTS_URL: XTTS_URL
-    }
+      isRailway: config.isRailway,
+      environment: config.environment
+    },
+    latency: 0
   }
 
-  // Check Python sidecar
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 3000)
-    
-    const response = await fetch(`${XTTS_URL}/health`, {
-      signal: controller.signal
-    })
-    clearTimeout(timeout)
-    
-    if (response.ok) {
+  // Check all services in parallel
+  const [xttsHealth, ttsV2Health, ragHealth] = await Promise.allSettled([
+    checkServiceHealth(config.services.xtts),
+    checkServiceHealth(config.services.ttsV2),
+    checkServiceHealth(config.services.rag),
+  ])
+
+  // XTTS Service
+  if (xttsHealth.status === 'fulfilled' && xttsHealth.value.healthy) {
+    try {
+      const response = await fetch(`${config.services.xtts.url}/health`)
       const data = await response.json()
-      health.services.sidecar = {
+      health.services.xtts = {
         status: 'healthy',
-        url: XTTS_URL,
+        url: config.services.xtts.url,
         ...data
       }
-    } else {
-      health.services.sidecar = {
-        status: 'unhealthy',
-        url: XTTS_URL,
-        error: `HTTP ${response.status}`
+    } catch {
+      health.services.xtts = {
+        status: 'healthy',
+        url: config.services.xtts.url,
+        latency: xttsHealth.value.latency
       }
     }
-  } catch (error) {
-    health.services.sidecar = {
-      status: 'unreachable',
-      url: XTTS_URL,
-      error: error instanceof Error ? error.message : 'Connection failed'
+  } else {
+    health.services.xtts = {
+      status: 'unhealthy',
+      url: config.services.xtts.url,
+      error: xttsHealth.status === 'fulfilled' ? xttsHealth.value.error : 'Service check failed'
     }
     health.status = 'degraded'
   }
+
+  // TTS V2 Service (optional)
+  if (ttsV2Health.status === 'fulfilled' && ttsV2Health.value.healthy) {
+    health.services.ttsV2 = {
+      status: 'healthy',
+      url: config.services.ttsV2.url,
+      latency: ttsV2Health.value.latency
+    }
+  } else {
+    health.services.ttsV2 = {
+      status: 'unavailable',
+      url: config.services.ttsV2.url
+    }
+  }
+
+  // RAG Service (optional)
+  if (ragHealth.status === 'fulfilled' && ragHealth.value.healthy) {
+    health.services.rag = {
+      status: 'healthy',
+      url: config.services.rag.url,
+      latency: ragHealth.value.latency
+    }
+  } else {
+    health.services.rag = {
+      status: 'unavailable',
+      url: config.services.rag.url
+    }
+  }
+
+  health.latency = Date.now() - startTime
 
   return NextResponse.json(health)
 }

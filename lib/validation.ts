@@ -1,0 +1,186 @@
+/**
+ * Input Validation & Sanitization
+ * Comprehensive validation for all API inputs
+ * Date: January 2026
+ */
+
+import { z } from 'zod'
+
+// Text validation schema
+export const textSchema = z.string()
+  .min(1, 'Text cannot be empty')
+  .max(5000, 'Text must be 5,000 characters or less')
+  .refine(
+    (text) => {
+      // Check for potentially malicious patterns
+      const suspiciousPatterns = [
+        /<script/i,
+        /javascript:/i,
+        /on\w+\s*=/i, // Event handlers
+        /data:text\/html/i,
+      ]
+      return !suspiciousPatterns.some(pattern => pattern.test(text))
+    },
+    'Text contains potentially unsafe content'
+  )
+
+// Voice ID validation
+export const voiceIdSchema = z.string()
+  .min(1, 'Voice ID is required')
+  .max(100, 'Voice ID too long')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Voice ID contains invalid characters')
+
+// Language code validation
+export const languageSchema = z.string()
+  .length(2, 'Language code must be 2 characters')
+  .regex(/^[a-z]{2}$/, 'Invalid language code format')
+
+// Numeric parameter validation
+export const speedSchema = z.number()
+  .min(0.5, 'Speed must be at least 0.5x')
+  .max(2.0, 'Speed must be at most 2.0x')
+
+export const pitchSchema = z.number()
+  .min(-20, 'Pitch must be at least -20 semitones')
+  .max(20, 'Pitch must be at most 20 semitones')
+
+export const volumeSchema = z.number()
+  .min(0.0, 'Volume must be at least 0.0')
+  .max(1.0, 'Volume must be at most 1.0')
+
+export const reverbSchema = z.number()
+  .min(0, 'Reverb must be at least 0')
+  .max(1, 'Reverb must be at most 1')
+
+export const echoSchema = z.number()
+  .min(0, 'Echo must be at least 0')
+  .max(1, 'Echo must be at most 1')
+
+// Special effect validation
+export const specialEffectSchema = z.enum([
+  'none',
+  'robot',
+  'radio',
+  'whisper',
+  'deep',
+  'chipmunk',
+  'cave',
+  'telephone',
+  'underwater',
+  'megaphone'
+])
+
+// TTS Request validation schema
+export const ttsRequestSchema = z.object({
+  text: textSchema,
+  voice_id: voiceIdSchema,
+  language: languageSchema.optional().default('en'),
+  speed: speedSchema.optional().default(1.0),
+  pitch: pitchSchema.optional().default(0),
+  volume: volumeSchema.optional().default(1.0),
+  reverb: reverbSchema.optional().default(0),
+  echo: echoSchema.optional().default(0),
+  noise_reduction: z.boolean().optional().default(false),
+  special_effect: specialEffectSchema.optional().default('none'),
+  user_id: z.string().max(100).optional(),
+})
+
+// Voice cloning request validation
+export const cloneRequestSchema = z.object({
+  name: z.string()
+    .min(1, 'Name is required')
+    .max(100, 'Name too long')
+    .regex(/^[a-zA-Z0-9\s_-]+$/, 'Name contains invalid characters'),
+  description: z.string().max(500).optional(),
+  files: z.array(z.instanceof(File))
+    .min(1, 'At least one audio file is required')
+    .max(5, 'Maximum 5 files allowed'),
+})
+
+// File validation
+export function validateAudioFile(file: File): { valid: boolean; error?: string } {
+  // Check file size (max 50MB)
+  const maxSize = 50 * 1024 * 1024 // 50MB
+  if (file.size > maxSize) {
+    return { valid: false, error: 'File size exceeds 50MB limit' }
+  }
+  
+  if (file.size < 1000) {
+    return { valid: false, error: 'File too small (minimum 1KB)' }
+  }
+  
+  // Check MIME type
+  const validMimeTypes = [
+    'audio/wav',
+    'audio/wave',
+    'audio/x-wav',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/flac',
+    'audio/ogg',
+    'audio/webm',
+    'audio/m4a',
+    'audio/x-m4a',
+  ]
+  
+  if (!validMimeTypes.includes(file.type)) {
+    // Check extension as fallback
+    const validExtensions = ['.wav', '.mp3', '.flac', '.ogg', '.webm', '.m4a']
+    const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
+    if (!validExtensions.includes(extension)) {
+      return { valid: false, error: 'Invalid audio file format' }
+    }
+  }
+  
+  return { valid: true }
+}
+
+// Sanitize text input
+export function sanitizeText(text: string): string {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+}
+
+// Validate and sanitize TTS request
+export function validateTTSRequest(body: unknown): {
+  success: boolean
+  data?: z.infer<typeof ttsRequestSchema>
+  error?: string
+} {
+  try {
+    const parsed = ttsRequestSchema.parse(body)
+    // Additional sanitization
+    parsed.text = sanitizeText(parsed.text)
+    return { success: true, data: parsed }
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+      }
+    }
+    return { success: false, error: 'Invalid request format' }
+  }
+}
+
+// IP address validation and extraction
+export function extractClientIP(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for')
+  const realIP = request.headers.get('x-real-ip')
+  const cfConnectingIP = request.headers.get('cf-connecting-ip') // Cloudflare
+  
+  // Priority: Cloudflare > X-Real-IP > X-Forwarded-For > default
+  const ip = cfConnectingIP || realIP || forwarded?.split(',')[0]?.trim() || '127.0.0.1'
+  
+  // Basic IP validation
+  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
+  const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/
+  
+  if (ipv4Regex.test(ip) || ipv6Regex.test(ip)) {
+    return ip
+  }
+  
+  return '127.0.0.1' // Fallback to localhost
+}

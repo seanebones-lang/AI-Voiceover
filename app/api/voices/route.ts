@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
+import { getServiceUrl, withRetry } from '@/lib/config'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
-
-// Force port 8081 - the Python sidecar port
-const XTTS_URL = 'http://localhost:8081'
 
 interface Voice {
   voice_id: string
@@ -16,9 +14,9 @@ interface Voice {
   description?: string
 }
 
-// Default voices using edge-tts (Microsoft TTS)
+// Default voices using edge-tts (Microsoft TTS) - Expanded with high-quality voices
 const DEFAULT_VOICES: Voice[] = [
-  // English voices
+  // English US - Male
   {
     voice_id: 'default_english',
     name: 'Guy (US English)',
@@ -29,6 +27,25 @@ const DEFAULT_VOICES: Voice[] = [
     description: 'Natural US English male voice'
   },
   {
+    voice_id: 'male_us_aria',
+    name: 'Aria (US English)',
+    language: 'en',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Professional US English male voice'
+  },
+  {
+    voice_id: 'male_us_davis',
+    name: 'Davis (US English)',
+    language: 'en',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Warm US English male voice'
+  },
+  // English US - Female
+  {
     voice_id: 'female_english',
     name: 'Jenny (US English)',
     language: 'en',
@@ -37,6 +54,25 @@ const DEFAULT_VOICES: Voice[] = [
     category: 'standard',
     description: 'Natural US English female voice'
   },
+  {
+    voice_id: 'female_us_aria',
+    name: 'Aria (US English - Female)',
+    language: 'en',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Professional US English female voice'
+  },
+  {
+    voice_id: 'female_us_amber',
+    name: 'Amber (US English)',
+    language: 'en',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Clear US English female voice'
+  },
+  // English British - Male
   {
     voice_id: 'male_british',
     name: 'Ryan (British)',
@@ -47,6 +83,16 @@ const DEFAULT_VOICES: Voice[] = [
     description: 'Natural British English male voice'
   },
   {
+    voice_id: 'male_british_libby',
+    name: 'Libby (British)',
+    language: 'en',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Professional British English male voice'
+  },
+  // English British - Female
+  {
     voice_id: 'female_british',
     name: 'Sonia (British)',
     language: 'en',
@@ -54,6 +100,15 @@ const DEFAULT_VOICES: Voice[] = [
     source: 'edge-tts',
     category: 'standard',
     description: 'Natural British English female voice'
+  },
+  {
+    voice_id: 'female_british_libby',
+    name: 'Libby (British - Female)',
+    language: 'en',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Professional British English female voice'
   },
   // Spanish
   {
@@ -65,6 +120,15 @@ const DEFAULT_VOICES: Voice[] = [
     category: 'standard',
     description: 'Natural Spanish male voice'
   },
+  {
+    voice_id: 'spanish_female',
+    name: 'Elvira (Spanish)',
+    language: 'es',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Spanish female voice'
+  },
   // French
   {
     voice_id: 'default_french',
@@ -74,6 +138,15 @@ const DEFAULT_VOICES: Voice[] = [
     source: 'edge-tts',
     category: 'standard',
     description: 'Natural French male voice'
+  },
+  {
+    voice_id: 'french_female',
+    name: 'Denise (French)',
+    language: 'fr',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural French female voice'
   },
   // German
   {
@@ -85,6 +158,15 @@ const DEFAULT_VOICES: Voice[] = [
     category: 'standard',
     description: 'Natural German male voice'
   },
+  {
+    voice_id: 'german_female',
+    name: 'Katja (German)',
+    language: 'de',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural German female voice'
+  },
   // Portuguese
   {
     voice_id: 'default_portuguese',
@@ -94,14 +176,105 @@ const DEFAULT_VOICES: Voice[] = [
     source: 'edge-tts',
     category: 'standard',
     description: 'Natural Brazilian Portuguese male voice'
+  },
+  {
+    voice_id: 'portuguese_female',
+    name: 'Francisca (Portuguese)',
+    language: 'pt',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Brazilian Portuguese female voice'
+  },
+  // Italian
+  {
+    voice_id: 'italian_male',
+    name: 'Diego (Italian)',
+    language: 'it',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Italian male voice'
+  },
+  {
+    voice_id: 'italian_female',
+    name: 'Elsa (Italian)',
+    language: 'it',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Italian female voice'
+  },
+  // Japanese
+  {
+    voice_id: 'japanese_male',
+    name: 'Keita (Japanese)',
+    language: 'ja',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Japanese male voice'
+  },
+  {
+    voice_id: 'japanese_female',
+    name: 'Nanami (Japanese)',
+    language: 'ja',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Japanese female voice'
+  },
+  // Chinese
+  {
+    voice_id: 'chinese_male',
+    name: 'Yunyang (Chinese)',
+    language: 'zh',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Chinese male voice'
+  },
+  {
+    voice_id: 'chinese_female',
+    name: 'Xiaoxiao (Chinese)',
+    language: 'zh',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Chinese female voice'
+  },
+  // Korean
+  {
+    voice_id: 'korean_male',
+    name: 'InJoon (Korean)',
+    language: 'ko',
+    gender: 'male',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Korean male voice'
+  },
+  {
+    voice_id: 'korean_female',
+    name: 'SunHi (Korean)',
+    language: 'ko',
+    gender: 'female',
+    source: 'edge-tts',
+    category: 'standard',
+    description: 'Natural Korean female voice'
   }
 ]
 
 async function getClonedVoices(): Promise<Voice[]> {
   try {
-    const response = await fetch(`${XTTS_URL}/voices`, {
-      cache: 'no-store'
-    })
+    const response = await withRetry(async () => {
+      return await fetch(`${getServiceUrl('xtts')}/voices`, {
+        cache: 'no-store',
+        headers: {
+          'User-Agent': 'NextEleven-VoiceAPI/1.0',
+        },
+      })
+    }, 2, 1000, 1.5)
+    
     if (response.ok) {
       const data = await response.json()
       return (data.voices || []).map((v: any) => ({
@@ -114,7 +287,7 @@ async function getClonedVoices(): Promise<Voice[]> {
       }))
     }
   } catch (error) {
-    console.log('Cloned voices service not available')
+    console.log('Cloned voices service not available:', error instanceof Error ? error.message : 'Unknown error')
   }
   return []
 }
