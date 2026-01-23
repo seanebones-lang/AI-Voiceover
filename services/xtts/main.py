@@ -110,8 +110,18 @@ class TTSRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     logger.info(f"🚀 Service ready!")
-    logger.info(f"   XTTS (real cloning): {'✅ YES' if HAS_XTTS else '❌ NO'}")
+    logger.info(f"   XTTS (real cloning): {'✅ YES' if HAS_XTTS else '❌ NO - VOICE CLONING WILL NOT WORK'}")
     logger.info(f"   edge-tts (standard): {'✅ YES' if HAS_EDGE_TTS else '❌ NO'}")
+    logger.info(f"   Device: {DEVICE}")
+    logger.info(f"   Voices directory: {VOICES_DIR}")
+    
+    if not HAS_XTTS:
+        logger.error("=" * 60)
+        logger.error("⚠️  WARNING: XTTS NOT LOADED!")
+        logger.error("   Voice cloning will NOT work without XTTS.")
+        logger.error("   Cloned voices will fail with error messages.")
+        logger.error("   Please install TTS library: pip install TTS")
+        logger.error("=" * 60)
 
 
 @app.get("/")
@@ -125,19 +135,32 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    status = "healthy"
+    if not HAS_XTTS:
+        status = "degraded"
+    
     return {
-        "status": "healthy",
+        "status": status,
         "service": "NextEleven Voice",
         "version": "3.1.0",
-        "voice_cloning": "real" if HAS_XTTS else "placeholder",
+        "voice_cloning": "real" if HAS_XTTS else "unavailable",
         "tts_engine": "xtts" if HAS_XTTS else "edge-tts",
+        "xtts_loaded": HAS_XTTS,
+        "xtts_model_available": tts_model is not None,
         "cloned_voices": len(list(VOICES_DIR.glob("*.json"))),
         "device": DEVICE,
+        "voices_directory": str(VOICES_DIR),
         "features": {
             "multi_sample_cloning": True,
             "audio_preprocessing": True,
-            "quality_validation": True
-        }
+            "quality_validation": True,
+            "real_voice_cloning": HAS_XTTS
+        },
+        "warnings": [] if HAS_XTTS else [
+            "XTTS not loaded - voice cloning will not work",
+            "Cloned voices will fail with error messages",
+            "Install TTS library: pip install TTS"
+        ]
     }
 
 
@@ -182,9 +205,15 @@ async def generate_speech(request: TTSRequest):
         "special_effect": request.special_effect
     }
     
-    # Use cloned voice with XTTS
+    # Use cloned voice with XTTS - CRITICAL: Must use XTTS for cloned voices
     if voice_id.startswith("clone_"):
-        logger.info(f"Cloned voice TTS: {voice_id}")
+        logger.info(f"🎭 Cloned voice TTS requested: {voice_id}")
+        if not HAS_XTTS:
+            logger.error(f"❌ XTTS not available but cloned voice requested: {voice_id}")
+            raise HTTPException(
+                status_code=503,
+                detail="Voice cloning requires XTTS model to be loaded. Please check service configuration."
+            )
         return await generate_cloned_speech(
             text, voice_id, language, speed, volume, effects,
             temperature=request.temperature,
@@ -199,7 +228,13 @@ async def generate_speech(request: TTSRequest):
 
 async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, volume: float, effects: dict, 
                                   temperature: float = 0.7, repetition_penalty: float = 2.0, top_k: int = 50, top_p: float = 0.85):
-    """Generate speech using REAL voice cloning with XTTS"""
+    """Generate speech using REAL voice cloning with XTTS - MUST use cloned voice or fail"""
+    
+    # CRITICAL: XTTS must be available for voice cloning
+    if not HAS_XTTS or not tts_model:
+        error_msg = "XTTS model not available. Voice cloning requires XTTS to be loaded. Please check service logs."
+        logger.error(error_msg)
+        raise HTTPException(status_code=503, detail=error_msg)
     
     # Get voice metadata
     voice_file = VOICES_DIR / f"{voice_id}.json"
@@ -209,88 +244,154 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
     with open(voice_file) as f:
         voice_data = json.load(f)
     
-    # Find all valid reference audio files
+    # Find all valid reference audio files - resolve paths correctly
     sample_files = voice_data.get("sample_files", [])
-    valid_samples = [s for s in sample_files if os.path.exists(s)]
+    valid_samples = []
+    
+    for sample_path in sample_files:
+        # Try absolute path first
+        if os.path.exists(sample_path):
+            valid_samples.append(sample_path)
+        # Try relative to VOICES_DIR
+        elif os.path.exists(VOICES_DIR / sample_path):
+            valid_samples.append(str(VOICES_DIR / sample_path))
+        # Try relative to voice directory
+        else:
+            voice_dir = VOICES_DIR / voice_id
+            if os.path.exists(voice_dir / sample_path):
+                valid_samples.append(str(voice_dir / sample_path))
+            # Try just the filename in voice directory
+            elif os.path.exists(voice_dir / os.path.basename(sample_path)):
+                valid_samples.append(str(voice_dir / os.path.basename(sample_path)))
     
     if not valid_samples:
-        logger.warning(f"No samples for {voice_id}, using edge-tts fallback")
-        return await generate_edge_speech(text, "default_english", speed, 0, volume, effects)
+        error_msg = f"No valid reference audio files found for {voice_id}. Files listed: {sample_files}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=404, detail=error_msg)
     
-    # Use the best quality sample (prefer preprocessed ones)
-    reference_audio = None
+    logger.info(f"Found {len(valid_samples)} valid reference samples for {voice_id}")
+    for i, sample in enumerate(valid_samples):
+        logger.info(f"  Sample {i+1}: {sample} (exists: {os.path.exists(sample)})")
+    
+    # Use multiple reference samples for better voice similarity (XTTS supports this)
+    # Prefer preprocessed samples, but use all available for best quality
+    reference_audios = []
     for sample in valid_samples:
-        if '_preprocessed.wav' in sample:
-            reference_audio = sample
-            break
-    if not reference_audio:
-        reference_audio = valid_samples[0]
+        if '_preprocessed.wav' in sample or sample.endswith('.wav'):
+            reference_audios.append(sample)
     
-    # Use XTTS for REAL voice cloning
-    if HAS_XTTS and tts_model:
+    # If no preprocessed, use all valid samples
+    if not reference_audios:
+        reference_audios = valid_samples[:3]  # XTTS works best with 1-3 samples
+    else:
+        reference_audios = reference_audios[:3]  # Limit to 3 best samples
+    
+    # Use the best single sample (XTTS tts_to_file uses one, but we can try multiple)
+    primary_reference = reference_audios[0]
+    
+    try:
+        logger.info(f"🎭 XTTS REAL VOICE CLONING for {voice_id}")
+        logger.info(f"   Primary reference: {primary_reference}")
+        logger.info(f"   Total samples available: {len(reference_audios)}")
+        logger.info(f"   Text length: {len(text)} chars")
+        
+        # Verify reference file exists and is readable
+        if not os.path.exists(primary_reference):
+            raise FileNotFoundError(f"Reference audio file not found: {primary_reference}")
+        
+        file_size = os.path.getsize(primary_reference)
+        if file_size < 1000:  # Less than 1KB is suspicious
+            raise ValueError(f"Reference audio file too small: {file_size} bytes")
+        
+        logger.info(f"   Reference file size: {file_size} bytes")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
+            output_path = tmp.name
+        
+        # Map language codes
+        lang_map = {
+            'en': 'en', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it',
+            'pt': 'pt', 'pl': 'pl', 'tr': 'tr', 'ru': 'ru', 'nl': 'nl',
+            'cs': 'cs', 'ar': 'ar', 'zh': 'zh-cn', 'ja': 'ja', 'ko': 'ko', 'hu': 'hu'
+        }
+        xtts_lang = lang_map.get(language, 'en')
+        
+        # REAL voice cloning with XTTS - use speaker_wav parameter
+        # This is the critical parameter that makes XTTS clone the voice
+        logger.info(f"   Generating with XTTS (language: {xtts_lang})...")
+        
         try:
-            logger.info(f"XTTS cloning from: {reference_audio}")
-            logger.info(f"   Parameters: temp={temperature}, rep_penalty={repetition_penalty}, top_k={top_k}, top_p={top_p}")
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-                output_path = tmp.name
-            
-            # Map language codes
-            lang_map = {
-                'en': 'en', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it',
-                'pt': 'pt', 'pl': 'pl', 'tr': 'tr', 'ru': 'ru', 'nl': 'nl',
-                'cs': 'cs', 'ar': 'ar', 'zh': 'zh-cn', 'ja': 'ja', 'ko': 'ko', 'hu': 'hu'
-            }
-            xtts_lang = lang_map.get(language, 'en')
-            
-            # REAL voice cloning with optimized parameters
-            # Using tts_with_vc for better voice similarity when available
-            try:
-                # Try using the model's synthesizer directly for more control
-                tts_model.tts_to_file(
-                    text=text,
-                    file_path=output_path,
-                    speaker_wav=reference_audio,
-                    language=xtts_lang
-                )
-            except Exception as inner_e:
-                logger.warning(f"Standard TTS failed, trying alternative: {inner_e}")
-                # Fallback to basic tts_to_file
-                tts_model.tts_to_file(
-                    text=text,
-                    file_path=output_path,
-                    speaker_wav=reference_audio,
-                    language='en'
-                )
-            
-            with open(output_path, 'rb') as f:
-                audio_data = f.read()
-            os.unlink(output_path)
-            
-            # Apply speed adjustment if needed
-            if speed != 1.0:
-                audio_data = adjust_speed(audio_data, speed)
-            
-            # Apply effects
-            if any([effects.get("reverb", 0) > 0, effects.get("echo", 0) > 0, 
-                    effects.get("noise_reduction"), effects.get("special_effect", "none") != "none",
-                    volume != 1.0]):
-                audio_data = apply_effects_wav(audio_data, volume, effects)
-            
-            logger.info(f"XTTS cloned voice generated: {len(audio_data)} bytes")
-            
-            return Response(
-                content=audio_data,
-                media_type="audio/wav",
-                headers={"X-Voice-Clone": "real", "X-Engine": "xtts", "X-Samples": str(len(valid_samples))}
+            # XTTS tts_to_file with speaker_wav - this clones the voice
+            tts_model.tts_to_file(
+                text=text,
+                file_path=output_path,
+                speaker_wav=primary_reference,  # CRITICAL: This parameter clones the voice
+                language=xtts_lang
             )
             
-        except Exception as e:
-            logger.error(f"XTTS error: {e}")
-            logger.info("Falling back to edge-tts...")
-    
-    # Fallback to edge-tts
-    return await generate_edge_speech(text, "default_english", speed, 0, volume, effects)
+            # Verify output was generated
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+                raise ValueError("XTTS generated empty or invalid audio file")
+            
+            logger.info(f"✅ XTTS successfully generated cloned voice audio")
+            
+        except Exception as inner_e:
+            logger.error(f"❌ XTTS generation failed: {inner_e}")
+            logger.error(f"   Reference file: {primary_reference}")
+            logger.error(f"   Reference exists: {os.path.exists(primary_reference)}")
+            if os.path.exists(primary_reference):
+                logger.error(f"   Reference size: {os.path.getsize(primary_reference)} bytes")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"XTTS voice cloning failed: {str(inner_e)}. Reference: {primary_reference}"
+            )
+        
+        # Read generated audio
+        with open(output_path, 'rb') as f:
+            audio_data = f.read()
+        os.unlink(output_path)
+        
+        if len(audio_data) < 1000:
+            raise ValueError("Generated audio is too small, XTTS may have failed")
+        
+        logger.info(f"✅ Generated {len(audio_data)} bytes of cloned voice audio")
+        
+        # Apply speed adjustment if needed
+        if speed != 1.0:
+            audio_data = adjust_speed(audio_data, speed)
+        
+        # Apply effects
+        if any([effects.get("reverb", 0) > 0, effects.get("echo", 0) > 0, 
+                effects.get("noise_reduction"), effects.get("special_effect", "none") != "none",
+                volume != 1.0]):
+            audio_data = apply_effects_wav(audio_data, volume, effects)
+        
+        # Return with headers indicating REAL voice cloning was used
+        return Response(
+            content=audio_data,
+            media_type="audio/wav",
+            headers={
+                "X-Voice-Clone": "real",
+                "X-Engine": "xtts",
+                "X-Samples": str(len(reference_audios)),
+                "X-Reference": os.path.basename(primary_reference),
+                "X-Voice-ID": voice_id
+            }
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        error_msg = f"Voice cloning failed: {str(e)}"
+        logger.error(f"❌ {error_msg}")
+        logger.error(f"   Voice ID: {voice_id}")
+        logger.error(f"   Reference files: {valid_samples}")
+        # DO NOT fall back to edge-tts - fail loudly so user knows cloning didn't work
+        raise HTTPException(
+            status_code=500,
+            detail=f"Voice cloning failed. XTTS could not generate speech from cloned voice. Error: {str(e)}"
+        )
 
 
 async def generate_edge_speech(text: str, voice_id: str, speed: float, pitch: float, volume: float, effects: dict):
