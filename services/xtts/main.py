@@ -1,7 +1,11 @@
 """
 NextEleven Voice Service v3.1
-REAL Voice Cloning with XTTS + edge-tts fallback
+REAL Voice Cloning with XTTS
 Enhanced audio preprocessing for better clone quality
+
+CRITICAL: Voice cloning REQUIRES XTTS to be installed and loaded.
+If XTTS is not available, cloned voice requests will FAIL with clear errors.
+NO SILENT FALLBACKS - system fails loudly if cloning can't work.
 """
 
 import sys
@@ -48,6 +52,7 @@ except ImportError:
 HAS_XTTS = False
 tts_model = None
 DEVICE = "cpu"
+XTTS_LOAD_ERROR = None
 
 try:
     import torch
@@ -56,13 +61,42 @@ try:
     
     from TTS.api import TTS
     logger.info("🔄 Loading XTTS model (this may take a minute)...")
+    logger.info("   This is REQUIRED for voice cloning to work!")
+    
     tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
     HAS_XTTS = True
-    logger.info("✅ XTTS model loaded - REAL voice cloning enabled!")
+    
+    # Verify XTTS actually works by testing a simple generation
+    logger.info("🔄 Verifying XTTS is working...")
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as test_file:
+            test_path = test_file.name
+        # Quick test generation
+        tts_model.tts_to_file(
+            text="Test",
+            file_path=test_path,
+            speaker_wav=None,  # Use default speaker for test
+            language="en"
+        )
+        if os.path.exists(test_path) and os.path.getsize(test_path) > 1000:
+            os.unlink(test_path)
+            logger.info("✅ XTTS model loaded and verified - REAL voice cloning enabled!")
+        else:
+            raise ValueError("XTTS test generation produced invalid output")
+    except Exception as test_error:
+        logger.error(f"❌ XTTS verification failed: {test_error}")
+        HAS_XTTS = False
+        XTTS_LOAD_ERROR = f"XTTS loaded but verification failed: {test_error}"
+        tts_model = None
+        
 except ImportError as e:
-    logger.warning(f"⚠️ XTTS not available: {e}")
+    XTTS_LOAD_ERROR = f"TTS library not installed: {e}"
+    logger.error(f"❌ XTTS not available: {e}")
+    logger.error("   Install with: pip install TTS")
 except Exception as e:
-    logger.warning(f"⚠️ XTTS failed to load: {e}")
+    XTTS_LOAD_ERROR = f"XTTS failed to load: {e}"
+    logger.error(f"❌ XTTS failed to load: {e}")
+    logger.error("   Voice cloning will NOT work without XTTS!")
 
 app = FastAPI(title="NextEleven Voice Service", version="3.1.0")
 
@@ -109,19 +143,46 @@ class TTSRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info(f"🚀 Service ready!")
-    logger.info(f"   XTTS (real cloning): {'✅ YES' if HAS_XTTS else '❌ NO - VOICE CLONING WILL NOT WORK'}")
+    logger.info("=" * 60)
+    logger.info("🚀 NextEleven Voice Service Starting...")
+    logger.info("=" * 60)
+    
+    # Verify XTTS status
+    logger.info(f"📊 Service Status:")
+    logger.info(f"   XTTS (real cloning): {'✅ YES - VOICE CLONING ENABLED' if HAS_XTTS else '❌ NO - VOICE CLONING DISABLED'}")
     logger.info(f"   edge-tts (standard): {'✅ YES' if HAS_EDGE_TTS else '❌ NO'}")
     logger.info(f"   Device: {DEVICE}")
     logger.info(f"   Voices directory: {VOICES_DIR}")
+    logger.info(f"   Directory exists: {VOICES_DIR.exists()}")
     
     if not HAS_XTTS:
         logger.error("=" * 60)
-        logger.error("⚠️  WARNING: XTTS NOT LOADED!")
+        logger.error("⚠️  CRITICAL WARNING: XTTS NOT LOADED!")
         logger.error("   Voice cloning will NOT work without XTTS.")
-        logger.error("   Cloned voices will fail with error messages.")
-        logger.error("   Please install TTS library: pip install TTS")
+        logger.error("   Cloned voices will FAIL with error messages.")
+        if XTTS_LOAD_ERROR:
+            logger.error(f"   Error: {XTTS_LOAD_ERROR}")
+        logger.error("   REQUIRED: pip install TTS")
+        logger.error("   Then restart the service.")
         logger.error("=" * 60)
+    else:
+        logger.info("=" * 60)
+        logger.info("✅ Voice cloning is READY and WORKING!")
+        logger.info("   Cloned voices will use XTTS for real voice cloning.")
+        logger.info("=" * 60)
+    
+    # Verify voices directory is writable
+    try:
+        test_file = VOICES_DIR / ".test_write"
+        test_file.touch()
+        test_file.unlink()
+        logger.info(f"✅ Voices directory is writable: {VOICES_DIR}")
+    except Exception as e:
+        logger.error(f"❌ Voices directory not writable: {VOICES_DIR} - {e}")
+    
+    logger.info("=" * 60)
+    logger.info("🚀 Service ready!")
+    logger.info("=" * 60)
 
 
 @app.get("/")
@@ -139,29 +200,54 @@ async def health_check():
     if not HAS_XTTS:
         status = "degraded"
     
-    return {
+    # Verify XTTS is actually functional
+    xtts_functional = False
+    if HAS_XTTS and tts_model:
+        try:
+            # Quick health check - verify model is accessible
+            if hasattr(tts_model, 'synthesizer') or hasattr(tts_model, 'tts'):
+                xtts_functional = True
+        except:
+            pass
+    
+    health_data = {
         "status": status,
         "service": "NextEleven Voice",
         "version": "3.1.0",
-        "voice_cloning": "real" if HAS_XTTS else "unavailable",
+        "voice_cloning": "real" if HAS_XTTS and xtts_functional else "unavailable",
         "tts_engine": "xtts" if HAS_XTTS else "edge-tts",
         "xtts_loaded": HAS_XTTS,
+        "xtts_functional": xtts_functional,
         "xtts_model_available": tts_model is not None,
         "cloned_voices": len(list(VOICES_DIR.glob("*.json"))),
         "device": DEVICE,
         "voices_directory": str(VOICES_DIR),
+        "voices_directory_writable": os.access(VOICES_DIR, os.W_OK),
         "features": {
             "multi_sample_cloning": True,
             "audio_preprocessing": True,
             "quality_validation": True,
-            "real_voice_cloning": HAS_XTTS
-        },
-        "warnings": [] if HAS_XTTS else [
+            "real_voice_cloning": HAS_XTTS and xtts_functional
+        }
+    }
+    
+    # Add warnings if XTTS not available
+    if not HAS_XTTS:
+        health_data["warnings"] = [
             "XTTS not loaded - voice cloning will not work",
             "Cloned voices will fail with error messages",
-            "Install TTS library: pip install TTS"
+            "Install TTS library: pip install TTS",
+            "Then restart the service"
         ]
-    }
+        if XTTS_LOAD_ERROR:
+            health_data["xtts_load_error"] = XTTS_LOAD_ERROR
+    elif not xtts_functional:
+        health_data["warnings"] = [
+            "XTTS loaded but not functional",
+            "Voice cloning may not work correctly"
+        ]
+    
+    return health_data
 
 
 @app.get("/voices")
@@ -295,15 +381,34 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
         logger.info(f"   Total samples available: {len(reference_audios)}")
         logger.info(f"   Text length: {len(text)} chars")
         
-        # Verify reference file exists and is readable
+        # CRITICAL: Verify reference file exists and is valid
         if not os.path.exists(primary_reference):
-            raise FileNotFoundError(f"Reference audio file not found: {primary_reference}")
+            error_msg = f"Reference audio file not found: {primary_reference}"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"   Voice ID: {voice_id}")
+            logger.error(f"   All sample files from metadata: {sample_files}")
+            logger.error(f"   Valid samples found: {valid_samples}")
+            raise FileNotFoundError(error_msg)
+        
+        # Verify file is readable
+        if not os.access(primary_reference, os.R_OK):
+            error_msg = f"Reference audio file not readable: {primary_reference}"
+            logger.error(f"❌ {error_msg}")
+            raise PermissionError(error_msg)
         
         file_size = os.path.getsize(primary_reference)
         if file_size < 1000:  # Less than 1KB is suspicious
-            raise ValueError(f"Reference audio file too small: {file_size} bytes")
+            error_msg = f"Reference audio file too small: {file_size} bytes (minimum 1KB)"
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
         
-        logger.info(f"   Reference file size: {file_size} bytes")
+        # Verify it's actually an audio file (basic check)
+        if not primary_reference.lower().endswith(('.wav', '.mp3', '.flac', '.ogg', '.m4a')):
+            logger.warning(f"⚠️ Reference file may not be audio: {primary_reference}")
+        
+        logger.info(f"   Reference file: {os.path.basename(primary_reference)}")
+        logger.info(f"   Reference file size: {file_size} bytes ({file_size / 1024:.1f} KB)")
+        logger.info(f"   Reference file path: {primary_reference}")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             output_path = tmp.name
@@ -329,11 +434,19 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
                 language=xtts_lang
             )
             
-            # Verify output was generated
-            if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
-                raise ValueError("XTTS generated empty or invalid audio file")
+            # CRITICAL: Verify output was generated and is valid
+            if not os.path.exists(output_path):
+                raise ValueError(f"XTTS output file was not created: {output_path}")
+            
+            output_size = os.path.getsize(output_path)
+            if output_size < 1000:
+                raise ValueError(f"XTTS generated invalid audio file (too small: {output_size} bytes)")
             
             logger.info(f"✅ XTTS successfully generated cloned voice audio")
+            logger.info(f"   Output file: {os.path.basename(output_path)}")
+            logger.info(f"   Output size: {output_size} bytes ({output_size / 1024:.1f} KB)")
+            logger.info(f"   Voice ID: {voice_id}")
+            logger.info(f"   Reference used: {os.path.basename(primary_reference)}")
             
         except Exception as inner_e:
             logger.error(f"❌ XTTS generation failed: {inner_e}")
@@ -659,16 +772,22 @@ async def clone_voice(
         with open(VOICES_DIR / f"{voice_id}.json", 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        clone_type = "REAL (XTTS)" if HAS_XTTS else "stored (edge-tts fallback)"
+        clone_type = "REAL (XTTS)" if HAS_XTTS else "STORED ONLY (XTTS not available - cloning will fail)"
         logger.info(f"Voice cloned: {name} ({voice_id}) - {clone_type}")
-        logger.info(f"   Total duration: {total_duration:.1f}s from {len(saved_files)} samples")
+        logger.info(f"   Total duration: {total_duration:.1f}s from {len(absolute_sample_files)} samples")
+        logger.info(f"   Sample files stored: {len(absolute_sample_files)}")
+        for i, sample in enumerate(absolute_sample_files):
+            exists = os.path.exists(sample)
+            size = os.path.getsize(sample) if exists else 0
+            logger.info(f"   Sample {i+1}: {os.path.basename(sample)} ({size} bytes, exists: {exists})")
         
         # Build response message
         message = f"Voice '{name}' cloned successfully!"
         if HAS_XTTS:
-            message += " Your voice will be used for generation."
+            message += " Your voice will be used for REAL voice cloning."
         else:
-            message += " Note: Using standard voice (XTTS not available)."
+            message += " ⚠️ WARNING: XTTS not available. Voice cloning will FAIL when generating speech."
+            message += " Please ensure XTTS is installed and loaded."
         
         if total_duration < 10:
             message += f" Tip: You provided {total_duration:.1f}s of audio. For best results, use 30+ seconds."
@@ -680,10 +799,18 @@ async def clone_voice(
             "samples_count": len(saved_files),
             "total_duration": total_duration,
             "real_clone": HAS_XTTS,
+            "xtts_available": HAS_XTTS,
             "preprocessed": True,
             "quality_warnings": all_warnings[:3],
             "recommendations": all_recommendations[:3],
-            "message": message
+            "sample_files_count": len(absolute_sample_files),
+            "sample_files": [os.path.basename(f) for f in absolute_sample_files[:3]],  # Show first 3
+            "message": message,
+            "warnings": [] if HAS_XTTS else [
+                "XTTS not available - voice cloning will fail when generating speech",
+                "Install TTS: pip install TTS",
+                "Restart service after installation"
+            ]
         }
         
     except HTTPException:
