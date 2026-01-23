@@ -139,11 +139,13 @@ export async function withRetry<T>(
         continue
       }
       
+      // Last attempt failed, throw the error
       throw error
     }
   }
   
-  throw lastError
+  // This should never be reached, but TypeScript needs it for type safety
+  throw lastError || new Error('Retry failed: unknown error')
 }
 
 // Get service URL helper

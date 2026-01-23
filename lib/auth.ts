@@ -18,18 +18,17 @@ export const config = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // In production, verify against database
-        // For now, simple demo auth
-        if (
-          credentials?.email === "demo@example.com" &&
-          credentials?.password === "demo123"
-        ) {
-          return {
-            id: "1",
-            email: credentials.email,
-            name: "Demo User",
-          }
-        }
+        // SECURITY: Hardcoded credentials removed
+        // TODO: Implement proper authentication:
+        // 1. Query user from database
+        // 2. Verify password with bcrypt
+        // 3. Implement rate limiting on login attempts
+        // 4. Add account lockout after failed attempts
+        // 5. Use secure session management
+        
+        // For now, authentication is disabled for security
+        // Enable Google OAuth or implement proper database auth
+        console.warn('⚠️  Credentials authentication disabled - implement proper auth')
         return null
       },
     }),

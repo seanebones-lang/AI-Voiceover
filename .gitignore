@@ -29,6 +29,14 @@ yarn-error.log*
 .env
 .railway.env
 
+# SECURITY: Never commit these files
+KEYS_AND_DEPLOY.txt
+*.key
+*.secret
+*secrets*
+*credentials*
+deploy.sh
+
 # vercel
 .vercel
 

@@ -166,10 +166,20 @@ export function validateTTSRequest(body: unknown): {
 }
 
 // IP address validation and extraction
-export function extractClientIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const realIP = request.headers.get('x-real-ip')
-  const cfConnectingIP = request.headers.get('cf-connecting-ip') // Cloudflare
+export function extractClientIP(request: Request | { headers: Headers | { get: (name: string) => string | null } }): string {
+  const getHeader = (name: string) => {
+    if ('headers' in request && request.headers instanceof Headers) {
+      return request.headers.get(name)
+    }
+    if ('get' in request) {
+      return request.get(name)
+    }
+    return null
+  }
+  
+  const forwarded = getHeader('x-forwarded-for')
+  const realIP = getHeader('x-real-ip')
+  const cfConnectingIP = getHeader('cf-connecting-ip') // Cloudflare
   
   // Priority: Cloudflare > X-Real-IP > X-Forwarded-For > default
   const ip = cfConnectingIP || realIP || forwarded?.split(',')[0]?.trim() || '127.0.0.1'

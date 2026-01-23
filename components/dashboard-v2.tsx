@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -59,32 +59,39 @@ export function DashboardV2() {
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'error'>('checking')
 
   // Check service health
-  useEffect(() => {
-    checkServiceHealth()
-    loadVoices()
-  }, [])
-
-  async function checkServiceHealth() {
+  const checkServiceHealth = useCallback(async () => {
     try {
       const response = await fetch('/api/tts', { method: 'OPTIONS' }).catch(() => null)
       setServiceStatus(response ? 'ready' : 'error')
     } catch {
       setServiceStatus('error')
     }
-  }
+  }, [])
 
-  async function loadVoices() {
+  const loadVoices = useCallback(async () => {
     try {
       const response = await fetch('/api/voices')
+      if (!response.ok) {
+        throw new Error(`Failed to load voices: ${response.status}`)
+      }
       const data = await response.json()
       setVoices(data.voices || [])
       if (data.voices?.length > 0 && !selectedVoice) {
-        setSelectedVoice(data.voices[0].voice_id)
+        const firstVoice = data.voices[0]
+        if (firstVoice?.voice_id) {
+          setSelectedVoice(firstVoice.voice_id)
+        }
       }
     } catch (error) {
       console.error('Failed to load voices:', error)
+      setError('Failed to load voices. Please refresh the page.')
     }
-  }
+  }, [selectedVoice])
+
+  useEffect(() => {
+    checkServiceHealth()
+    loadVoices()
+  }, [checkServiceHealth, loadVoices])
 
   // Generate speech (REST API - full file)
   async function generateSpeech() {
@@ -196,12 +203,17 @@ export function DashboardV2() {
     URL.revokeObjectURL(url)
   }
 
-  const charCount = text.length
-  const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length
-  const selectedVoiceData = voices.find(v => v.voice_id === selectedVoice)
+  // Memoize expensive calculations
+  const charCount = useMemo(() => text.length, [text])
+  const wordCount = useMemo(() => {
+    return text.trim().split(/\s+/).filter(w => w.length > 0).length
+  }, [text])
+  const selectedVoiceData = useMemo(() => {
+    return voices.find(v => v.voice_id === selectedVoice)
+  }, [voices, selectedVoice])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <main id="main-content" className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Animated background orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
@@ -213,7 +225,7 @@ export function DashboardV2() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500" aria-hidden="true">
               <Radio className="h-6 w-6 text-white" />
             </div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
@@ -225,22 +237,26 @@ export function DashboardV2() {
           </p>
           
           {/* Service status */}
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700">
+          <div 
+            className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             {serviceStatus === 'checking' && (
               <>
-                <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
-                <span className="text-sm text-slate-400">Connecting...</span>
+                <Loader2 className="h-4 w-4 animate-spin text-yellow-400" aria-hidden="true" />
+                <span className="text-sm text-slate-400" aria-busy="true">Connecting...</span>
               </>
             )}
             {serviceStatus === 'ready' && (
               <>
-                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                <CheckCircle2 className="h-4 w-4 text-green-400" aria-hidden="true" />
                 <span className="text-sm text-slate-400">Engine Ready</span>
               </>
             )}
             {serviceStatus === 'error' && (
               <>
-                <AlertCircle className="h-4 w-4 text-red-400" />
+                <AlertCircle className="h-4 w-4 text-red-400" aria-hidden="true" />
                 <span className="text-sm text-slate-400">Service Unavailable</span>
               </>
             )}
@@ -249,12 +265,17 @@ export function DashboardV2() {
 
         {/* Error display */}
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <div 
+            role="alert" 
+            aria-live="assertive" 
+            className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-2"
+          >
+            <AlertCircle className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
             <span>{error}</span>
             <button 
               onClick={() => setError(null)} 
               className="ml-auto text-red-400 hover:text-red-300"
+              aria-label="Dismiss error message"
             >
               ×
             </button>
@@ -267,7 +288,7 @@ export function DashboardV2() {
             {/* Text Input Card */}
             <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
               <CardHeader>
-                <CardTitle className="text-white">Text to Speech</CardTitle>
+                <CardTitle as="h2" className="text-white">Text to Speech</CardTitle>
                 <CardDescription className="text-slate-400">
                   Enter your text and generate natural-sounding speech
                 </CardDescription>
@@ -276,10 +297,11 @@ export function DashboardV2() {
                 {/* Voice Selection */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium text-slate-300 mb-2 block">
+                    <label htmlFor="voice-select" className="text-sm font-medium text-slate-300 mb-2 block">
                       Voice
                     </label>
                     <VoiceSelect
+                      id="voice-select"
                       voices={voices}
                       value={selectedVoice}
                       onChange={setSelectedVoice}
@@ -290,10 +312,14 @@ export function DashboardV2() {
                   </div>
                   
                   <div>
-                    <label className="text-sm font-medium text-slate-300 mb-2 block">
+                    <label htmlFor="language-select" className="text-sm font-medium text-slate-300 mb-2 block">
                       Language
                     </label>
-                    <select className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white">
+                    <select 
+                      id="language-select"
+                      aria-label="Select language"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    >
                       <option value="en">English</option>
                       <option value="es">Spanish</option>
                       <option value="fr">French</option>
@@ -335,7 +361,7 @@ export function DashboardV2() {
                 {/* Text Input */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-slate-300">
+                    <label htmlFor="tts-text-input" className="text-sm font-medium text-slate-300">
                       Your Text
                     </label>
                     <span className="text-xs text-slate-500">
@@ -343,12 +369,18 @@ export function DashboardV2() {
                     </span>
                   </div>
                   <textarea
+                    id="tts-text-input"
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder="Type or paste your text here..."
+                    aria-label="Text to convert to speech"
+                    aria-describedby="text-stats"
                     className="w-full min-h-[180px] px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500"
                     maxLength={10000}
                   />
+                  <div id="text-stats" className="sr-only" aria-live="polite">
+                    {charCount.toLocaleString()} characters, {wordCount} words
+                  </div>
                 </div>
 
                 {/* Generate Button */}
@@ -651,6 +683,6 @@ export function DashboardV2() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

@@ -265,19 +265,19 @@ const DEFAULT_VOICES: Voice[] = [
 ]
 
 async function getClonedVoices(): Promise<Voice[]> {
-  try {
-    const response = await withRetry(async () => {
-      return await fetch(`${getServiceUrl('xtts')}/voices`, {
-        cache: 'no-store',
-        headers: {
-          'User-Agent': 'NextEleven-VoiceAPI/1.0',
-        },
-      })
-    }, 2, 1000, 1.5)
-    
-    if (response.ok) {
-      const data = await response.json()
-      return (data.voices || []).map((v: any) => ({
+    try {
+      const response = await withRetry(async () => {
+        return await fetch(`${getServiceUrl('xtts')}/voices`, {
+          cache: 'no-store',
+          headers: {
+            'User-Agent': 'NextEleven-VoiceAPI/1.0',
+          },
+        })
+      }, 2, 1000, 1.5)
+      
+      if (response.ok) {
+        const data = await response.json().catch(() => ({ voices: [] }))
+        return (data.voices || []).map((v: { voice_id?: string; name?: string; description?: string }) => ({
         voice_id: v.voice_id,
         name: v.name || v.voice_id,
         language: 'multilingual',

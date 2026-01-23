@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,16 @@ interface TTSRequest {
   speed?: number
 }
 
+// Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get('origin')
+  return handleCorsPreflight(origin)
+}
+
 export async function POST(request: NextRequest) {
+  const origin = request.headers.get('origin')
+  const corsHeaders = getCorsHeaders(origin)
+  
   try {
     const body: TTSRequest = await request.json()
 
@@ -25,14 +35,14 @@ export async function POST(request: NextRequest) {
     if (!body.text || typeof body.text !== 'string' || !body.text.trim()) {
       return NextResponse.json(
         { error: 'Text is required' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       )
     }
 
     if (body.text.length > 10000) {
       return NextResponse.json(
         { error: 'Text must be 10,000 characters or less' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       )
     }
 
@@ -60,7 +70,7 @@ export async function POST(request: NextRequest) {
       console.error('TTS service error:', error)
       return NextResponse.json(
         { error: error.detail || 'TTS generation failed' },
-        { status: response.status }
+        { status: response.status, headers: corsHeaders }
       )
     }
 
@@ -76,6 +86,7 @@ export async function POST(request: NextRequest) {
         'Content-Length': audioBuffer.byteLength.toString(),
         'X-Generation-Latency': latency.toString(),
         'X-TTS-Engine': 'humanmirage-v3',
+        ...corsHeaders,
       },
     })
   } catch (error) {
@@ -85,13 +96,13 @@ export async function POST(request: NextRequest) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       return NextResponse.json(
         { error: 'TTS service unavailable. Is the service running?' },
-        { status: 503 }
+        { status: 503, headers: corsHeaders }
       )
     }
     
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'TTS failed' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }

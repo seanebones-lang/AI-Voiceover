@@ -25,10 +25,26 @@ export default auth((req: NextRequest) => {
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:; media-src 'self' blob:;"
-  )
+  
+  // Strict CSP policy - Removed 'unsafe-eval' for security
+  // Note: 'unsafe-inline' for scripts is required by Next.js runtime
+  // 'unsafe-inline' for styles is required for CSS-in-JS (Tailwind, etc.)
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'", // Next.js requires this
+    "style-src 'self' 'unsafe-inline'", // CSS-in-JS requires this
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss: https:",
+    "media-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+    "upgrade-insecure-requests"
+  ].join('; ')
+  
+  response.headers.set('Content-Security-Policy', csp)
   
   // Allow public routes
   if (publicRoutes.some(route => pathname === route || pathname.startsWith(route + "/"))) {

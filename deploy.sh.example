@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# AI Voice-Over Generator - Vercel Deployment Script
+# SECURE VERSION - Uses environment variables instead of hardcoded keys
+# 
+# Usage:
+#   1. Copy this file to deploy.sh
+#   2. Set environment variables:
+#      export VERCEL_TOKEN="your-token"
+#      export ELEVENLABS_API_KEY="your-key"
+#      export STRIPE_SECRET_KEY="your-key"
+#      export STRIPE_PUBLISHABLE_KEY="your-key"
+#   3. Run: ./deploy.sh
+
+set -e
+
+echo "🚀 Starting deployment to Vercel..."
+echo ""
+
+# Check for required environment variables
+if [ -z "$VERCEL_TOKEN" ]; then
+    echo "❌ Error: VERCEL_TOKEN environment variable not set"
+    echo "   Set it with: export VERCEL_TOKEN='your-token'"
+    exit 1
+fi
+
+if [ -z "$ELEVENLABS_API_KEY" ]; then
+    echo "⚠️  Warning: ELEVENLABS_API_KEY not set"
+fi
+
+if [ -z "$STRIPE_SECRET_KEY" ]; then
+    echo "⚠️  Warning: STRIPE_SECRET_KEY not set"
+fi
+
+# Deploy to Vercel
+echo "📦 Deploying to Vercel..."
+vercel --token="$VERCEL_TOKEN" --yes --prod
+
+echo ""
+echo "✅ Deployment initiated!"
+echo ""
+
+# Add environment variables if provided
+if [ -n "$ELEVENLABS_API_KEY" ]; then
+    echo "Adding ELEVENLABS_API_KEY..."
+    echo "$ELEVENLABS_API_KEY" | vercel env add ELEVENLABS_API_KEY production --token="$VERCEL_TOKEN"
+fi
+
+if [ -n "$STRIPE_SECRET_KEY" ]; then
+    echo "Adding STRIPE_SECRET_KEY..."
+    echo "$STRIPE_SECRET_KEY" | vercel env add STRIPE_SECRET_KEY production --token="$VERCEL_TOKEN"
+fi
+
+if [ -n "$STRIPE_PUBLISHABLE_KEY" ]; then
+    echo "Adding STRIPE_PUBLISHABLE_KEY..."
+    echo "$STRIPE_PUBLISHABLE_KEY" | vercel env add STRIPE_PUBLISHABLE_KEY production --token="$VERCEL_TOKEN"
+fi
+
+echo ""
+echo "♻️  Redeploying to apply environment variables..."
+vercel --token="$VERCEL_TOKEN" --yes --prod
+
+echo ""
+echo "🎉 Deployment complete!"
+echo ""
+echo "⚠️  SECURITY REMINDER: Never commit deploy.sh with hardcoded keys!"
+echo "    Always use environment variables."

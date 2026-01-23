@@ -58,11 +58,15 @@ export async function GET() {
   if (xttsHealth.status === 'fulfilled' && xttsHealth.value.healthy) {
     try {
       const response = await fetch(`${config.services.xtts.url}/health`)
-      const data = await response.json()
-      health.services.xtts = {
-        status: 'healthy',
-        url: config.services.xtts.url,
-        ...data
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}))
+        health.services.xtts = {
+          status: 'healthy',
+          url: config.services.xtts.url,
+          ...data
+        }
+      } else {
+        throw new Error(`Health check returned ${response.status}`)
       }
     } catch {
       health.services.xtts = {

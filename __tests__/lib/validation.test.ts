@@ -173,7 +173,12 @@ describe('Validation Library', () => {
       const headers = new Headers()
       headers.set('x-forwarded-for', '192.168.1.1, 10.0.0.1')
       
-      const request = new Request('http://localhost', { headers })
+      // Create a mock request object
+      const request = {
+        headers,
+        get: (name: string) => headers.get(name),
+      } as any
+      
       const ip = extractClientIP(request)
       
       expect(ip).toBe('192.168.1.1')
@@ -184,7 +189,11 @@ describe('Validation Library', () => {
       headers.set('cf-connecting-ip', '1.2.3.4')
       headers.set('x-forwarded-for', '192.168.1.1')
       
-      const request = new Request('http://localhost', { headers })
+      const request = {
+        headers,
+        get: (name: string) => headers.get(name),
+      } as any
+      
       const ip = extractClientIP(request)
       
       expect(ip).toBe('1.2.3.4')
@@ -194,7 +203,11 @@ describe('Validation Library', () => {
       const headers = new Headers()
       headers.set('x-forwarded-for', 'invalid-ip')
       
-      const request = new Request('http://localhost', { headers })
+      const request = {
+        headers,
+        get: (name: string) => headers.get(name),
+      } as any
+      
       const ip = extractClientIP(request)
       
       expect(ip).toBe('127.0.0.1')

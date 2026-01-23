@@ -24,13 +24,15 @@ interface VoiceSelectProps {
   value: string
   onChange: (value: string) => void
   'aria-label'?: string
+  id?: string
 }
 
 export const VoiceSelect = React.memo(function VoiceSelect({ 
   voices, 
   value, 
   onChange,
-  'aria-label': ariaLabel = 'Select a voice'
+  'aria-label': ariaLabel = 'Select a voice',
+  id
 }: VoiceSelectProps) {
   const sortedVoices = useMemo(() => {
     return [...voices].sort((a, b) => {
@@ -43,7 +45,7 @@ export const VoiceSelect = React.memo(function VoiceSelect({
 
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger aria-label={ariaLabel}>
+      <SelectTrigger id={id} aria-label={ariaLabel}>
         <SelectValue placeholder="Select a voice..." />
       </SelectTrigger>
       <SelectContent>
