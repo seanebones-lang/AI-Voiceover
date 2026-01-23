@@ -99,7 +99,7 @@ export const cloneRequestSchema = z.object({
 
 // File validation
 export function validateAudioFile(file: File): { valid: boolean; error?: string } {
-  // Check file size (max 50MB)
+  // Check file size (max 50MB per file)
   const maxSize = 50 * 1024 * 1024 // 50MB
   if (file.size > maxSize) {
     return { valid: false, error: 'File size exceeds 50MB limit' }
@@ -129,6 +129,100 @@ export function validateAudioFile(file: File): { valid: boolean; error?: string 
     const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
     if (!validExtensions.includes(extension)) {
       return { valid: false, error: 'Invalid audio file format' }
+    }
+  }
+  
+  return { valid: true }
+}
+
+// Validate total file size for voice cloning
+export function validateTotalFileSize(files: File[], maxTotalSizeMB: number = 50): { valid: boolean; error?: string; totalSizeMB?: number } {
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+  const totalSizeMB = totalSize / (1024 * 1024)
+  
+  if (totalSizeMB > maxTotalSizeMB) {
+    return { 
+      valid: false, 
+      error: `Total file size (${totalSizeMB.toFixed(1)}MB) exceeds ${maxTotalSizeMB}MB limit`,
+      totalSizeMB 
+    }
+  }
+  
+  return { valid: true, totalSizeMB }
+}
+
+// Get audio duration from file using Web Audio API
+export async function getAudioDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio()
+    const url = URL.createObjectURL(file)
+    
+    audio.addEventListener('loadedmetadata', () => {
+      URL.revokeObjectURL(url)
+      resolve(audio.duration)
+    })
+    
+    audio.addEventListener('error', (e) => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load audio metadata'))
+    })
+    
+    audio.src = url
+  })
+}
+
+// Validate audio duration for voice cloning
+export function validateAudioDuration(duration: number, minSeconds: number = 3, maxSeconds: number = 300): { 
+  valid: boolean
+  warning?: string
+  recommendation?: string
+} {
+  if (duration < minSeconds) {
+    return {
+      valid: false,
+      warning: `Audio is very short (${duration.toFixed(1)}s)`,
+      recommendation: `Use at least ${minSeconds} seconds of clear speech for best results`
+    }
+  }
+  
+  if (duration < 10) {
+    return {
+      valid: true,
+      warning: `Audio is short (${duration.toFixed(1)}s)`,
+      recommendation: 'Longer samples (30+ seconds) produce better clones'
+    }
+  }
+  
+  if (duration > maxSeconds) {
+    return {
+      valid: true,
+      warning: `Audio is very long (${(duration / 60).toFixed(1)} minutes)`,
+      recommendation: 'Use 30-60 seconds of your best quality speech'
+    }
+  }
+  
+  return { valid: true }
+}
+
+// Validate total duration for multiple files
+export function validateTotalDuration(totalDuration: number, minTotalSeconds: number = 3, recommendedTotalSeconds: number = 30): {
+  valid: boolean
+  warning?: string
+  recommendation?: string
+} {
+  if (totalDuration < minTotalSeconds) {
+    return {
+      valid: false,
+      warning: `Total duration is very short (${totalDuration.toFixed(1)}s)`,
+      recommendation: `Use at least ${minTotalSeconds} seconds total for best results`
+    }
+  }
+  
+  if (totalDuration < recommendedTotalSeconds) {
+    return {
+      valid: true,
+      warning: `Total duration is short (${totalDuration.toFixed(1)}s)`,
+      recommendation: `Aim for ${recommendedTotalSeconds}+ seconds total for optimal quality`
     }
   }
   

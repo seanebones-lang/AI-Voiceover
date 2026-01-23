@@ -7,10 +7,13 @@ import { Slider } from '@/components/ui/slider'
 import { VoiceSelect } from '@/components/voice-select'
 import { WaveformVisualizer } from '@/components/waveform-visualizer'
 import { AudioPlayer } from '@/components/audio-player'
+import { FileUploadZone } from '@/components/file-upload-zone'
+import { QualityReport } from '@/components/quality-report'
+import { useToast } from '@/components/toast'
 import { 
   Wand2, Volume2, Download, Share2, Mic, Upload, Trash2,
   Smile, Frown, Angry, Heart, Zap, Moon, MessageSquare, Award,
-  Radio, StopCircle, Loader2, CheckCircle2, AlertCircle
+  Radio, StopCircle, Loader2, CheckCircle2, AlertCircle, Clock
 } from 'lucide-react'
 
 // Emotion configurations
@@ -34,6 +37,9 @@ interface Voice {
 }
 
 export function DashboardV2() {
+  // Toast notifications
+  const { success, error: showError, warning, ToastContainer } = useToast()
+  
   // State
   const [text, setText] = useState('')
   const [selectedVoice, setSelectedVoice] = useState<string>('')
@@ -54,6 +60,8 @@ export function DashboardV2() {
   const [cloneFiles, setCloneFiles] = useState<File[]>([])
   const [cloneName, setCloneName] = useState('')
   const [cloning, setCloning] = useState(false)
+  const [cloneProgress, setCloneProgress] = useState({ stage: '', progress: 0 })
+  const [totalDuration, setTotalDuration] = useState(0)
   
   // Service status
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'error'>('checking')
@@ -138,12 +146,33 @@ export function DashboardV2() {
   // Clone voice
   async function handleCloneVoice() {
     if (!cloneName.trim() || cloneFiles.length === 0) {
-      setError('Please provide a name and at least one audio file')
+      const errorMsg = 'Please provide a name and at least one audio file'
+      setError(errorMsg)
+      showError(errorMsg)
+      return
+    }
+
+    // Validate total file size
+    const totalSize = cloneFiles.reduce((sum, file) => sum + file.size, 0)
+    const maxTotalSize = 50 * 1024 * 1024 // 50MB
+    if (totalSize > maxTotalSize) {
+      const errorMsg = `Total file size (${(totalSize / 1024 / 1024).toFixed(1)}MB) exceeds 50MB limit`
+      setError(errorMsg)
+      showError(errorMsg)
+      return
+    }
+
+    // Validate total duration
+    if (totalDuration > 0 && totalDuration < 3) {
+      const errorMsg = `Total duration (${totalDuration.toFixed(1)}s) is too short. Use at least 3 seconds for best results.`
+      setError(errorMsg)
+      showError(errorMsg)
       return
     }
 
     setCloning(true)
     setError(null)
+    setCloneProgress({ stage: 'Uploading files...', progress: 0 })
 
     try {
       const formData = new FormData()
@@ -153,28 +182,73 @@ export function DashboardV2() {
         formData.append('files', file)
       }
 
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setCloneProgress(prev => ({
+          stage: prev.stage,
+          progress: Math.min(prev.progress + 10, 90)
+        }))
+      }, 200)
+
+      setCloneProgress({ stage: 'Processing audio...', progress: 30 })
+
       const response = await fetch('/api/clone-voice', {
         method: 'POST',
         body: formData,
       })
 
+      clearInterval(progressInterval)
+      setCloneProgress({ stage: 'Finalizing...', progress: 95 })
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Cloning failed')
+        const errorMsg = errorData.error || 'Cloning failed'
+        setError(errorMsg)
+        showError(errorMsg)
+        setCloneProgress({ stage: '', progress: 0 })
+        throw new Error(errorMsg)
       }
 
       const result = await response.json()
       
+      setCloneProgress({ stage: 'Complete!', progress: 100 })
+      
+      // Show success message with quality feedback
+      let successMsg = `Voice "${result.name}" cloned successfully!`
+      if (result.quality_warnings && result.quality_warnings.length > 0) {
+        warning(`Voice cloned with warnings: ${result.quality_warnings[0]}`)
+      }
+      if (result.recommendations && result.recommendations.length > 0) {
+        successMsg += ` ${result.recommendations[0]}`
+      }
+      success(successMsg)
+      
+      // Store quality report for display
+      if (result.quality_warnings || result.recommendations || result.total_duration) {
+        // Quality report will be shown in the UI if needed
+      }
+      
       // Refresh voices and select the new one
       await loadVoices()
-      setSelectedVoice(result.voice_id)
+      if (result.voice_id) {
+        setSelectedVoice(result.voice_id)
+      }
       
       // Reset clone form
       setCloneName('')
       setCloneFiles([])
+      setTotalDuration(0)
+      
+      // Reset progress after a delay
+      setTimeout(() => {
+        setCloneProgress({ stage: '', progress: 0 })
+      }, 2000)
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clone voice')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to clone voice'
+      setError(errorMsg)
+      showError(errorMsg)
+      setCloneProgress({ stage: '', progress: 0 })
     } finally {
       setCloning(false)
     }
@@ -214,6 +288,7 @@ export function DashboardV2() {
 
   return (
     <main id="main-content" className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <ToastContainer />
       {/* Animated background orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
@@ -424,7 +499,7 @@ export function DashboardV2() {
                 {streaming && (
                   <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all"
+                      className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all duration-300"
                       style={{ width: `${Math.min(progress.duration * 10, 100)}%` }}
                     />
                   </div>
@@ -495,87 +570,117 @@ export function DashboardV2() {
               <CardContent className="space-y-4">
                 {/* Voice name */}
                 <div>
-                  <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  <label htmlFor="clone-name-input" className="text-sm font-medium text-slate-300 mb-2 block">
                     Voice Name
                   </label>
                   <input
+                    id="clone-name-input"
                     type="text"
                     value={cloneName}
                     onChange={(e) => setCloneName(e.target.value)}
                     placeholder="My Custom Voice"
+                    aria-label="Voice name for cloning"
+                    maxLength={100}
                     className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                   />
+                  {cloneName.length > 0 && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {cloneName.length}/100 characters
+                    </p>
+                  )}
                 </div>
 
                 {/* File drop zone */}
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={handleFileDrop}
-                  className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-purple-500/50 transition-colors"
-                >
-                  <Upload className="h-10 w-10 text-slate-500 mx-auto mb-3" />
-                  <p className="text-slate-400 mb-2">
-                    Drag & drop audio files here
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    WAV, MP3, OGG, FLAC • 3-30 seconds • Max 5 files
-                  </p>
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    multiple
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || [])
-                      setCloneFiles(prev => [...prev, ...files].slice(0, 5))
-                    }}
-                    className="hidden"
-                    id="audio-upload"
-                  />
-                  <label
-                    htmlFor="audio-upload"
-                    className="mt-4 inline-block px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm cursor-pointer hover:bg-slate-700"
-                  >
-                    Browse Files
-                  </label>
-                </div>
+                <FileUploadZone
+                  files={cloneFiles}
+                  onFilesChange={setCloneFiles}
+                  maxFiles={5}
+                  showDuration={true}
+                  onDurationChange={setTotalDuration}
+                  aria-label="Upload audio files for voice cloning"
+                />
 
-                {/* File list */}
+                {/* File summary */}
                 {cloneFiles.length > 0 && (
-                  <div className="space-y-2">
-                    {cloneFiles.map((file, i) => (
-                      <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/50">
-                        <Volume2 className="h-4 w-4 text-purple-400" />
-                        <span className="text-sm text-slate-300 flex-1 truncate">
-                          {file.name}
-                        </span>
+                  <div className="mt-4 p-3 rounded-lg bg-slate-800/30 border border-slate-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-slate-300">
+                        {cloneFiles.length} file{cloneFiles.length !== 1 ? 's' : ''} selected
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {totalDuration > 0 && (
+                          <span className="text-xs text-slate-400 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {totalDuration < 60 
+                              ? `${totalDuration.toFixed(1)}s`
+                              : `${Math.floor(totalDuration / 60)}:${Math.floor(totalDuration % 60).toString().padStart(2, '0')}`
+                            }
+                          </span>
+                        )}
                         <span className="text-xs text-slate-500">
-                          {(file.size / 1024 / 1024).toFixed(1)}MB
+                          Total: {(cloneFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(1)}MB
                         </span>
-                        <button
-                          onClick={() => setCloneFiles(cloneFiles.filter((_, j) => j !== i))}
-                          className="text-slate-500 hover:text-red-400"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
                       </div>
-                    ))}
+                    </div>
+                    {totalDuration > 0 && totalDuration < 3 && (
+                      <p className="text-xs text-red-400 flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Total duration is too short. Use at least 3 seconds for best results.
+                      </p>
+                    )}
+                    {totalDuration > 0 && totalDuration >= 3 && totalDuration < 30 && (
+                      <p className="text-xs text-yellow-400 flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Tip: Use 30+ seconds total for optimal quality
+                      </p>
+                    )}
+                    {cloneFiles.length < 3 && totalDuration >= 30 && (
+                      <p className="text-xs text-blue-400 flex items-center gap-1 mt-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Good! Consider using 3-5 files for more variety
+                      </p>
+                    )}
+                    {cloneFiles.length >= 3 && totalDuration >= 30 && (
+                      <p className="text-xs text-green-400 flex items-center gap-1 mt-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Excellent! Your files are ready for cloning
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Progress indicator */}
+                {cloning && cloneProgress.stage && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>{cloneProgress.stage}</span>
+                      <span>{cloneProgress.progress}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all duration-300"
+                        style={{ width: `${cloneProgress.progress}%` }}
+                      />
+                    </div>
                   </div>
                 )}
 
                 {/* Clone button */}
                 <Button
                   onClick={handleCloneVoice}
-                  disabled={cloning || !cloneName.trim() || cloneFiles.length === 0}
-                  className="w-full bg-purple-600 hover:bg-purple-500"
+                  disabled={cloning || !cloneName.trim() || cloneFiles.length === 0 || (totalDuration > 0 && totalDuration < 3)}
+                  className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50"
+                  aria-busy={cloning}
                 >
                   {cloning ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Cloning Voice...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>{cloneProgress.stage || 'Cloning Voice...'}</span>
+                      <span className="sr-only">Cloning voice, please wait</span>
                     </>
                   ) : (
                     <>
-                      <Mic className="mr-2 h-4 w-4" />
+                      <Mic className="mr-2 h-4 w-4" aria-hidden="true" />
                       Clone Voice
                     </>
                   )}
