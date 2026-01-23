@@ -32,7 +32,7 @@ const isProduction = process.env.NODE_ENV === 'production'
 
 // Railway service discovery - uses internal service names
 // In Railway, services communicate via service names (e.g., xtts-service:8081)
-const getServiceUrl = (serviceName: string, defaultPort: number, envVar?: string): string => {
+const resolveServiceUrl = (serviceName: string, defaultPort: number, envVar?: string): string => {
   // Priority: Environment variable > Railway service name > localhost
   if (envVar && process.env[envVar]) {
     return process.env[envVar]!
@@ -53,19 +53,19 @@ export const config: AppConfig = {
   isRailway,
   services: {
     xtts: {
-      url: getServiceUrl('xtts-service', 8081, 'XTTS_URL'),
+      url: resolveServiceUrl('xtts-service', 8081, 'XTTS_URL'),
       healthEndpoint: '/health',
       timeout: 30000, // 30s for TTS generation
       retries: 2,
     },
     ttsV2: {
-      url: getServiceUrl('tts-v2-service', 8082, 'TTS_V2_URL'),
+      url: resolveServiceUrl('tts-v2-service', 8082, 'TTS_V2_URL'),
       healthEndpoint: '/health',
       timeout: 45000, // 45s for advanced TTS
       retries: 2,
     },
     rag: {
-      url: getServiceUrl('rag-service', 8001, 'RAG_API_URL'),
+      url: resolveServiceUrl('rag-service', 8001, 'RAG_API_URL'),
       healthEndpoint: '/health',
       timeout: 10000, // 10s for RAG queries
       retries: 1,

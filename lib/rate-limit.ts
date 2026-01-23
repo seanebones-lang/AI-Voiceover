@@ -9,14 +9,62 @@ const redis = hasRedis ? new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 }) : null
 
-// Fallback rate limiter that always allows (when Redis not configured)
-const createFallbackLimiter = () => ({
-  limit: async (_identifier: string) => ({
-    success: true,
-    limit: 100,
-    remaining: 99,
-    reset: Date.now() + 60000,
-  }),
+// In-memory rate limiter for fallback (when Redis not configured)
+// Uses Map to store request counts per identifier
+const inMemoryStore = new Map<string, { count: number; resetTime: number }>()
+
+// Cleanup old entries periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of inMemoryStore.entries()) {
+    if (value.resetTime < now) {
+      inMemoryStore.delete(key)
+    }
+  }
+}, 60000) // Cleanup every minute
+
+// Fallback rate limiter with in-memory storage
+const createFallbackLimiter = (windowMs: number, maxRequests: number) => ({
+  limit: async (identifier: string) => {
+    const now = Date.now()
+    const resetTime = now + windowMs
+    
+    // Get or create entry
+    let entry = inMemoryStore.get(identifier)
+    
+    if (!entry || entry.resetTime < now) {
+      // New window or expired entry
+      entry = { count: 1, resetTime }
+      inMemoryStore.set(identifier, entry)
+      return {
+        success: true,
+        limit: maxRequests,
+        remaining: maxRequests - 1,
+        reset: resetTime,
+      }
+    }
+    
+    // Increment count
+    entry.count++
+    
+    if (entry.count > maxRequests) {
+      return {
+        success: false,
+        limit: maxRequests,
+        remaining: 0,
+        reset: entry.resetTime,
+      }
+    }
+    
+    inMemoryStore.set(identifier, entry)
+    
+    return {
+      success: true,
+      limit: maxRequests,
+      remaining: maxRequests - entry.count,
+      reset: entry.resetTime,
+    }
+  },
 })
 
 // Create rate limiter: 100 requests per 15 minutes
@@ -25,7 +73,7 @@ export const rateLimiter = hasRedis && redis ? new Ratelimit({
   limiter: Ratelimit.slidingWindow(100, "15 m"),
   analytics: true,
   prefix: "@upstash/ratelimit",
-}) : createFallbackLimiter()
+}) : createFallbackLimiter(15 * 60 * 1000, 100) // 15 minutes, 100 requests
 
 // Stricter limiter for TTS: 50 requests per hour
 export const ttsRateLimiter = hasRedis && redis ? new Ratelimit({
@@ -33,7 +81,7 @@ export const ttsRateLimiter = hasRedis && redis ? new Ratelimit({
   limiter: Ratelimit.slidingWindow(50, "1 h"),
   analytics: true,
   prefix: "@upstash/ratelimit/tts",
-}) : createFallbackLimiter()
+}) : createFallbackLimiter(60 * 60 * 1000, 50) // 1 hour, 50 requests
 
 // Very strict limiter for cloning: 10 requests per day
 export const cloneRateLimiter = hasRedis && redis ? new Ratelimit({
@@ -41,4 +89,4 @@ export const cloneRateLimiter = hasRedis && redis ? new Ratelimit({
   limiter: Ratelimit.slidingWindow(10, "1 d"),
   analytics: true,
   prefix: "@upstash/ratelimit/clone",
-}) : createFallbackLimiter()
+}) : createFallbackLimiter(24 * 60 * 60 * 1000, 10) // 1 day, 10 requests

@@ -7,6 +7,36 @@ export const config = {
   // Trust the host in production (Railway, Vercel, etc.)
   trustHost: true,
   
+  // Secret for JWT signing and encryption (must be set via NEXTAUTH_SECRET or AUTH_SECRET env var)
+  // In NextAuth v5, secret is read from environment variable automatically
+  // Generate with: openssl rand -base64 32
+  
+  // JWT Security Configuration
+  session: {
+    strategy: 'jwt' as const,
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // Update session every 24 hours
+  },
+  
+  // Cookie Configuration
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' 
+        ? '__Secure-next-auth.session-token' 
+        : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        // Domain should be set in production
+        ...(process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN
+          ? { domain: process.env.COOKIE_DOMAIN }
+          : {}),
+      },
+    },
+  },
+  
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -47,6 +77,29 @@ export const config = {
         return Response.redirect(new URL("/dashboard", nextUrl))
       }
       return true
+    },
+    // JWT callback for custom token handling
+    async jwt({ token, user, account }) {
+      // Initial sign in
+      if (user) {
+        token.id = user.id
+        token.email = user.email
+      }
+      
+      // Add account info for OAuth providers
+      if (account) {
+        token.provider = account.provider
+        token.providerAccountId = account.providerAccountId
+      }
+      
+      return token
+    },
+    // Session callback
+    async session({ session, token }) {
+      if (session.user && token) {
+        session.user.id = token.id as string
+      }
+      return session
     },
   },
 } satisfies NextAuthConfig

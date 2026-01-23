@@ -1,5 +1,6 @@
 "use client"
 
+import React from 'react'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Mic2, BookOpen, MessageSquare, Megaphone, Heart } from 'lucide-react'
 
@@ -58,7 +59,7 @@ const PRESETS = [
   },
 ]
 
-export function TextPresets({ onSelect }: TextPresetsProps) {
+export const TextPresets = React.memo(function TextPresets({ onSelect }: TextPresetsProps) {
   return (
     <div className="space-y-4">
       <h4 className="text-sm font-medium flex items-center gap-2">
@@ -96,4 +97,4 @@ export function TextPresets({ onSelect }: TextPresetsProps) {
       </div>
     </div>
   )
-}
+})

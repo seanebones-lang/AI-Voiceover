@@ -112,6 +112,8 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    const xttsService = config.services.xtts
+
     // Check for duplicate voice names
     try {
       const existingVoices = await fetch(`${xttsService.url}/voices`).then(r => r.json()).catch(() => ({ voices: [] }))
@@ -132,7 +134,6 @@ export async function POST(request: NextRequest) {
     formData.set('name', sanitizedName)
     
     // Forward to XTTS sidecar with retry logic
-    const xttsService = config.services.xtts
     const response = await withRetry(async () => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), xttsService.timeout)

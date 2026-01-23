@@ -1,14 +1,22 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { VoiceSelect } from '@/components/voice-select'
-import { WaveformVisualizer } from '@/components/waveform-visualizer'
 import { AudioPlayer } from '@/components/audio-player'
-import { FileUploadZone } from '@/components/file-upload-zone'
-import { QualityReport } from '@/components/quality-report'
+// Lazy load heavy components for code splitting
+const FileUploadZone = dynamic(
+  () => import('@/components/file-upload-zone').then(mod => ({ default: mod.FileUploadZone })),
+  { ssr: false }
+)
+
+const QualityReport = dynamic(
+  () => import('@/components/quality-report').then(mod => ({ default: mod.QualityReport })),
+  { ssr: false }
+)
 import { useToast } from '@/components/toast'
 import { 
   Wand2, Volume2, Download, Share2, Mic, Upload, Trash2,
@@ -27,6 +35,11 @@ const EMOTIONS = [
   { id: 'whisper', label: 'Whisper', icon: Moon, color: 'bg-purple-500' },
   { id: 'serious', label: 'Serious', icon: Award, color: 'bg-gray-700' },
 ] as const
+
+const WaveformVisualizer = dynamic(
+  () => import('@/components/waveform-visualizer').then((m) => ({ default: m.WaveformVisualizer })),
+  { ssr: false, loading: () => <div className="h-20 w-full animate-pulse rounded bg-slate-800/50" aria-hidden="true" /> }
+)
 
 interface Voice {
   voice_id: string
@@ -78,12 +91,45 @@ export function DashboardV2() {
 
   const loadVoices = useCallback(async () => {
     try {
+      // Check cache first (5 minute TTL)
+      const cacheKey = 'voices_cache'
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached)
+          const age = Date.now() - timestamp
+          if (age < 5 * 60 * 1000) { // 5 minutes
+            setVoices(data.voices || [])
+            if (data.voices?.length > 0 && !selectedVoice) {
+              const firstVoice = data.voices[0]
+              if (firstVoice?.voice_id) {
+                setSelectedVoice(firstVoice.voice_id)
+              }
+            }
+            return
+          }
+        } catch {
+          // Invalid cache, fetch fresh
+        }
+      }
+
       const response = await fetch('/api/voices')
       if (!response.ok) {
         throw new Error(`Failed to load voices: ${response.status}`)
       }
       const data = await response.json()
       setVoices(data.voices || [])
+      
+      // Cache the response
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          data,
+          timestamp: Date.now()
+        }))
+      } catch {
+        // SessionStorage may be unavailable (private browsing, etc.)
+      }
+      
       if (data.voices?.length > 0 && !selectedVoice) {
         const firstVoice = data.voices[0]
         if (firstVoice?.voice_id) {
@@ -102,7 +148,7 @@ export function DashboardV2() {
   }, [checkServiceHealth, loadVoices])
 
   // Generate speech (REST API - full file)
-  async function generateSpeech() {
+  const generateSpeech = useCallback(async () => {
     if (!text.trim() || !selectedVoice) {
       setError('Please enter text and select a voice')
       return
@@ -141,10 +187,10 @@ export function DashboardV2() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [text, selectedVoice, selectedEmotion, speed, volume, showError])
 
   // Clone voice
-  async function handleCloneVoice() {
+  const handleCloneVoice = useCallback(async () => {
     if (!cloneName.trim() || cloneFiles.length === 0) {
       const errorMsg = 'Please provide a name and at least one audio file'
       setError(errorMsg)
@@ -252,20 +298,20 @@ export function DashboardV2() {
     } finally {
       setCloning(false)
     }
-  }
+  }, [cloneName, cloneFiles, totalDuration, loadVoices, success, warning, showError])
 
   // File drop handler
-  function handleFileDrop(e: React.DragEvent) {
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     const files = Array.from(e.dataTransfer.files).filter(f => 
       f.type.startsWith('audio/') || 
       /\.(wav|mp3|ogg|flac|m4a)$/i.test(f.name)
     )
     setCloneFiles(prev => [...prev, ...files].slice(0, 5))
-  }
+  }, [])
 
   // Download audio
-  function downloadAudio() {
+  const downloadAudio = useCallback(() => {
     if (!audioBlob) return
     const url = URL.createObjectURL(audioBlob)
     const a = document.createElement('a')
@@ -275,7 +321,7 @@ export function DashboardV2() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }
+  }, [audioBlob])
 
   // Memoize expensive calculations
   const charCount = useMemo(() => text.length, [text])
@@ -290,24 +336,24 @@ export function DashboardV2() {
     <main id="main-content" className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <ToastContainer />
       {/* Animated background orbs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
-        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl animate-pulse delay-500" />
+      <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="absolute top-1/4 left-1/4 w-48 h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96 bg-purple-500/10 rounded-full blur-2xl sm:blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96 bg-cyan-500/10 rounded-full blur-2xl sm:blur-3xl animate-pulse delay-1000" />
+        <div className="absolute top-1/2 left-1/2 w-32 h-32 sm:w-48 sm:h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 bg-pink-500/10 rounded-full blur-2xl sm:blur-3xl animate-pulse delay-500" />
       </div>
 
-      <div className="relative container mx-auto px-4 py-8 max-w-7xl">
+      <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10 max-w-7xl">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
+        <header className="text-center mb-6 sm:mb-8" role="banner">
+          <div className="inline-flex items-center gap-2 mb-3 sm:mb-4">
             <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500" aria-hidden="true">
-              <Radio className="h-6 w-6 text-white" />
+              <Radio className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
               HumanMirage TTS
             </h1>
           </div>
-          <p className="text-slate-400 text-lg">
+          <p className="text-slate-300 text-sm sm:text-base lg:text-lg px-4">
             Studio-quality speech synthesis with real voice cloning
           </p>
           
@@ -320,23 +366,23 @@ export function DashboardV2() {
             {serviceStatus === 'checking' && (
               <>
                 <Loader2 className="h-4 w-4 animate-spin text-yellow-400" aria-hidden="true" />
-                <span className="text-sm text-slate-400" aria-busy="true">Connecting...</span>
+                <span className="text-sm text-slate-300" aria-busy="true">Connecting...</span>
               </>
             )}
             {serviceStatus === 'ready' && (
               <>
                 <CheckCircle2 className="h-4 w-4 text-green-400" aria-hidden="true" />
-                <span className="text-sm text-slate-400">Engine Ready</span>
+                <span className="text-sm text-slate-300">Engine Ready</span>
               </>
             )}
             {serviceStatus === 'error' && (
               <>
                 <AlertCircle className="h-4 w-4 text-red-400" aria-hidden="true" />
-                <span className="text-sm text-slate-400">Service Unavailable</span>
+                <span className="text-sm text-slate-300">Service Unavailable</span>
               </>
             )}
           </div>
-        </div>
+        </header>
 
         {/* Error display */}
         {error && (
@@ -357,20 +403,20 @@ export function DashboardV2() {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Main Panel */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             {/* Text Input Card */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
               <CardHeader>
-                <CardTitle as="h2" className="text-white">Text to Speech</CardTitle>
+                <CardTitle className="text-white">Text to Speech</CardTitle>
                 <CardDescription className="text-slate-400">
                   Enter your text and generate natural-sounding speech
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 sm:space-y-6">
                 {/* Voice Selection */}
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <label htmlFor="voice-select" className="text-sm font-medium text-slate-300 mb-2 block">
                       Voice
@@ -393,7 +439,7 @@ export function DashboardV2() {
                     <select 
                       id="language-select"
                       aria-label="Select language"
-                      className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                      className="w-full px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-950"
                     >
                       <option value="en">English</option>
                       <option value="es">Spanish</option>
@@ -409,7 +455,7 @@ export function DashboardV2() {
                   <label className="text-sm font-medium text-slate-300 mb-3 block">
                     Emotion
                   </label>
-                  <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
                     {EMOTIONS.map((emotion) => {
                       const Icon = emotion.icon
                       const isSelected = selectedEmotion === emotion.id
@@ -450,7 +496,7 @@ export function DashboardV2() {
                     placeholder="Type or paste your text here..."
                     aria-label="Text to convert to speech"
                     aria-describedby="text-stats"
-                    className="w-full min-h-[180px] px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500"
+                    className="w-full min-h-[120px] sm:min-h-[150px] md:min-h-[180px] px-3 sm:px-4 py-2 sm:py-3 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-950 focus:border-purple-500 text-sm sm:text-base"
                     maxLength={10000}
                   />
                   <div id="text-stats" className="sr-only" aria-live="polite">
@@ -459,26 +505,30 @@ export function DashboardV2() {
                 </div>
 
                 {/* Generate Button */}
-                <div className="flex gap-3">
+                <div className="flex gap-3" role="group" aria-label="Speech generation actions">
                   <Button
                     onClick={generateSpeech}
+                    aria-label={loading ? 'Generating speech, please wait' : 'Generate speech from text'}
+                    aria-busy={loading}
                     disabled={loading || streaming || !text.trim() || !selectedVoice}
                     className="flex-1 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border-0"
                     size="lg"
                   >
                     {loading ? (
                       <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                        Generating...
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                        <span>Generating...</span>
+                        <span className="sr-only">Please wait while your speech is being generated</span>
                       </>
                     ) : streaming ? (
                       <>
-                        <Radio className="mr-2 h-5 w-5 animate-pulse" />
-                        Streaming...
+                        <Radio className="mr-2 h-5 w-5 animate-pulse" aria-hidden="true" />
+                        <span>Streaming...</span>
+                        <span className="sr-only">Streaming speech generation in progress</span>
                       </>
                     ) : (
                       <>
-                        <Wand2 className="mr-2 h-5 w-5" />
+                        <Wand2 className="mr-2 h-5 w-5" aria-hidden="true" />
                         Generate Speech
                       </>
                     )}
@@ -508,15 +558,15 @@ export function DashboardV2() {
             </Card>
 
             {/* Voice Settings Card */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
               <CardHeader>
                 <CardTitle className="text-white">Voice Settings</CardTitle>
                 <CardDescription className="text-slate-400">
                   Fine-tune the voice characteristics
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-6">
+              <CardContent className="space-y-4 sm:space-y-6">
+                <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
                   {/* Speed */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -557,7 +607,7 @@ export function DashboardV2() {
             </Card>
 
             {/* Voice Cloning Card */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
               <CardHeader>
                 <CardTitle className="text-white flex items-center gap-2">
                   <Mic className="h-5 w-5 text-purple-400" />
@@ -581,7 +631,7 @@ export function DashboardV2() {
                     placeholder="My Custom Voice"
                     aria-label="Voice name for cloning"
                     maxLength={100}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    className="w-full px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-950"
                   />
                   {cloneName.length > 0 && (
                     <p className="text-xs text-slate-500 mt-1">
@@ -690,10 +740,10 @@ export function DashboardV2() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Audio Player */}
             {audioUrl && (
-              <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+              <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
                 <CardHeader>
                   <CardTitle className="flex items-center text-white">
                     <Volume2 className="mr-2 h-5 w-5 text-cyan-400" />
@@ -725,7 +775,7 @@ export function DashboardV2() {
             )}
 
             {/* Cloned Voices */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
               <CardHeader>
                 <CardTitle className="text-white">Your Voices</CardTitle>
                 <CardDescription className="text-slate-400">
@@ -768,7 +818,7 @@ export function DashboardV2() {
             </Card>
 
             {/* Info Card */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur">
+            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur shadow-lg">
               <CardHeader>
                 <CardTitle className="text-white">About</CardTitle>
               </CardHeader>

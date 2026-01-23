@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Clock, Download, Play, Trash2, Volume2 } from 'lucide-react'
@@ -28,7 +28,7 @@ interface GenerationHistoryProps {
   onClear: () => void
 }
 
-export function GenerationHistory({
+export const GenerationHistory = React.memo(function GenerationHistory({
   items,
   onPlay,
   onDownload,
@@ -66,7 +66,7 @@ export function GenerationHistory({
         {items.map((item) => (
           <div
             key={item.id}
-            className="group p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+            className="group p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors duration-200"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
@@ -122,7 +122,7 @@ export function GenerationHistory({
       </CardContent>
     </Card>
   )
-}
+})
 
 function formatTime(date: Date): string {
   const now = new Date()

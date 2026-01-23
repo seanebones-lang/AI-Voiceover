@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { SkipLink } from '@/components/skip-link'
 import { EMOTIONS } from '@/lib/constants/emotions'
 import { VOICE_EFFECTS } from '@/lib/constants/effects'
 import type { Voice } from '@/lib/types/voice'
@@ -46,20 +47,50 @@ export default function PlaygroundPage() {
     loadVoices()
   }, [])
   
-  async function loadVoices() {
+  const loadVoices = useCallback(async () => {
     try {
+      // Check cache first (5 minute TTL)
+      const cacheKey = 'voices_v2_cache'
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached)
+          const age = Date.now() - timestamp
+          if (age < 5 * 60 * 1000) { // 5 minutes
+            setVoices(data.voices || [])
+            if (data.voices?.length > 0 && !selectedVoice) {
+              setSelectedVoice(data.voices[0].voice_id)
+            }
+            return
+          }
+        } catch {
+          // Invalid cache, fetch fresh
+        }
+      }
+
       const res = await fetch('/api/voices-v2')
       const data = await res.json()
       setVoices(data.voices || [])
+      
+      // Cache the response
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          data,
+          timestamp: Date.now()
+        }))
+      } catch {
+        // SessionStorage may be unavailable
+      }
+      
       if (data.voices?.length > 0) {
         setSelectedVoice(data.voices[0].voice_id)
       }
     } catch (e) {
       console.error('Failed to load voices:', e)
     }
-  }
+  }, [selectedVoice])
   
-  async function generateSpeech() {
+  const generateSpeech = useCallback(async () => {
     if (!text.trim()) {
       setError('Please enter some text')
       return
@@ -107,9 +138,9 @@ export default function PlaygroundPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [text, selectedVoice, selectedEmotion, selectedEffect, speed, pitch])
   
-  function togglePlayPause() {
+  const togglePlayPause = useCallback(() => {
     if (!audioRef.current || !audioUrl) return
     
     if (playing) {
@@ -118,109 +149,123 @@ export default function PlaygroundPage() {
       audioRef.current.play()
     }
     setPlaying(!playing)
-  }
+  }, [playing, audioUrl])
   
-  function downloadAudio() {
+  const downloadAudio = useCallback(() => {
     if (!audioUrl) return
     
     const a = document.createElement('a')
     a.href = audioUrl
     a.download = `humanmirage-${Date.now()}.wav`
+    document.body.appendChild(a)
     a.click()
-  }
+    document.body.removeChild(a)
+  }, [audioUrl])
   
-  function selectDemoText(index: number) {
+  const selectDemoText = useCallback((index: number) => {
     setText(DEMO_TEXTS[index])
-  }
+  }, [])
   
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white overflow-hidden">
-      {/* Animated background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-cyan-500/5 rounded-full blur-[128px] animate-pulse delay-1000" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-pink-500/3 rounded-full blur-[150px]" />
-      </div>
-      
-      {/* Grid overlay */}
-      <div 
-        className="fixed inset-0 pointer-events-none opacity-[0.02]"
-        style={{
-          backgroundImage: `
-            linear-gradient(to right, white 1px, transparent 1px),
-            linear-gradient(to bottom, white 1px, transparent 1px)
-          `,
-          backgroundSize: '50px 50px',
-        }}
-      />
-      
-      <div className="relative container mx-auto px-4 py-8 max-w-6xl">
+    <>
+      <SkipLink />
+      <div className="min-h-screen bg-[#0a0a0f] text-white overflow-hidden">
+        {/* Animated background */}
+        <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
+          <div className="absolute top-0 left-1/4 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] md:w-[500px] md:h-[500px] lg:w-[600px] lg:h-[600px] bg-purple-500/5 rounded-full blur-[64px] sm:blur-[96px] md:blur-[128px] animate-pulse" />
+          <div className="absolute bottom-0 right-1/4 w-[250px] h-[250px] sm:w-[350px] sm:h-[350px] md:w-[450px] md:h-[450px] lg:w-[500px] lg:h-[500px] bg-cyan-500/5 rounded-full blur-[64px] sm:blur-[96px] md:blur-[128px] animate-pulse delay-1000" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[600px] sm:h-[600px] md:w-[700px] md:h-[700px] lg:w-[800px] lg:h-[800px] bg-pink-500/3 rounded-full blur-[75px] sm:blur-[100px] md:blur-[125px] lg:blur-[150px]" />
+        </div>
+        
+        {/* Grid overlay */}
+        <div 
+          className="fixed inset-0 pointer-events-none opacity-[0.02] bg-grid-pattern"
+          aria-hidden="true"
+        />
+        
+        <main id="main-content" className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12 max-w-6xl">
         {/* Header */}
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 shadow-lg shadow-purple-500/25">
-              <Sparkles className="h-8 w-8 text-white" />
+        <header className="text-center mb-8 sm:mb-10 lg:mb-12" role="banner">
+          <div className="inline-flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 shadow-lg shadow-purple-500/25" aria-hidden="true">
+              <Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
             </div>
-            <h1 className="text-5xl font-bold tracking-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
               <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
                 HumanMirage
               </span>
-              <span className="text-white/80 ml-2">Playground</span>
+              <span className="text-white/90 ml-1 sm:ml-2">Playground</span>
             </h1>
           </div>
-          <p className="text-lg text-white/50 max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base lg:text-lg text-white/80 max-w-2xl mx-auto px-4">
             Experience next-generation text-to-speech with real emotion control, 
             voice cloning, and studio-quality effects.
           </p>
-        </div>
+        </header>
         
         {/* Main Grid */}
-        <div className="grid lg:grid-cols-[1fr,380px] gap-6">
+        <div className="grid lg:grid-cols-[1fr,380px] gap-4 sm:gap-6">
           {/* Left Panel - Input */}
           <div className="space-y-6">
             {/* Text Input */}
-            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-4">
-                <label className="text-sm font-medium text-white/70 flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Your Text
-                </label>
-                <span className="text-xs text-white/40">
-                  {text.length} characters
-                </span>
-              </div>
+            <section aria-labelledby="text-input-label">
+              <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <label id="text-input-label" htmlFor="playground-text-input" className="text-sm font-medium text-white/90 flex items-center gap-2">
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    Your Text
+                  </label>
+                  <span className="text-xs text-white/70" aria-live="polite" aria-atomic="true">
+                    <span className="sr-only">Character count: </span>
+                    {text.length} characters
+                  </span>
+                </div>
+                
+                <textarea
+                  id="playground-text-input"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Type or paste your text here..."
+                  aria-label="Text input for speech generation"
+                  aria-describedby="text-input-help text-input-stats"
+                  aria-required="true"
+                  className="w-full h-32 sm:h-40 md:h-48 px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl bg-black/30 border border-white/10 
+                           text-white placeholder-white/50 resize-none text-sm sm:text-base
+                           focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black focus:border-purple-500/50
+                           transition-all duration-200"
+                />
+                <div id="text-input-help" className="sr-only">
+                  Enter the text you want to convert to speech. Maximum 10,000 characters.
+                </div>
+                <div id="text-input-stats" className="sr-only" aria-live="polite" aria-atomic="true">
+                  {text.length} characters, {text.trim().split(/\s+/).filter(w => w.length > 0).length} words
+                </div>
               
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Type or paste your text here..."
-                className="w-full h-40 px-4 py-3 rounded-xl bg-black/30 border border-white/10 
-                         text-white placeholder-white/30 resize-none
-                         focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50
-                         transition-all"
-              />
-              
-              {/* Demo texts */}
-              <div className="flex flex-wrap gap-2 mt-3">
-                {DEMO_TEXTS.map((demo, i) => (
-                  <button
-                    key={i}
-                    onClick={() => selectDemoText(i)}
-                    className="px-3 py-1 text-xs rounded-full bg-white/5 text-white/50 
-                             hover:bg-white/10 hover:text-white/80 transition-colors"
-                  >
-                    Demo {i + 1}
-                  </button>
-                ))}
+                {/* Demo texts */}
+                <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Demo text presets">
+                  {DEMO_TEXTS.map((demo, i) => (
+                    <button
+                      key={i}
+                      onClick={() => selectDemoText(i)}
+                      aria-label={`Load demo text ${i + 1}: ${demo.substring(0, 50)}...`}
+                    className="px-3 py-1.5 text-xs rounded-full bg-white/5 text-white/70 
+                             hover:bg-white/10 hover:text-white/90 transition-colors duration-200
+                             focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black"
+                    >
+                      Demo {i + 1}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            </section>
             
             {/* Emotion Selector */}
-            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-              <label className="text-sm font-medium text-white/70 flex items-center gap-2 mb-4">
-                <Sparkles className="h-4 w-4" />
-                Emotion
-              </label>
+            <section aria-labelledby="emotion-selector-label">
+              <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm shadow-lg">
+                <label id="emotion-selector-label" className="text-sm font-medium text-white/90 flex items-center gap-2 mb-3 sm:mb-4">
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  Emotion
+                </label>
               
               <div className="grid grid-cols-4 gap-2" role="group" aria-label="Select emotion">
                 {EMOTIONS.map((emotion) => (
@@ -242,22 +287,24 @@ export default function PlaygroundPage() {
                         ? 'bg-white/10 ring-2 ring-white/30 scale-105'
                         : 'bg-white/[0.02] hover:bg-white/5'
                       }
-                      focus:outline-none focus:ring-2 focus:ring-purple-500/50
+                      focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black
                     `}
                   >
                     <span className="text-2xl" aria-hidden="true">{emotion.emoji}</span>
-                    <span className="text-xs text-white/60">{emotion.label}</span>
+                    <span className="text-xs text-white/80">{emotion.label}</span>
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
+            </section>
             
             {/* Voice Effects */}
-            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-              <label className="text-sm font-medium text-white/70 flex items-center gap-2 mb-4">
-                <Radio className="h-4 w-4" />
-                Voice Effect
-              </label>
+            <section aria-labelledby="voice-effect-label">
+              <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm shadow-lg">
+                <label id="voice-effect-label" className="text-sm font-medium text-white/90 flex items-center gap-2 mb-3 sm:mb-4">
+                  <Radio className="h-4 w-4" aria-hidden="true" />
+                  Voice Effect
+                </label>
               
               <div className="grid grid-cols-4 gap-2" role="group" aria-label="Select voice effect">
                 {VOICE_EFFECTS.map((effect) => (
@@ -279,35 +326,44 @@ export default function PlaygroundPage() {
                         ? 'bg-white/10 ring-2 ring-cyan-500/50'
                         : 'bg-white/[0.02] hover:bg-white/5'
                       }
-                      focus:outline-none focus:ring-2 focus:ring-cyan-500/50
+                      focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-2 focus:ring-offset-black
                     `}
                   >
                     <span className="text-xl" aria-hidden="true">{effect.icon}</span>
-                    <span className="text-xs text-white/60">{effect.label}</span>
+                    <span className="text-xs text-white/80">{effect.label}</span>
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
+            </section>
             
             {/* Generate Button */}
+            <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+              {loading && 'Generating speech, please wait'}
+              {!loading && audioUrl && 'Speech generated successfully'}
+            </div>
             <button
               onClick={generateSpeech}
               disabled={loading || !text.trim()}
-              className="w-full py-4 rounded-xl font-semibold text-lg
+              aria-label={loading ? 'Generating speech, please wait' : 'Generate speech from text'}
+              aria-busy={loading}
+              className="w-full py-3 sm:py-4 rounded-lg sm:rounded-xl font-semibold text-base sm:text-lg
                        bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600
                        hover:from-purple-500 hover:via-pink-500 hover:to-cyan-500
                        disabled:opacity-50 disabled:cursor-not-allowed
                        shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40
-                       transition-all duration-300 flex items-center justify-center gap-3"
+                       transition-all duration-300 flex items-center justify-center gap-2 sm:gap-3
+                       focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-black"
             >
               {loading ? (
                 <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Generating...
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  <span>Generating...</span>
+                  <span className="sr-only">Please wait while your speech is being generated</span>
                 </>
               ) : (
                 <>
-                  <Wand2 className="h-5 w-5" />
+                  <Wand2 className="h-5 w-5" aria-hidden="true" />
                   Generate Speech
                 </>
               )}
@@ -319,7 +375,9 @@ export default function PlaygroundPage() {
                 className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400"
                 role="alert"
                 aria-live="assertive"
+                aria-atomic="true"
               >
+                <span className="sr-only">Error: </span>
                 {error}
               </div>
             )}
@@ -328,113 +386,157 @@ export default function PlaygroundPage() {
           {/* Right Panel - Controls & Output */}
           <div className="space-y-6">
             {/* Voice Selector */}
-            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-              <label className="text-sm font-medium text-white/70 flex items-center gap-2 mb-4">
-                <Mic className="h-4 w-4" />
-                Voice
-              </label>
-              
-              <select
-                value={selectedVoice}
-                onChange={(e) => setSelectedVoice(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 
-                         text-white appearance-none cursor-pointer
-                         focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-              >
-                {voices.map((voice) => (
-                  <option key={voice.voice_id} value={voice.voice_id}>
-                    {voice.name} {voice.source === 'cloned' ? '🎭' : ''}
-                  </option>
-                ))}
-              </select>
-              
-              <button
-                onClick={loadVoices}
-                className="mt-2 text-xs text-white/40 hover:text-white/60 flex items-center gap-1"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Refresh voices
-              </button>
-            </div>
+            <section aria-labelledby="voice-selector-label">
+              <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm shadow-lg">
+                <label id="voice-selector-label" htmlFor="playground-voice-select" className="text-sm font-medium text-white/90 flex items-center gap-2 mb-3 sm:mb-4">
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                  Voice
+                </label>
+                
+                <select
+                  id="playground-voice-select"
+                  value={selectedVoice}
+                  onChange={(e) => setSelectedVoice(e.target.value)}
+                  aria-label="Select voice for speech generation"
+                  aria-describedby="voice-selector-help"
+                  className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 
+                           text-white appearance-none cursor-pointer
+                           focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black"
+                >
+                  {voices.length === 0 ? (
+                    <option value="">Loading voices...</option>
+                  ) : (
+                    voices.map((voice) => (
+                      <option key={voice.voice_id} value={voice.voice_id}>
+                        {voice.name} {voice.source === 'cloned' ? '🎭' : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <div id="voice-selector-help" className="sr-only">
+                  Choose a voice for text-to-speech generation. Cloned voices are marked with an emoji.
+                </div>
+                
+                <button
+                  onClick={loadVoices}
+                  aria-label="Refresh available voices list"
+                  className="mt-2 text-xs text-white/70 hover:text-white/90 flex items-center gap-1
+                           focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black rounded px-2 py-1"
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                  Refresh voices
+                </button>
+              </div>
+            </section>
             
             {/* Speed & Pitch */}
-            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-              <label className="text-sm font-medium text-white/70 flex items-center gap-2 mb-4">
-                <Settings className="h-4 w-4" />
-                Settings
-              </label>
+            <section aria-labelledby="settings-label">
+              <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm shadow-lg">
+                <label id="settings-label" className="text-sm font-medium text-white/90 flex items-center gap-2 mb-4">
+                  <Settings className="h-4 w-4" aria-hidden="true" />
+                  Settings
+                </label>
               
-              <div className="space-y-4">
+              <div className="space-y-4" role="group" aria-label="Audio playback settings">
                 <div>
-                  <div className="flex justify-between text-xs text-white/50 mb-2">
+                  <label htmlFor="playground-speed-slider" className="flex justify-between text-xs text-white/80 mb-2">
                     <span>Speed</span>
-                    <span>{speed.toFixed(2)}x</span>
-                  </div>
+                    <span aria-live="polite" aria-atomic="true">
+                      <span className="sr-only">Current speed: </span>
+                      {speed.toFixed(2)}x
+                    </span>
+                  </label>
                   <input
+                    id="playground-speed-slider"
                     type="range"
                     min="0.5"
                     max="2"
                     step="0.1"
                     value={speed}
                     onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                    className="w-full accent-purple-500"
+                    aria-label="Speech speed"
+                    aria-valuemin={0.5}
+                    aria-valuemax={2}
+                    aria-valuenow={speed}
+                    aria-valuetext={`${speed.toFixed(2)} times normal speed`}
+                    className="w-full accent-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black transition-colors duration-200"
                   />
                 </div>
                 
                 <div>
-                  <div className="flex justify-between text-xs text-white/50 mb-2">
+                  <label htmlFor="playground-pitch-slider" className="flex justify-between text-xs text-white/80 mb-2">
                     <span>Pitch</span>
-                    <span>{pitch > 0 ? '+' : ''}{pitch} st</span>
-                  </div>
+                    <span aria-live="polite" aria-atomic="true">
+                      <span className="sr-only">Current pitch: </span>
+                      {pitch > 0 ? '+' : ''}{pitch} semitones
+                    </span>
+                  </label>
                   <input
+                    id="playground-pitch-slider"
                     type="range"
                     min="-12"
                     max="12"
                     step="1"
                     value={pitch}
                     onChange={(e) => setPitch(parseInt(e.target.value))}
-                    className="w-full accent-cyan-500"
+                    aria-label="Voice pitch"
+                    aria-valuemin={-12}
+                    aria-valuemax={12}
+                    aria-valuenow={pitch}
+                    aria-valuetext={`${pitch > 0 ? '+' : ''}${pitch} semitones`}
+                    className="w-full accent-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-2 focus:ring-offset-black transition-colors duration-200"
                   />
                 </div>
               </div>
-            </div>
+              </div>
+            </section>
             
             {/* Audio Player */}
             {audioUrl && (
-              <div className="p-6 rounded-2xl bg-gradient-to-br from-purple-500/10 to-cyan-500/10 border border-white/10 backdrop-blur-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <Volume2 className="h-4 w-4 text-purple-400" />
-                  <span className="text-sm font-medium text-white/70">Generated Audio</span>
-                  {generationTime && (
-                    <span className="ml-auto text-xs text-green-400">
-                      {generationTime}ms
-                    </span>
-                  )}
-                </div>
-                
-                <audio
-                  ref={audioRef}
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                  onEnded={() => setPlaying(false)}
-                  className="hidden"
-                />
-                
-                {/* Custom controls */}
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={togglePlayPause}
-                    className="p-4 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-                  >
-                    {playing ? (
-                      <Pause className="h-6 w-6" />
-                    ) : (
-                      <Play className="h-6 w-6 ml-0.5" />
+              <section aria-labelledby="audio-player-label">
+                <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-500/10 to-cyan-500/10 border border-white/10 backdrop-blur-sm shadow-lg shadow-purple-500/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Volume2 className="h-4 w-4 text-purple-400" aria-hidden="true" />
+                    <h3 id="audio-player-label" className="text-sm font-medium text-white/90">Generated Audio</h3>
+                    {generationTime && (
+                      <span className="ml-auto text-xs text-green-400" aria-label={`Generated in ${generationTime} milliseconds`}>
+                        {generationTime}ms
+                      </span>
                     )}
-                  </button>
+                  </div>
+                  
+                  <audio
+                    ref={audioRef}
+                    onPlay={() => setPlaying(true)}
+                    onPause={() => setPlaying(false)}
+                    onEnded={() => setPlaying(false)}
+                    className="hidden"
+                    aria-label="Generated speech audio"
+                  />
+                  
+                  {/* Custom controls */}
+                  <div className="flex items-center gap-3" role="group" aria-label="Audio playback controls">
+                    <button
+                      onClick={togglePlayPause}
+                      aria-label={playing ? 'Pause audio playback' : 'Play audio playback'}
+                      aria-pressed={playing}
+                      className="p-3 sm:p-4 rounded-full bg-white/10 hover:bg-white/20 transition-colors
+                               focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black"
+                    >
+                      {playing ? (
+                        <Pause className="h-6 w-6" aria-hidden="true" />
+                      ) : (
+                        <Play className="h-6 w-6 ml-0.5" aria-hidden="true" />
+                      )}
+                    </button>
                   
                   {/* Waveform placeholder */}
-                  <div className="flex-1 h-12 rounded-lg bg-black/20 flex items-center gap-0.5 px-2">
+                  <div 
+                    className="flex-1 h-12 rounded-lg bg-black/20 flex items-center gap-0.5 px-2"
+                    role="img"
+                    aria-label="Audio waveform visualization"
+                    aria-hidden="true"
+                  >
                     {Array.from({ length: 40 }).map((_, i) => (
                       <div
                         key={i}
@@ -442,7 +544,7 @@ export default function PlaygroundPage() {
                           playing ? 'bg-purple-400' : 'bg-white/20'
                         }`}
                         style={{
-                          height: `${20 + Math.sin(i * 0.5) * 15 + Math.random() * 10}%`,
+                          height: `${20 + Math.sin(i * 0.5) * 15 + (i % 3) * 5}%`,
                           animationDelay: `${i * 50}ms`,
                         }}
                       />
@@ -451,12 +553,15 @@ export default function PlaygroundPage() {
                   
                   <button
                     onClick={downloadAudio}
-                    className="p-3 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                    aria-label="Download generated audio file"
+                    className="p-3 rounded-full bg-white/10 hover:bg-white/20 transition-colors
+                             focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black"
                   >
-                    <Download className="h-5 w-5" />
+                    <Download className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </div>
-              </div>
+                </div>
+              </section>
             )}
             
             {/* Stats */}
@@ -484,11 +589,12 @@ export default function PlaygroundPage() {
         </div>
         
         {/* Footer */}
-        <div className="mt-12 text-center text-white/30 text-sm">
+        <footer className="mt-12 text-center text-white/70 text-sm" role="contentinfo">
           <p>HumanMirage TTS v3 • Production-grade Text-to-Speech</p>
           <p className="mt-1">Built with real voice cloning, not API wrappers.</p>
-        </div>
+        </footer>
+        </main>
       </div>
-    </div>
+    </>
   )
 }

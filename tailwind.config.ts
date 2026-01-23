@@ -54,9 +54,24 @@ const config = {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius)", // 8px - standard
+        md: "calc(var(--radius) - 2px)", // 6px
+        sm: "calc(var(--radius) - 4px)", // 4px
+        xl: "0.75rem", // 12px - cards
+        "2xl": "1rem", // 16px - hero cards
+      },
+      spacing: {
+        // Design system spacing scale
+        "card": "1.5rem", // 24px - card padding
+        "section": "1.5rem", // 24px - section padding
+        "input": "1rem", // 16px - input padding
+      },
+      boxShadow: {
+        // Enhanced shadows
+        "card": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+        "card-hover": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+        "glow": "0 10px 15px -3px rgba(139, 92, 246, 0.25), 0 4px 6px -2px rgba(139, 92, 246, 0.1)",
+        "glow-hover": "0 20px 25px -5px rgba(139, 92, 246, 0.4), 0 10px 10px -5px rgba(139, 92, 246, 0.2)",
       },
       keyframes: {
         "accordion-down": {

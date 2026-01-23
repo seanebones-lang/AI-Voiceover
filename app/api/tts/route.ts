@@ -101,8 +101,6 @@ export async function POST(request: NextRequest) {
       user_id
     } = validation.data
 
-    const startTime = Date.now()
-
     // 🎯 RAG ENHANCEMENT: Analyze text and optimize TTS parameters
     console.log('🎯 Enhancing TTS with RAG analysis...')
     const ttsEnhancement = await ragIntegration.enhanceTTSGeneration(
@@ -121,11 +119,11 @@ export async function POST(request: NextRequest) {
     let finalNoiseReduction = noise_reduction
     let finalSpecialEffect = special_effect
 
-    if (ttsEnhancement.rag_enhanced) {
+    if (ttsEnhancement.rag_enhanced && ttsEnhancement.tts_parameters) {
       const params = ttsEnhancement.tts_parameters
       finalSpeed = params.speed
-      finalPitch = params.pitch || pitch
-      finalVolume = params.volume || volume
+      finalPitch = params.pitch ?? pitch
+      finalVolume = params.volume ?? volume
 
       // Apply emotion-based effects
       if (params.emotion_enhancement === 'excited') {

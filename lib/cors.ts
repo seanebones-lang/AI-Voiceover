@@ -41,13 +41,18 @@ export function isOriginAllowed(origin: string | null, allowedOrigins: string[])
 
 /**
  * Get CORS headers for response
+ * When origin is null (same-origin), we omit Allow-Origin to avoid sending '*'
+ * with credentials (invalid per CORS spec). Same-origin requests don't need CORS headers.
  */
 export function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigins = getAllowedOrigins()
   const headers: Record<string, string> = {}
   
   if (isOriginAllowed(origin, allowedOrigins)) {
-    headers['Access-Control-Allow-Origin'] = origin || '*'
+    // Only set Allow-Origin when we have an origin; never use '*' with credentials
+    if (origin) {
+      headers['Access-Control-Allow-Origin'] = origin
+    }
     headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     headers['Access-Control-Allow-Credentials'] = 'true'

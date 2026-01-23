@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
@@ -11,7 +11,7 @@ interface ConsentModalProps {
   onReject: () => void
 }
 
-export function ConsentModal({ open, onAccept, onReject }: ConsentModalProps) {
+export const ConsentModal = React.memo(function ConsentModal({ open, onAccept, onReject }: ConsentModalProps) {
   const [read, setRead] = useState(false)
 
   if (!open) return null
@@ -52,7 +52,7 @@ export function ConsentModal({ open, onAccept, onReject }: ConsentModalProps) {
               </li>
             </ul>
 
-            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 shadow-md">
               <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
                 ⚠️ Warning: Unauthorized voice cloning may violate privacy laws,
                 impersonation statutes, and terms of service. Always obtain proper
@@ -67,7 +67,7 @@ export function ConsentModal({ open, onAccept, onReject }: ConsentModalProps) {
               id="consent-check"
               checked={read}
               onChange={(e) => setRead(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300"
+              className="h-4 w-4 rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2"
             />
             <label htmlFor="consent-check" className="text-sm">
               I have read and understand the above terms
@@ -91,4 +91,4 @@ export function ConsentModal({ open, onAccept, onReject }: ConsentModalProps) {
       </Card>
     </div>
   )
-}
+})

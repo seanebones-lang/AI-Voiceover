@@ -9,13 +9,14 @@ jest.mock('@/hooks/useAudioContext', () => ({
         fftSize: 256,
         frequencyBinCount: 128,
         getByteFrequencyData: jest.fn(),
+        connect: jest.fn(),
       })),
       createMediaElementSource: jest.fn(() => ({
         connect: jest.fn(),
       })),
       destination: {},
       close: jest.fn(),
-    }),
+    },
   }),
 }))
 

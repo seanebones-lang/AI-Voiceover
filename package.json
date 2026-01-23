@@ -6,11 +6,14 @@
   "scripts": {
     "dev": "next dev --turbo",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build",
     "start": "next start",
     "lint": "next lint",
     "download-models": "tsx scripts/download-models.ts",
     "test": "jest",
-    "test:benchmark": "tsx scripts/benchmark.ts"
+    "test:benchmark": "tsx scripts/benchmark.ts",
+    "lighthouse": "bash scripts/lighthouse-report.sh",
+    "lighthouse:ci": "lhci autorun"
   },
   "dependencies": {
     "@auth/core": "^0.27.0",
@@ -33,12 +36,13 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.50.0",
-    "recharts": "^2.12.0",
     "tailwind-merge": "^2.2.0",
     "web-vitals": "^3.5.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
+    "@next/bundle-analyzer": "^15.0.0",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.1",
@@ -51,6 +55,7 @@
     "eslint-config-next": "^15.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.2.0",
+    "lighthouse": "^12.8.2",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",

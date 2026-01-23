@@ -2,12 +2,10 @@
 
 /**
  * WaveformVisualizer Component
- * Displays real-time audio waveform visualization
- * 
- * @param audioUrl - URL of the audio file to visualize
+ * Lightweight audio waveform visualization (no recharts ~200KB).
+ * Uses CSS-based bars for LCP/INP-friendly rendering.
  */
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
-import { BarChart, Bar, ResponsiveContainer } from 'recharts'
 import { useAudioContext } from '@/hooks/useAudioContext'
 
 interface WaveformVisualizerProps {
@@ -15,9 +13,11 @@ interface WaveformVisualizerProps {
   'aria-label'?: string
 }
 
-export const WaveformVisualizer = React.memo(function WaveformVisualizer({ 
+const BAR_COUNT = 20
+
+export const WaveformVisualizer = React.memo(function WaveformVisualizer({
   audioUrl,
-  'aria-label': ariaLabel = 'Audio waveform visualization'
+  'aria-label': ariaLabel = 'Audio waveform visualization',
 }: WaveformVisualizerProps) {
   const [waveformData, setWaveformData] = useState<number[]>([])
   const audioContextRef = useAudioContext()
@@ -31,19 +31,15 @@ export const WaveformVisualizer = React.memo(function WaveformVisualizer({
     const bufferLength = analyserRef.current.frequencyBinCount
     const dataArray = new Uint8Array(bufferLength)
     analyserRef.current.getByteFrequencyData(dataArray)
-    
-    // Downsample to 20 bars for visualization
-    const bars = 20
-    const step = Math.floor(bufferLength / bars)
+
+    const step = Math.floor(bufferLength / BAR_COUNT)
     const waveform: number[] = []
-    
-    for (let i = 0; i < bars; i++) {
+    for (let i = 0; i < BAR_COUNT; i++) {
       const index = i * step
       waveform.push(dataArray[index] / 255)
     }
-    
     setWaveformData(waveform)
-    
+
     if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) {
       animationFrameRef.current = requestAnimationFrame(updateWaveform)
     }
@@ -84,7 +80,7 @@ export const WaveformVisualizer = React.memo(function WaveformVisualizer({
             cancelAnimationFrame(animationFrameRef.current)
             animationFrameRef.current = null
           }
-          setWaveformData(new Array(20).fill(0))
+          setWaveformData(new Array(BAR_COUNT).fill(0))
         }
 
         audio.addEventListener('play', handlePlay)
@@ -110,43 +106,33 @@ export const WaveformVisualizer = React.memo(function WaveformVisualizer({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
       }
-      cleanup?.then(cleanupFn => cleanupFn?.())
+      cleanup?.then((cleanupFn) => cleanupFn?.())
     }
   }, [audioUrl, audioContextRef, updateWaveform])
 
-  // Memoize chart data generation
-  const chartData = useMemo(() => {
+  const barHeights = useMemo(() => {
     if (waveformData.length === 0) {
-      // Show static bars when no audio
-      return new Array(20).fill(0).map((_, i) => ({
-        name: i.toString(),
-        value: 10,
-      }))
+      return new Array(BAR_COUNT).fill(10)
     }
-
-    return waveformData.map((value, index) => ({
-      name: index.toString(),
-      value: value * 100,
-    }))
+    return waveformData.map((v) => Math.max(4, v * 100))
   }, [waveformData])
 
+  if (!audioUrl) return null
+
   return (
-    <div className="h-20 w-full" aria-label={ariaLabel} role="img">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData}>
-          <Bar
-            dataKey="value"
-            fill="url(#colorGradient)"
-            radius={[4, 4, 0, 0]}
-          />
-          <defs>
-            <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8b5cf6" />
-              <stop offset="100%" stopColor="#6366f1" />
-            </linearGradient>
-          </defs>
-        </BarChart>
-      </ResponsiveContainer>
+    <div
+      className="flex items-end justify-between gap-0.5 h-20 w-full"
+      style={{ minHeight: 80 }}
+      aria-label={ariaLabel}
+      role="img"
+    >
+      {barHeights.map((height, i) => (
+        <div
+          key={i}
+          className="flex-1 min-w-[2px] rounded-t transition-[height] duration-75 ease-out bg-gradient-to-t from-indigo-500 to-violet-500"
+          style={{ height: `${height}%` }}
+        />
+      ))}
     </div>
   )
 })

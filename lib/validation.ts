@@ -265,8 +265,8 @@ export function extractClientIP(request: Request | { headers: Headers | { get: (
     if ('headers' in request && request.headers instanceof Headers) {
       return request.headers.get(name)
     }
-    if ('get' in request) {
-      return request.get(name)
+    if ('get' in request && typeof (request as { get: (n: string) => string | null }).get === 'function') {
+      return (request as { get: (n: string) => string | null }).get(name)
     }
     return null
   }

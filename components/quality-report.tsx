@@ -15,7 +15,7 @@ interface QualityReportProps {
   className?: string
 }
 
-export function QualityReport({ 
+export const QualityReport = React.memo(function QualityReport({ 
   warnings = [], 
   recommendations = [], 
   totalDuration,
@@ -70,4 +70,4 @@ export function QualityReport({
       )}
     </div>
   )
-}
+})

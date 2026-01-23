@@ -26,12 +26,27 @@ export default auth((req: NextRequest) => {
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   
+  // HSTS (HTTP Strict Transport Security) - Only in production
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload'
+    )
+  }
+  
+  // Permissions Policy (formerly Feature Policy)
+  response.headers.set(
+    'Permissions-Policy',
+    'geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()'
+  )
+  
   // Strict CSP policy - Removed 'unsafe-eval' for security
   // Note: 'unsafe-inline' for scripts is required by Next.js runtime
   // 'unsafe-inline' for styles is required for CSS-in-JS (Tailwind, etc.)
+  // TODO: Consider implementing nonces in future Next.js versions
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'", // Next.js requires this
+    "script-src 'self' 'unsafe-inline'", // Next.js requires this - consider nonces in future
     "style-src 'self' 'unsafe-inline'", // CSS-in-JS requires this
     "img-src 'self' data: https:",
     "font-src 'self' data:",
@@ -41,18 +56,33 @@ export default auth((req: NextRequest) => {
     "base-uri 'self'",
     "form-action 'self'",
     "object-src 'none'",
-    "upgrade-insecure-requests"
+    "upgrade-insecure-requests",
+    "block-all-mixed-content" // Block mixed HTTP/HTTPS content
   ].join('; ')
   
   response.headers.set('Content-Security-Policy', csp)
+  
+  // Report-To header for CSP violations (optional, for monitoring)
+  if (process.env.CSP_REPORT_URI) {
+    response.headers.set(
+      'Report-To',
+      JSON.stringify({
+        group: 'csp-endpoint',
+        max_age: 10886400,
+        endpoints: [{ url: process.env.CSP_REPORT_URI }]
+      })
+    )
+    response.headers.set('Content-Security-Policy-Report-Only', csp.replace('block-all-mixed-content', ''))
+  }
   
   // Allow public routes
   if (publicRoutes.some(route => pathname === route || pathname.startsWith(route + "/"))) {
     return response
   }
 
-  // Protected routes require auth
-  if (!req.auth && pathname.startsWith("/dashboard")) {
+  // Protected routes require auth (auth attached by NextAuth middleware)
+  const reqWithAuth = req as NextRequest & { auth?: { user?: unknown } }
+  if (!reqWithAuth.auth && pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 

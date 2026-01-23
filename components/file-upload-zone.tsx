@@ -135,7 +135,7 @@ export const FileUploadZone = React.memo(function FileUploadZone({
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
-        className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-purple-500/50 transition-colors"
+        className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center hover:border-purple-500/50 transition-colors duration-200"
       >
         <Upload className="h-10 w-10 text-slate-500 mx-auto mb-3" aria-hidden="true" />
         <p className="text-slate-400 mb-2">
@@ -156,7 +156,7 @@ export const FileUploadZone = React.memo(function FileUploadZone({
         <button
           type="button"
           onClick={() => document.getElementById('audio-upload-input')?.click()}
-          className="mt-4 inline-block px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm cursor-pointer hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+          className="mt-4 inline-block px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm cursor-pointer hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-950 transition-colors duration-200"
         >
           Browse Files
         </button>
@@ -174,7 +174,7 @@ export const FileUploadZone = React.memo(function FileUploadZone({
             return (
               <div 
                 key={i} 
-                className={`flex items-center gap-3 p-2 rounded-lg bg-slate-800/50 ${hasWarning ? 'border border-yellow-500/30' : ''} ${hasError ? 'border border-red-500/30' : ''}`}
+                className={`flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 ${hasWarning ? 'border border-yellow-500/30' : 'border border-transparent'} ${hasError ? 'border border-red-500/30' : ''} transition-colors duration-200`}
                 role="listitem"
               >
                 <Volume2 className="h-4 w-4 text-purple-400 flex-shrink-0" aria-hidden="true" />

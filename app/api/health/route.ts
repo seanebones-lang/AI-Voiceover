@@ -10,6 +10,7 @@ interface SidecarStatus {
   service?: string
   tts_engine?: string
   cloned_voices?: number
+  latency?: number
 }
 
 export async function GET() {

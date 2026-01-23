@@ -40,10 +40,10 @@ export const EmotionPicker = React.memo(function EmotionPicker({
             }
           }}
           className={`
-            flex flex-col items-center gap-1 p-3 rounded-lg border transition-all
+            flex flex-col items-center gap-1 p-3 rounded-lg border transition-all duration-200
             ${isSelected 
-              ? `${emotion.color} border-transparent text-white shadow-lg scale-105` 
-              : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50'
+              ? `${emotion.color} border-transparent text-white shadow-lg shadow-purple-500/25 scale-105` 
+              : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-950'
             }
           `}
         >

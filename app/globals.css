@@ -151,3 +151,32 @@ audio::-webkit-media-controls-time-remaining-display {
   clip: auto;
   white-space: normal;
 }
+
+/* WCAG AAA Enhanced Contrast Utilities */
+/* For normal text (7:1 contrast ratio required) */
+.text-aaa-normal {
+  color: hsl(210 20% 95%); /* Enhanced from 90% for better contrast */
+}
+
+/* For large text (4.5:1 contrast ratio required, but we use 7:1 for AAA) */
+.text-aaa-large {
+  color: hsl(210 20% 92%);
+}
+
+/* For secondary text - enhanced contrast */
+.text-aaa-secondary {
+  color: hsl(210 20% 85%); /* Enhanced from slate-400/70% */
+}
+
+/* For muted text - still readable */
+.text-aaa-muted {
+  color: hsl(210 20% 75%); /* Enhanced from slate-500/60% */
+}
+
+/* Grid pattern background */
+.bg-grid-pattern {
+  background-image: 
+    linear-gradient(to right, white 1px, transparent 1px),
+    linear-gradient(to bottom, white 1px, transparent 1px);
+  background-size: 50px 50px;
+}
