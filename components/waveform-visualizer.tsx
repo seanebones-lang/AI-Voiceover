@@ -1,104 +1,137 @@
 "use client"
 
-import { useEffect, useRef, useState } from 'react'
+/**
+ * WaveformVisualizer Component
+ * Displays real-time audio waveform visualization
+ * 
+ * @param audioUrl - URL of the audio file to visualize
+ */
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
+import { useAudioContext } from '@/hooks/useAudioContext'
 
 interface WaveformVisualizerProps {
   audioUrl: string
+  'aria-label'?: string
 }
 
-export function WaveformVisualizer({ audioUrl }: WaveformVisualizerProps) {
+export const WaveformVisualizer = React.memo(function WaveformVisualizer({ 
+  audioUrl,
+  'aria-label': ariaLabel = 'Audio waveform visualization'
+}: WaveformVisualizerProps) {
   const [waveformData, setWaveformData] = useState<number[]>([])
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioContextRef = useAudioContext()
   const analyserRef = useRef<AnalyserNode | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+
+  const updateWaveform = useCallback(() => {
+    if (!analyserRef.current) return
+
+    const bufferLength = analyserRef.current.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    analyserRef.current.getByteFrequencyData(dataArray)
+    
+    // Downsample to 20 bars for visualization
+    const bars = 20
+    const step = Math.floor(bufferLength / bars)
+    const waveform: number[] = []
+    
+    for (let i = 0; i < bars; i++) {
+      const index = i * step
+      waveform.push(dataArray[index] / 255)
+    }
+    
+    setWaveformData(waveform)
+    
+    if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) {
+      animationFrameRef.current = requestAnimationFrame(updateWaveform)
+    }
+  }, [])
 
   useEffect(() => {
-    if (!audioUrl) return
+    if (!audioUrl || !audioContextRef.current) return
 
     const audio = new Audio(audioUrl)
-    let animationFrameId: number
+    audioRef.current = audio
 
     const setupAudio = async () => {
       try {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-        const analyser = audioContext.createAnalyser()
-        const source = audioContext.createMediaElementSource(audio)
+        if (!audioContextRef.current) return
+
+        const analyser = audioContextRef.current.createAnalyser()
+        const source = audioContextRef.current.createMediaElementSource(audio)
 
         analyser.fftSize = 256
         source.connect(analyser)
-        analyser.connect(audioContext.destination)
+        analyser.connect(audioContextRef.current.destination)
 
-        audioContextRef.current = audioContext
         analyserRef.current = analyser
 
-        const bufferLength = analyser.frequencyBinCount
-        const dataArray = new Uint8Array(bufferLength)
+        const handlePlay = () => {
+          updateWaveform()
+        }
 
-        const updateWaveform = () => {
-          if (analyserRef.current) {
-            analyserRef.current.getByteFrequencyData(dataArray)
-            
-            // Downsample to 20 bars for visualization
-            const bars = 20
-            const step = Math.floor(bufferLength / bars)
-            const waveform = []
-            
-            for (let i = 0; i < bars; i++) {
-              const index = i * step
-              waveform.push(dataArray[index] / 255)
-            }
-            
-            setWaveformData(waveform)
-          }
-          
-          if (!audio.paused && !audio.ended) {
-            animationFrameId = requestAnimationFrame(updateWaveform)
+        const handlePause = () => {
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current)
+            animationFrameRef.current = null
           }
         }
 
-        audio.addEventListener('play', () => {
-          updateWaveform()
-        })
-
-        audio.addEventListener('pause', () => {
-          cancelAnimationFrame(animationFrameId)
-        })
-
-        audio.addEventListener('ended', () => {
-          cancelAnimationFrame(animationFrameId)
+        const handleEnded = () => {
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current)
+            animationFrameRef.current = null
+          }
           setWaveformData(new Array(20).fill(0))
-        })
+        }
+
+        audio.addEventListener('play', handlePlay)
+        audio.addEventListener('pause', handlePause)
+        audio.addEventListener('ended', handleEnded)
+
+        return () => {
+          audio.removeEventListener('play', handlePlay)
+          audio.removeEventListener('pause', handlePause)
+          audio.removeEventListener('ended', handleEnded)
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current)
+          }
+        }
       } catch (error) {
         console.error('Failed to setup audio visualization:', error)
       }
     }
 
-    setupAudio()
+    const cleanup = setupAudio()
 
     return () => {
-      cancelAnimationFrame(animationFrameId)
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
       }
+      cleanup?.then(cleanupFn => cleanupFn?.())
     }
-  }, [audioUrl])
+  }, [audioUrl, audioContextRef, updateWaveform])
 
-  // Generate chart data
-  const chartData = waveformData.map((value, index) => ({
-    name: index.toString(),
-    value: value * 100,
-  }))
+  // Memoize chart data generation
+  const chartData = useMemo(() => {
+    if (waveformData.length === 0) {
+      // Show static bars when no audio
+      return new Array(20).fill(0).map((_, i) => ({
+        name: i.toString(),
+        value: 10,
+      }))
+    }
 
-  if (chartData.length === 0) {
-    // Show static bars when no audio
-    chartData.push(...new Array(20).fill(0).map((_, i) => ({
-      name: i.toString(),
-      value: 10,
-    })))
-  }
+    return waveformData.map((value, index) => ({
+      name: index.toString(),
+      value: value * 100,
+    }))
+  }, [waveformData])
 
   return (
-    <div className="h-20 w-full">
+    <div className="h-20 w-full" aria-label={ariaLabel} role="img">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData}>
           <Bar
@@ -116,4 +149,4 @@ export function WaveformVisualizer({ audioUrl }: WaveformVisualizerProps) {
       </ResponsiveContainer>
     </div>
   )
-}
+})

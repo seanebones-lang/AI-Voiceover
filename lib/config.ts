@@ -72,9 +72,9 @@ export const config: AppConfig = {
     },
   },
   railway: {
-    projectId: process.env.RAILWAY_PROJECT_ID || '0dab6a82-942b-43cb-8ce4-02187113939e',
-    environmentId: process.env.RAILWAY_ENVIRONMENT_ID || '0540b027-373b-4e06-8c56-fb85f90e2ff4',
-    token: process.env.RAILWAY_TOKEN || 'd6261fe1-17c4-4871-82a3-9bf9772f7520',
+    projectId: process.env.RAILWAY_PROJECT_ID || '',
+    environmentId: process.env.RAILWAY_ENVIRONMENT_ID || '',
+    token: process.env.RAILWAY_TOKEN || '',
   },
 }
 

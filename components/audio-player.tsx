@@ -1,12 +1,22 @@
 "use client"
 
-import { useRef, useEffect } from 'react'
+/**
+ * AudioPlayer Component
+ * Displays an HTML5 audio player with controls
+ * 
+ * @param src - URL of the audio file to play
+ */
+import React, { useRef, useEffect } from 'react'
 
 interface AudioPlayerProps {
   src: string
+  'aria-label'?: string
 }
 
-export function AudioPlayer({ src }: AudioPlayerProps) {
+export const AudioPlayer = React.memo(function AudioPlayer({ 
+  src,
+  'aria-label': ariaLabel = 'Audio player'
+}: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
@@ -21,8 +31,9 @@ export function AudioPlayer({ src }: AudioPlayerProps) {
       controls
       className="w-full"
       preload="metadata"
+      aria-label={ariaLabel}
     >
       Your browser does not support the audio element.
     </audio>
   )
-}
+})

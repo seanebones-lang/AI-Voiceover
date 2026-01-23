@@ -1,35 +1,16 @@
 "use client"
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { EMOTIONS } from '@/lib/constants/emotions'
+import { VOICE_EFFECTS } from '@/lib/constants/effects'
+import type { Voice } from '@/lib/types/voice'
 import { 
   Wand2, Play, Pause, Download, Volume2, Mic, 
   Settings, Sparkles, Radio, Users, FileText,
   ChevronDown, RefreshCw, Loader2
 } from 'lucide-react'
 
-// Emotion configurations
-const EMOTIONS = [
-  { id: 'neutral', label: 'Neutral', emoji: '😐', color: '#64748b' },
-  { id: 'happy', label: 'Happy', emoji: '😊', color: '#eab308' },
-  { id: 'sad', label: 'Sad', emoji: '😢', color: '#3b82f6' },
-  { id: 'angry', label: 'Angry', emoji: '😠', color: '#ef4444' },
-  { id: 'excited', label: 'Excited', emoji: '🤩', color: '#f97316' },
-  { id: 'calm', label: 'Calm', emoji: '😌', color: '#22c55e' },
-  { id: 'whisper', label: 'Whisper', emoji: '🤫', color: '#a855f7' },
-  { id: 'serious', label: 'Serious', emoji: '🧐', color: '#6b7280' },
-]
-
-// Voice effect presets
-const EFFECTS = [
-  { id: 'none', label: 'None', icon: '🎵' },
-  { id: 'radio', label: 'Radio', icon: '📻' },
-  { id: 'stadium', label: 'Stadium', icon: '🏟️' },
-  { id: 'robot', label: 'Robot', icon: '🤖' },
-  { id: 'whisper', label: 'Whisper', icon: '🌙' },
-  { id: 'warm', label: 'Warm', icon: '☀️' },
-  { id: 'bright', label: 'Bright', icon: '✨' },
-  { id: 'broadcast', label: 'Broadcast', icon: '🎙️' },
-]
+// Use shared constants
 
 // Demo texts
 const DEMO_TEXTS = [
@@ -46,7 +27,7 @@ export default function PlaygroundPage() {
   const [selectedEmotion, setSelectedEmotion] = useState('neutral')
   const [selectedEffect, setSelectedEffect] = useState('none')
   const [selectedVoice, setSelectedVoice] = useState('')
-  const [voices, setVoices] = useState<any[]>([])
+  const [voices, setVoices] = useState<Voice[]>([])
   const [loading, setLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -241,20 +222,30 @@ export default function PlaygroundPage() {
                 Emotion
               </label>
               
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Select emotion">
                 {EMOTIONS.map((emotion) => (
                   <button
                     key={emotion.id}
                     onClick={() => setSelectedEmotion(emotion.id)}
+                    aria-label={`Select ${emotion.label} emotion`}
+                    aria-pressed={selectedEmotion === emotion.id}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelectedEmotion(emotion.id)
+                      }
+                    }}
                     className={`
                       flex flex-col items-center gap-1 p-3 rounded-xl transition-all duration-200
                       ${selectedEmotion === emotion.id
                         ? 'bg-white/10 ring-2 ring-white/30 scale-105'
                         : 'bg-white/[0.02] hover:bg-white/5'
                       }
+                      focus:outline-none focus:ring-2 focus:ring-purple-500/50
                     `}
                   >
-                    <span className="text-2xl">{emotion.emoji}</span>
+                    <span className="text-2xl" aria-hidden="true">{emotion.emoji}</span>
                     <span className="text-xs text-white/60">{emotion.label}</span>
                   </button>
                 ))}
@@ -268,20 +259,30 @@ export default function PlaygroundPage() {
                 Voice Effect
               </label>
               
-              <div className="grid grid-cols-4 gap-2">
-                {EFFECTS.map((effect) => (
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Select voice effect">
+                {VOICE_EFFECTS.map((effect) => (
                   <button
                     key={effect.id}
                     onClick={() => setSelectedEffect(effect.id)}
+                    aria-label={`Select ${effect.label} effect`}
+                    aria-pressed={selectedEffect === effect.id}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelectedEffect(effect.id)
+                      }
+                    }}
                     className={`
                       flex flex-col items-center gap-1 p-3 rounded-xl transition-all duration-200
                       ${selectedEffect === effect.id
                         ? 'bg-white/10 ring-2 ring-cyan-500/50'
                         : 'bg-white/[0.02] hover:bg-white/5'
                       }
+                      focus:outline-none focus:ring-2 focus:ring-cyan-500/50
                     `}
                   >
-                    <span className="text-xl">{effect.icon}</span>
+                    <span className="text-xl" aria-hidden="true">{effect.icon}</span>
                     <span className="text-xs text-white/60">{effect.label}</span>
                   </button>
                 ))}
@@ -314,7 +315,11 @@ export default function PlaygroundPage() {
             
             {/* Error display */}
             {error && (
-              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400">
+              <div 
+                className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400"
+                role="alert"
+                aria-live="assertive"
+              >
                 {error}
               </div>
             )}
