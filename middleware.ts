@@ -1,1 +1,1 @@
-// [No Supabase]
+// [Minimal CORS only]
