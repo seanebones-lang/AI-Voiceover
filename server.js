@@ -1,1 +1,1 @@
-[Full enhanced server.js with try/catch/fallback]
+[Full file with fixed endpoint + deps require]
