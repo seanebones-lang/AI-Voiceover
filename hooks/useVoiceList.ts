@@ -1,12 +1,12 @@
 import useSWR from 'swr';
-import { voiceService } from '@/services/voiceService';
+import { voiceService } from '@/lib/voiceService';
 
-const fetcher = (url: string) => voiceService.getVoices();
+const fetcher = () => voiceService.getVoices();
 
 export const useVoiceList = () => {
   const { data, error, isLoading } = useSWR('/api/voices', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000,
   });
-  return { voices: data ?? [], error, loading: isLoading };
+  return { voices: data?.voices ?? [], error, loading: isLoading };
 };

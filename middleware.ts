@@ -1,7 +1,6 @@
 // Updated with CORS + CSRF
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase';
 import { generateCSRF, validateCSRF } from '@/lib/security';
 
 // CORS origins
@@ -30,9 +29,6 @@ export function middleware(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid CSRF' }, { status: 403 });
     }
   }
-
-  // Supabase auth...
-  // (existing auth logic preserved)
 
   return response;
 }
