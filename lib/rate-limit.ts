@@ -67,26 +67,30 @@ const createFallbackLimiter = (windowMs: number, maxRequests: number) => ({
   },
 })
 
-// Create rate limiter: 100 requests per 15 minutes
+// Single-user mode: no effective rate limits (high ceilings so they never trigger)
+const UNLIMITED_WINDOW_MS = 15 * 60 * 1000
+const UNLIMITED_REQUESTS = 100000
+
+// Create rate limiter: effectively unlimited for single user
 export const rateLimiter = hasRedis && redis ? new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(100, "15 m"),
+  limiter: Ratelimit.slidingWindow(UNLIMITED_REQUESTS, "15 m"),
   analytics: true,
   prefix: "@upstash/ratelimit",
-}) : createFallbackLimiter(15 * 60 * 1000, 100) // 15 minutes, 100 requests
+}) : createFallbackLimiter(UNLIMITED_WINDOW_MS, UNLIMITED_REQUESTS)
 
-// Stricter limiter for TTS: 50 requests per hour
+// TTS: effectively unlimited for single user
 export const ttsRateLimiter = hasRedis && redis ? new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(50, "1 h"),
+  limiter: Ratelimit.slidingWindow(UNLIMITED_REQUESTS, "1 h"),
   analytics: true,
   prefix: "@upstash/ratelimit/tts",
-}) : createFallbackLimiter(60 * 60 * 1000, 50) // 1 hour, 50 requests
+}) : createFallbackLimiter(60 * 60 * 1000, UNLIMITED_REQUESTS)
 
-// Very strict limiter for cloning: 10 requests per day
+// Cloning: effectively unlimited for single user
 export const cloneRateLimiter = hasRedis && redis ? new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(10, "1 d"),
+  limiter: Ratelimit.slidingWindow(UNLIMITED_REQUESTS, "1 d"),
   analytics: true,
   prefix: "@upstash/ratelimit/clone",
-}) : createFallbackLimiter(24 * 60 * 60 * 1000, 10) // 1 day, 10 requests
+}) : createFallbackLimiter(24 * 60 * 60 * 1000, UNLIMITED_REQUESTS)

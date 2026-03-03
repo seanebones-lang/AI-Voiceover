@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServiceUrl, withRetry } from '@/lib/config'
+import { getXaiVoices } from '@/lib/xaiTtsService'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,19 @@ interface Voice {
   source: string
   category: string
   description?: string
+}
+
+// xAI voices (Eve, Ara, Rex, Sal, Leo) — work without XTTS when XAI_API_KEY is set
+function getXaiVoicesAsList(): Voice[] {
+  return getXaiVoices().map((v) => ({
+    voice_id: v.voice_id,
+    name: v.name,
+    language: 'en',
+    gender: v.gender,
+    source: v.source,
+    category: v.category,
+    description: v.description,
+  }))
 }
 
 // Default voices using edge-tts (Microsoft TTS) - Expanded with high-quality voices
@@ -296,21 +310,21 @@ export async function GET() {
   try {
     // Get cloned voices from sidecar
     const clonedVoices = await getClonedVoices()
-    
-    // Combine default voices with cloned voices
-    const allVoices = [...DEFAULT_VOICES, ...clonedVoices]
+    const xaiVoices = getXaiVoicesAsList()
+    const allVoices = [...DEFAULT_VOICES, ...xaiVoices, ...clonedVoices]
 
     return NextResponse.json({
       voices: allVoices,
       default_count: DEFAULT_VOICES.length,
+      xai_count: xaiVoices.length,
       cloned_count: clonedVoices.length
     })
   } catch (error) {
     console.error('Error fetching voices:', error)
-    // Return at least the default voices on error
     return NextResponse.json({
-      voices: DEFAULT_VOICES,
+      voices: [...DEFAULT_VOICES, ...getXaiVoicesAsList()],
       default_count: DEFAULT_VOICES.length,
+      xai_count: getXaiVoicesAsList().length,
       cloned_count: 0
     })
   }

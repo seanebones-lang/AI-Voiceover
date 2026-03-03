@@ -4,6 +4,7 @@ import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
+import { synthesizeXai, pcmToWav, isValidXaiVoice } from '@/lib/xaiTtsService'
 
 export const dynamic = 'force-dynamic'
 
@@ -138,6 +139,44 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🎤 TTS: voice=${voice_id}, speed=${finalSpeed}, pitch=${finalPitch}, volume=${finalVolume}`)
+    
+    // xAI voices (Eve, Ara, Rex, Sal, Leo): use Grok Voice Agent when XAI_API_KEY is set
+    if (isValidXaiVoice(voice_id)) {
+      const apiKey = process.env.XAI_API_KEY
+      if (apiKey) {
+        try {
+          const pcm = await synthesizeXai({ text: text.trim(), voiceId: voice_id, apiKey })
+          const wav = pcmToWav(pcm)
+          const latency = Date.now() - startTime
+          recordMetric({
+            endpoint: '/api/tts',
+            method: 'POST',
+            statusCode: 200,
+            latency,
+            timestamp: new Date().toISOString(),
+            requestId,
+            voiceType: 'xai',
+          })
+          logger.info('xAI TTS generated successfully', { requestId, voiceId: voice_id, latency })
+          return new NextResponse(new Uint8Array(wav), {
+            headers: {
+              'Content-Type': 'audio/wav',
+              'Content-Length': String(wav.length),
+              'X-Generation-Latency': latency.toString(),
+              'X-Voice-Type': 'xai',
+              'X-Request-Id': requestId,
+            },
+          })
+        } catch (xaiErr) {
+          const msg = xaiErr instanceof Error ? xaiErr.message : String(xaiErr)
+          logger.error('xAI TTS failed', xaiErr, { requestId })
+          return NextResponse.json(
+            { error: 'xAI TTS failed', details: msg, requestId },
+            { status: 502, headers: { 'X-Request-Id': requestId } }
+          )
+        }
+      }
+    }
     
     try {
       const xttsService = config.services.xtts
