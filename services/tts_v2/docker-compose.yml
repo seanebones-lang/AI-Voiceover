@@ -1,7 +1,6 @@
 # HumanMirage TTS - Docker Compose Configuration
 # Production deployment with GPU support
-
-version: '3.8'
+# Compose V2: no top-level "version" key
 
 services:
   # Main TTS Service

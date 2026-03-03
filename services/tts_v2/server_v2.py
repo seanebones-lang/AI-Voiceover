@@ -35,10 +35,12 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS
+# CORS: set CORS_ORIGINS in production to restrict origins
+_cors_origins = os.getenv("CORS_ORIGINS", "*").strip()
+_cors_origins_list = [o.strip() for o in _cors_origins.split(",")] if _cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -229,15 +231,13 @@ async def clone_voice(
 
 # Metrics endpoint
 @app.get("/metrics")
-async def get_metrics():
+async def get_metrics_endpoint():
     """Get production metrics."""
     pipeline = get_pipeline()
     metrics = pipeline.get_metrics()
-    
     if metrics:
-        return metrics.dict()
-    else:
-        return {"error": "Metrics not available"}
+        return asdict(metrics)
+    return {"error": "Metrics not available"}
 
 
 # WebSocket streaming

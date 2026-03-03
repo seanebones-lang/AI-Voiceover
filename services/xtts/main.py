@@ -100,9 +100,12 @@ except Exception as e:
 
 app = FastAPI(title="NextEleven Voice Service", version="3.1.0")
 
+# CORS: set CORS_ORIGINS in production (e.g. https://your-app.railway.app) to restrict origins
+_cors_origins = os.getenv("CORS_ORIGINS", "*").strip()
+_cors_origins_list = [o.strip() for o in _cors_origins.split(",")] if _cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -774,9 +777,9 @@ async def clone_voice(
         
         clone_type = "REAL (XTTS)" if HAS_XTTS else "STORED ONLY (XTTS not available - cloning will fail)"
         logger.info(f"Voice cloned: {name} ({voice_id}) - {clone_type}")
-        logger.info(f"   Total duration: {total_duration:.1f}s from {len(absolute_sample_files)} samples")
-        logger.info(f"   Sample files stored: {len(absolute_sample_files)}")
-        for i, sample in enumerate(absolute_sample_files):
+        logger.info(f"   Total duration: {total_duration:.1f}s from {len(saved_files)} samples")
+        logger.info(f"   Sample files stored: {len(saved_files)}")
+        for i, sample in enumerate(saved_files):
             exists = os.path.exists(sample)
             size = os.path.getsize(sample) if exists else 0
             logger.info(f"   Sample {i+1}: {os.path.basename(sample)} ({size} bytes, exists: {exists})")
@@ -803,8 +806,8 @@ async def clone_voice(
             "preprocessed": True,
             "quality_warnings": all_warnings[:3],
             "recommendations": all_recommendations[:3],
-            "sample_files_count": len(absolute_sample_files),
-            "sample_files": [os.path.basename(f) for f in absolute_sample_files[:3]],  # Show first 3
+            "sample_files_count": len(saved_files),
+            "sample_files": [os.path.basename(f) for f in saved_files[:3]],  # Show first 3
             "message": message,
             "warnings": [] if HAS_XTTS else [
                 "XTTS not available - voice cloning will fail when generating speech",

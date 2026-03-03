@@ -1,8 +1,12 @@
 #!/bin/bash
 # Complete Railway Deployment Script
+# Requires RAILWAY_TOKEN in environment. Do not hardcode secrets.
 set -e
 
-RAILWAY_TOKEN="e3d1ece9-2889-448b-a047-3ba37ae0cccf"
+if [ -z "$RAILWAY_TOKEN" ]; then
+    echo "Error: Set RAILWAY_TOKEN (e.g. export RAILWAY_TOKEN=your-token)"
+    exit 1
+fi
 export RAILWAY_TOKEN
 
 echo "🚀 Completing Railway Deployment"
@@ -64,13 +68,11 @@ echo ""
 echo "📝 Next Steps:"
 echo ""
 echo "1. Run this command to link service (interactive):"
-echo "   export RAILWAY_TOKEN=$RAILWAY_TOKEN"
+echo "   export RAILWAY_TOKEN=<your-token>"
 echo "   railway service link"
 echo ""
-echo "2. Set environment variables:"
-echo "   railway variables --set \"NEXTAUTH_SECRET=$NEXTAUTH_SECRET\""
-echo "   railway variables --set \"XTTS_SIDECAR_URL=http://localhost:8000\""
-echo "   railway variables --set \"NODE_ENV=production\""
+echo "2. Set environment variables in Railway dashboard (do not paste secrets in shell history):"
+echo "   NEXTAUTH_SECRET, NEXTAUTH_URL, UPSTASH_*, XTTS_SIDECAR_URL, NODE_ENV"
 echo ""
 echo "3. Deploy:"
 echo "   railway up"
@@ -83,5 +85,5 @@ echo "4. Copy variables from .railway/env.template"
 echo ""
 
 echo "✅ Deployment preparation complete!"
-echo "   NEXTAUTH_SECRET: $NEXTAUTH_SECRET"
+echo "   Set NEXTAUTH_SECRET and other secrets in Railway dashboard (see .railway/env.template)."
 echo ""

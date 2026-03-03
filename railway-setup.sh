@@ -16,8 +16,12 @@ fi
 echo "✅ Railway CLI installed"
 echo ""
 
-# Set Railway token
-export RAILWAY_TOKEN="e3d1ece9-2889-448b-a047-3ba37ae0cccf"
+# Set Railway token from environment (required for CLI auth)
+if [ -z "$RAILWAY_TOKEN" ]; then
+    echo "⚠️  Set RAILWAY_TOKEN (e.g. export RAILWAY_TOKEN=your-token)"
+    echo "   Get token from: https://railway.app/account/tokens"
+fi
+export RAILWAY_TOKEN
 
 echo "🔑 Railway token set"
 echo ""

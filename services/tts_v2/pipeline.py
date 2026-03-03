@@ -196,8 +196,11 @@ class HumanMirageTTS:
         """Synthesize using Coqui TTS (XTTS v2)."""
         
         # XTTS v2 synthesis
+        # NOTE: Coqui TTS .tts() expects speaker_wav (path) for cloning, not a raw embedding.
+        # When speaker_embedding is set we pass speaker_wav=None here, so cloning is not applied.
+        # For reliable voice cloning use the XTTS service (services/xtts) which uses speaker_wav.
         if speaker_embedding is not None:
-            # Use speaker embedding for voice cloning
+            # Use speaker embedding for voice cloning (Coqui API may not support this path fully)
             wav = self.model.tts(
                 text=text,
                 speaker_wav=None,  # Use embedding instead

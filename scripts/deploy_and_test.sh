@@ -12,9 +12,13 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Configuration
-RAILWAY_TOKEN="${RAILWAY_TOKEN:-d6261fe1-17c4-4871-82a3-9bf9772f7520}"
+# Configuration (set RAILWAY_TOKEN in environment; do not commit real tokens)
 RAILWAY_PROJECT="${RAILWAY_PROJECT:-loyal-acceptance}"
+if [ -z "${RAILWAY_TOKEN:-}" ]; then
+  echo "Error: RAILWAY_TOKEN is required. Export it or set in environment."
+  exit 1
+fi
+RAILWAY_TOKEN="${RAILWAY_TOKEN}"
 MAX_WAIT_TIME=600  # 10 minutes max wait
 CHECK_INTERVAL=10  # Check every 10 seconds
 DEPLOYMENT_URL=""
@@ -343,7 +347,7 @@ generate_report() {
 main() {
     log_step "🚀 Deployment, Monitoring & E2E Testing"
     log_info "Project: $RAILWAY_PROJECT"
-    log_info "Token: ${RAILWAY_TOKEN:0:20}..."
+    log_info "Token: ${RAILWAY_TOKEN:0:8}***"
     echo ""
     
     # Execute steps

@@ -19,6 +19,19 @@ export interface Metrics {
   latency: number
   timestamp: string
   error?: string
+  requestId?: string
+  voiceType?: 'cloned' | 'standard'
+}
+
+/** Clone-flow telemetry counters (in-memory; extend to external in production) */
+export interface CloneTelemetry {
+  clone_requested: number
+  clone_created: number
+  clone_created_error: number
+  clone_tts_requested: number
+  clone_tts_success: number
+  clone_tts_fallback_default: number
+  clone_tts_error: number
 }
 
 class Logger {
@@ -63,6 +76,26 @@ export const logger = new Logger()
 const metrics: Metrics[] = []
 const MAX_METRICS = 1000 // Keep last 1000 metrics
 
+const cloneTelemetry: CloneTelemetry = {
+  clone_requested: 0,
+  clone_created: 0,
+  clone_created_error: 0,
+  clone_tts_requested: 0,
+  clone_tts_success: 0,
+  clone_tts_fallback_default: 0,
+  clone_tts_error: 0,
+}
+
+export function recordCloneMetric(key: keyof CloneTelemetry): void {
+  if (key in cloneTelemetry) {
+    (cloneTelemetry as Record<string, number>)[key]++
+  }
+}
+
+export function getCloneTelemetry(): CloneTelemetry {
+  return { ...cloneTelemetry }
+}
+
 export function recordMetric(metric: Metrics): void {
   metrics.push(metric)
   
@@ -87,11 +120,13 @@ export function getMetricsSummary(): {
   total: number
   byEndpoint: Record<string, { count: number; avgLatency: number; errors: number }>
   byStatusCode: Record<number, number>
+  cloneTelemetry: CloneTelemetry
 } {
   const summary = {
     total: metrics.length,
     byEndpoint: {} as Record<string, { count: number; avgLatency: number; errors: number }>,
     byStatusCode: {} as Record<number, number>,
+    cloneTelemetry: getCloneTelemetry(),
   }
 
   for (const metric of metrics) {

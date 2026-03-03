@@ -4,8 +4,11 @@
 
 set -e
 
-RAILWAY_TOKEN="${RAILWAY_TOKEN:-e3d1ece9-2889-448b-a047-3ba37ae0cccf}"
+RAILWAY_TOKEN="${RAILWAY_TOKEN:-}"
 export RAILWAY_TOKEN
+if [ -z "$RAILWAY_TOKEN" ]; then
+  echo "⚠️  Set RAILWAY_TOKEN (e.g. export RAILWAY_TOKEN=your-token) for CLI deployment."
+fi
 
 echo "🚂 Railway Deployment"
 echo "====================="
@@ -43,7 +46,7 @@ echo "6. Set environment variables in Variables tab"
 echo ""
 echo "METHOD 2: Railway CLI (Interactive)"
 echo "Run these commands locally:"
-echo "  export RAILWAY_TOKEN=$RAILWAY_TOKEN"
+echo "  export RAILWAY_TOKEN=<your-token>"
 echo "  railway service"
 echo "  railway up"
 echo ""

@@ -1,0 +1,2 @@
+# Legacy Express entrypoint - do not use. App runs via Next.js: npm run start -> next start
+# Kept for reference only. Delete when no longer needed.

@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import { POST } from '@/app/api/clone-voice/route'
 import { NextRequest } from 'next/server'
 
@@ -91,14 +92,16 @@ describe('POST /api/clone-voice', () => {
   it('should forward valid request to service', async () => {
     const formData = new FormData()
     formData.append('name', 'Test Voice')
-    const file = new File(['content'], 'test.wav', { type: 'audio/wav' })
-    Object.defineProperty(file, 'size', { value: 1024 * 1024 })
+    const file = new File([new Uint8Array(1024).fill(0)], 'test.wav', { type: 'audio/wav' })
     formData.append('files', file)
 
-    ;(global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ voice_id: 'clone_123' }),
-    })
+    const mockFetch = global.fetch as jest.Mock
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ voices: [] }) }) // duplicate check /voices
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ voice_id: 'clone_123' }),
+      }) // /clone
 
     const request = new NextRequest('http://localhost/api/clone-voice', {
       method: 'POST',

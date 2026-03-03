@@ -3,7 +3,7 @@ import { ttsRateLimiter } from '@/lib/rate-limit'
 import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP } from '@/lib/validation'
-import { logger, generateRequestId, recordMetric } from '@/lib/monitoring'
+import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +31,7 @@ interface TTSRequest {
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
-  const requestId = generateRequestId()
+  const requestId = request.headers.get('x-request-id') || generateRequestId()
   const ip = extractClientIP(request)
   const userAgent = request.headers.get('user-agent') || 'unknown'
 
@@ -141,6 +141,9 @@ export async function POST(request: NextRequest) {
     
     try {
       const xttsService = config.services.xtts
+      if (voice_id.startsWith('clone_')) {
+        recordCloneMetric('clone_tts_requested')
+      }
       const xttsResponse = await withRetry(async () => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), xttsService.timeout)
@@ -148,7 +151,10 @@ export async function POST(request: NextRequest) {
         try {
           const response = await fetch(`${xttsService.url}/tts`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Request-Id': requestId,
+            },
             body: JSON.stringify({
               text: text.trim(),
               voice_id,
@@ -174,8 +180,15 @@ export async function POST(request: NextRequest) {
       }, xttsService.retries, 1000, 2)
 
       if (!xttsResponse.ok) {
+        if (voice_id.startsWith('clone_')) {
+          recordCloneMetric('clone_tts_error')
+        }
         const error = await xttsResponse.json().catch(() => ({ detail: 'TTS failed' }))
         throw new Error(error.detail || `TTS sidecar returned ${xttsResponse.status}`)
+      }
+
+      if (voice_id.startsWith('clone_')) {
+        recordCloneMetric('clone_tts_success')
       }
 
       const audioBuffer = await xttsResponse.arrayBuffer()
@@ -188,6 +201,8 @@ export async function POST(request: NextRequest) {
         statusCode: 200,
         latency,
         timestamp: new Date().toISOString(),
+        requestId,
+        voiceType: voice_id.startsWith('clone_') ? 'cloned' : 'standard',
       })
 
       logger.info('TTS generated successfully', {

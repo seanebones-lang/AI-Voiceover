@@ -3,6 +3,7 @@ import { cloneRateLimiter } from '@/lib/rate-limit'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateAudioFile, extractClientIP } from '@/lib/validation'
 import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors'
+import { generateRequestId, recordCloneMetric } from '@/lib/monitoring'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,8 @@ export async function OPTIONS(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin')
   const corsHeaders = getCorsHeaders(origin)
+  const requestId = request.headers.get('x-request-id') || generateRequestId()
+  recordCloneMetric('clone_requested')
   try {
     // Extract and validate client IP
     const ip = extractClientIP(request)
@@ -143,6 +146,9 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           body: formData,
           signal: controller.signal,
+          headers: {
+            'X-Request-Id': requestId,
+          },
         })
         clearTimeout(timeout)
         return res
@@ -153,6 +159,7 @@ export async function POST(request: NextRequest) {
     }, xttsService.retries, 2000, 2)
 
     if (!response.ok) {
+      recordCloneMetric('clone_created_error')
       const error = await response.json().catch(() => ({ detail: 'Clone service error' }))
       return NextResponse.json(
         { error: error.detail || 'Voice cloning failed' },
@@ -161,6 +168,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json()
+    recordCloneMetric('clone_created')
     
     console.log(`✓ Voice cloned: ${result.voice_id}`)
 
@@ -171,7 +179,7 @@ export async function POST(request: NextRequest) {
         remaining: remaining - 1,
         reset: new Date(reset).toISOString(),
       },
-    }, { headers: corsHeaders })
+    }, { headers: { ...corsHeaders, 'X-Request-Id': requestId } })
   } catch (error) {
     console.error('Voice cloning error:', error)
     return NextResponse.json(

@@ -1,1 +1,0 @@
-[Full file with fixed endpoint + deps require]

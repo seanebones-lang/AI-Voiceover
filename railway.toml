@@ -1,11 +1,17 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm ci --production && npm run build"
+# Install deps and build Next.js (do not use --production so devDependencies are available for build)
+buildCommand = "npm ci && npm run build"
 
 [deploy]
-restartPolicyType = "ONCE"
+# Resilient restarts so the service recovers after crashes
+restartPolicyType = "ALWAYS"
+# Start command is inferred from package.json "start": "next start"
 
 [services]
   [services.web]
   internalPort = 3000
   primaryPort = true
+  # Health check: Railway can use HTTP checks; ensure /api/health is used for readiness
+  healthcheckPath = "/api/health"
+  healthcheckTimeout = 30
