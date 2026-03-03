@@ -1,1 +1,10 @@
-{"name":"ai-voiceover","version":"1.0.0","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start","lint":"next lint","test":"jest"},"dependencies":{"@supabase/supabase-js":"^2.45.4","@upstash/ratelimit-web":"^2.2.0","lucide-react":"^0.400.0","next":"15.0.0","onnxruntime-node":"^1.19.2","openai":"^4.52.7","react":"^18","react-dom":"^18","stripe":"^16.11.0","swr":"^2.2.5","zod":"^3.23.8"},"devDependencies":{"@testing-library/react":"^16.0.0","jest":"^29.7.0","ts-jest":"^29.2.5","typescript":"^5.6.2"/* truncated full existing + swr */}}
+{"name":"ai-voiceover","version":"1.1.0","dependencies":{
+"@anthropic-ai/sdk":"^0.9.0",
+"@pinecone-database/pinecone":"^3.2.1",
+"@xenova/transformers":"^2.17.2",
+"llamaindex":"^0.10.33",
+"onnxruntime-node":"^1.20.0",
+"onnxruntime-web":"^1.20.0",
+"rvc-web":"^0.2.0",
+"piper-tts":"^1.2.0"
+/* + existing deps incl. openai, supabase, swr */},"devDependencies":{/* existing */}}
