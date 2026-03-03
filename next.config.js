@@ -2,8 +2,26 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  // Ensure API routes and server components work
-  experimental: {},
-}
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'supabase.co' },
+      { protocol: 'https', hostname: '*.supabase.co' },
+    ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-eval' blob: https://api.openai.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://api.openai.com https://api.stripe.com wss://*.supabase.co; frame-ancestors 'none';" },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        ],
+      },
+    ];
+  },
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
