@@ -1,1 +1,1 @@
-// [Patched with whitelist]
+// [No Supabase]
