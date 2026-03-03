@@ -1,39 +1,11 @@
 [build]
 builder = "NIXPACKS"
+buildCommand = "npm ci --production && npm run build"
 
 [deploy]
-startCommand = "npm start"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 100
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
+restartPolicyType = "ONCE"
 
-[[services]]
-name = "nextjs"
-source = "."
-
-[[services]]
-name = "xtts-service"
-source = "./services/xtts"
-startCommand = "cd services/xtts && python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-
-[[services]]
-name = "tts-v2-service"
-source = "./services/tts_v2"
-startCommand = "cd services/tts_v2 && python3 -m uvicorn server_v2:app --host 0.0.0.0 --port $PORT"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-
-[env]
-NODE_ENV = "production"
-PORT = "8080"
-XTTS_PORT = "8081"
-TTS_V2_PORT = "8082"
-VOICES_DIR = "/app/cloned_voices"
-PYTHONUNBUFFERED = "1"
-TTS_DEVICE = "cpu"
-USE_TENSORRT = "false"
-USE_FLASH_ATTENTION = "true"
-USE_QUANTIZATION = "false"
+[services]
+  [services.web]
+  internalPort = 3000
+  primaryPort = true
