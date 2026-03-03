@@ -4,8 +4,8 @@ builder = "NIXPACKS"
 buildCommand = "npm ci && npm run build"
 
 [deploy]
-# Resilient restarts so the service recovers after crashes
-restartPolicyType = "ALWAYS"
+# Resilient restarts so the service recovers after crashes (use lowercase: never | on_failure | always)
+restartPolicyType = "always"
 # Start command is inferred from package.json "start": "next start"
 
 [services]

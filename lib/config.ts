@@ -1,7 +1,7 @@
 /**
  * Centralized Configuration & Service Discovery
  * Handles Railway service URLs, environment detection, and service health
- * Date: January 2026
+ * Date: March 2026
  */
 
 export interface ServiceConfig {

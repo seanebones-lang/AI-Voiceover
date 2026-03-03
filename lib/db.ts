@@ -10,7 +10,7 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type StyleOptions = import('./types/emotion').StyleOptions;
+type StyleOptions = import('../types/emotion').StyleOptions;
 
 export async function upsertVoice(
   name: string,
@@ -29,8 +29,8 @@ export async function upsertVoice(
 }
 
 export async function searchVoices(queryEmbedding: number[], limit = 10, userId?: string) {
-  let query = supabase.from('voices').select('*').order('embedding <=>', { ascending: true, using: queryEmbedding }).limit(limit);
-  if (userId) query = query.eq('user_id', userId);
+  const base = supabase.from('voices').select('*').order('embedding', { ascending: true }).limit(limit);
+  const query = userId ? base.eq('user_id', userId) : base;
   const { data } = await query;
   return data;
 }
@@ -41,5 +41,6 @@ export async function getUserStats(userId: string) {
 }
 
 export async function incrementCredits(userId: string, amount: number) {
-  return supabaseAdmin.from('users').update({ credits: supabase.raw('credits + ?', [amount]) }).eq('id', userId);
+  // TODO: use Supabase RPC for atomic increment (e.g. credits + amount). This sets credits to amount.
+  return supabaseAdmin.from('users').update({ credits: amount }).eq('id', userId);
 }

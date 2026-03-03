@@ -224,28 +224,36 @@ export async function POST(request: NextRequest) {
       })
     } catch (sidecarError) {
       const latency = Date.now() - startTime
+      const errMsg = sidecarError instanceof Error ? sidecarError.message : String(sidecarError)
+      const isUnreachable =
+        /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|connection refused/i.test(errMsg)
       recordMetric({
         endpoint: '/api/tts',
         method: 'POST',
         statusCode: 503,
         latency,
         timestamp: new Date().toISOString(),
-        error: sidecarError instanceof Error ? sidecarError.message : String(sidecarError),
+        error: errMsg,
       })
-      
+
       logger.error('TTS service error', sidecarError, { requestId, ip })
-      
+
       return NextResponse.json(
-        { 
-          error: 'TTS service error', 
-          details: sidecarError instanceof Error ? sidecarError.message : String(sidecarError),
+        {
+          error: 'TTS service error',
+          details: errMsg,
           requestId,
+          ...(isUnreachable && config.isRailway
+            ? {
+                hint: 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL. See DEPLOY.md.',
+              }
+            : {}),
         },
-        { 
+        {
           status: 503,
           headers: {
             'X-Request-Id': requestId,
-          }
+          },
         }
       )
     }

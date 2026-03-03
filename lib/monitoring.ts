@@ -1,7 +1,7 @@
 /**
  * Production Monitoring & Logging
  * Structured logging, metrics, and error tracking
- * Date: January 2026
+ * Date: March 2026
  */
 
 export interface LogContext {
@@ -88,7 +88,7 @@ const cloneTelemetry: CloneTelemetry = {
 
 export function recordCloneMetric(key: keyof CloneTelemetry): void {
   if (key in cloneTelemetry) {
-    (cloneTelemetry as Record<string, number>)[key]++
+    (cloneTelemetry as unknown as Record<string, number>)[key]++
   }
 }
 

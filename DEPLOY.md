@@ -1,5 +1,25 @@
 # Deployment and Rollout (Railway)
 
+## Accessing Railway via API
+
+- **Account token** (from [railway.com/account/tokens](https://railway.com/account/tokens), scope **No workspace**): use the **`Authorization: Bearer`** header. Can run `me { name email }` and all project/workspace queries.
+- **Workspace token** (from the same page, scope e.g. **Sean McDonnell's Projects**): use **`Authorization: Bearer`** as well. Use for `projects`, `project(id: "...")`, `deployments(...)`, etc. The `me` query is not allowed and returns "Not Authorized".
+- **Project token** (from a project’s Settings → Tokens): use the **`Project-Access-Token`** header (not Bearer). Example:
+  ```bash
+  curl -X POST https://backboard.railway.com/graphql/v2 \
+    -H "Project-Access-Token: YOUR_PROJECT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"query { projectToken { projectId environmentId } }"}'
+  ```
+
+Example with a **workspace/account token** (Bearer):
+```bash
+curl -X POST https://backboard.railway.com/graphql/v2 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { projects { edges { node { id name } } } }"}'
+```
+
 ## Canonical runtime
 
 - **Web app**: Next.js — `npm run build` then `next start` (port 3000).
