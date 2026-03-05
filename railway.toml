@@ -1,6 +1,6 @@
 # Railway deployment config (single Next.js service)
 # See .railway/env.template for required/optional env vars.
-# Dockerfile is used when present; health check fails (503) when XTTS is configured but unhealthy.
+# Dockerfile is used when present. Health always returns 200 (body.status may be 'degraded' if XTTS is down).
 # For persistent cloned voices, add a volume in Railway dashboard and set VOICES_DIR to the mount path.
 
 [build]
