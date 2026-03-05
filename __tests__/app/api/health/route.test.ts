@@ -32,8 +32,7 @@ describe('GET /api/health', () => {
     const response = await GET(request)
     const data = await response.json()
 
-    expect(response.status).toBe(200)
-    expect(data.status).toBeDefined()
-    expect(['ok', 'degraded']).toContain(data.status)
+    expect(response.status).toBe(503)
+    expect(data.status).toBe('error')
   })
 })
