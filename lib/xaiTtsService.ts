@@ -74,34 +74,30 @@ export function synthesizeXai(params: {
 
     let finished = false
     ws.on('open', () => {
+      // Configure session with selected voice and no turn detection
       ws.send(
         JSON.stringify({
           type: 'session.update',
           session: {
             voice: voiceId,
-            instructions:
-              'You are a text-to-speech engine. Read the provided text aloud exactly as written, ' +
-              'word for word. Do not answer, respond, add commentary, or modify the text in any way. ' +
-              'Simply speak the exact words given.',
             turn_detection: null,
-            audio: {
-              input: { format: { type: 'audio/pcm', rate: SAMPLE_RATE } },
-              output: { format: { type: 'audio/pcm', rate: SAMPLE_RATE } },
-            },
+            modalities: ['audio'],
           },
         })
       )
+      // Inject text as an assistant message so the API speaks it verbatim
+      // (user messages trigger a conversational reply; assistant messages get spoken as-is)
       ws.send(
         JSON.stringify({
           type: 'conversation.item.create',
           item: {
             type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: text.trim() }],
+            role: 'assistant',
+            content: [{ type: 'text', text: text.trim() }],
           },
         })
       )
-      // modalities: ['audio'] forces audio-only output — no conversational text reply
+      // Request audio generation for the assistant message
       ws.send(JSON.stringify({ type: 'response.create', response: { modalities: ['audio'] } }))
     })
 
