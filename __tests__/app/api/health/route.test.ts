@@ -21,6 +21,14 @@ describe('GET /api/health', () => {
 
     expect(response.status).toBe(200)
     expect(data).toHaveProperty('status')
+    expect(data).toHaveProperty('capabilities')
+    expect(data.capabilities).toMatchObject({
+      tts_default: true,
+      tts_xai: expect.any(Boolean),
+      cloning: expect.any(Boolean),
+      tts_v2: expect.any(Boolean),
+      rag: expect.any(Boolean),
+    })
   })
 
   it('should handle service unavailable', async () => {

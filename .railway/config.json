@@ -1,9 +1,9 @@
 {
-  "project": "loyal-acceptance",
-  "projectId": "0dab6a82-942b-43cb-8ce4-02187113939e",
+  "project": "<your-project-name>",
+  "projectId": "<your-project-id>",
   "environment": "production",
-  "environmentId": "0540b027-373b-4e06-8c56-fb85f90e2ff4",
-  "token": "d6261fe1-17c4-4871-82a3-9bf9772f7520",
+  "environmentId": "<your-environment-id>",
+  "token": "<your-railway-token-from-dashboard>",
   "service": null,
-  "updated": "2026-01-14"
+  "updated": ""
 }

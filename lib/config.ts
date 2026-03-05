@@ -14,6 +14,7 @@ export interface ServiceConfig {
 export interface AppConfig {
   environment: 'development' | 'production' | 'staging'
   isRailway: boolean
+  xttsConfigured: boolean
   services: {
     xtts: ServiceConfig
     ttsV2: ServiceConfig
@@ -30,20 +31,11 @@ export interface AppConfig {
 const isRailway = !!process.env.RAILWAY_ENVIRONMENT || !!process.env.RAILWAY_PROJECT_ID
 const isProduction = process.env.NODE_ENV === 'production'
 
-// Railway service discovery - uses internal service names
-// In Railway, services communicate via service names (e.g., xtts-service:8081)
-const resolveServiceUrl = (serviceName: string, defaultPort: number, envVar?: string): string => {
-  // Priority: Environment variable > Railway service name > localhost
-  if (envVar && process.env[envVar]) {
-    return process.env[envVar]!
-  }
-  
-  if (isRailway) {
-    // Railway internal networking - use service names
-    return `http://${serviceName}:${defaultPort}`
-  }
-  
-  // Local development
+// Railway service discovery. Support XTTS_URL (current) and XTTS_SIDECAR_URL (legacy).
+const resolveServiceUrl = (serviceName: string, defaultPort: number, envVar?: string, legacyEnvVar?: string): string => {
+  if (envVar && process.env[envVar]) return process.env[envVar]!
+  if (legacyEnvVar && process.env[legacyEnvVar]) return process.env[legacyEnvVar]!
+  if (isRailway) return `http://${serviceName}:${defaultPort}`
   return `http://localhost:${defaultPort}`
 }
 
@@ -51,9 +43,10 @@ const resolveServiceUrl = (serviceName: string, defaultPort: number, envVar?: st
 export const config: AppConfig = {
   environment: isProduction ? 'production' : 'development',
   isRailway,
+  xttsConfigured: !!(process.env.XTTS_URL || process.env.XTTS_SIDECAR_URL),
   services: {
     xtts: {
-      url: resolveServiceUrl('xtts-service', 8081, 'XTTS_URL'),
+      url: resolveServiceUrl('xtts-service', 8081, 'XTTS_URL', 'XTTS_SIDECAR_URL'),
       healthEndpoint: '/health',
       timeout: 30000, // 30s for TTS generation
       retries: 2,
@@ -78,16 +71,17 @@ export const config: AppConfig = {
   },
 }
 
-// Service health check with retry logic
+// Service health check; pass timeoutMs for fast health endpoint (e.g. 5000)
 export async function checkServiceHealth(
   service: ServiceConfig,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeoutMs?: number
 ): Promise<{ healthy: boolean; latency?: number; error?: string }> {
   const startTime = Date.now()
-  
+  const healthTimeout = timeoutMs ?? service.timeout
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), service.timeout)
+    const t = setTimeout(() => controller.abort(), healthTimeout)
     
     if (signal) {
       signal.addEventListener('abort', () => controller.abort())
@@ -100,7 +94,7 @@ export async function checkServiceHealth(
       },
     })
     
-    clearTimeout(timeout)
+    clearTimeout(t)
     const latency = Date.now() - startTime
     
     if (response.ok) {

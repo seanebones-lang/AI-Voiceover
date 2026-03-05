@@ -13,7 +13,7 @@ interface SidecarStatus {
   latency?: number
 }
 
-export async function GET() {
+export async function GET(_request?: Request) {
   const startTime = Date.now()
   
   const health: {
@@ -31,6 +31,7 @@ export async function GET() {
       isRailway: boolean
       environment: string
     }
+    capabilities: { tts_default: boolean; tts_xai: boolean; cloning: boolean; tts_v2: boolean; rag: boolean },
     latency: number
   } = {
     status: 'ok',
@@ -45,14 +46,23 @@ export async function GET() {
       isRailway: config.isRailway,
       environment: config.environment
     },
+    capabilities: {
+      tts_default: true,
+      tts_xai: !!process.env.XAI_API_KEY,
+      cloning: false,
+      tts_v2: false,
+      rag: false
+    },
     latency: 0
   }
 
-  // Check all services in parallel
+  const healthTimeoutMs = 5000
   const [xttsHealth, ttsV2Health, ragHealth] = await Promise.allSettled([
-    checkServiceHealth(config.services.xtts),
-    checkServiceHealth(config.services.ttsV2),
-    checkServiceHealth(config.services.rag),
+    config.isRailway && !config.xttsConfigured
+      ? Promise.resolve({ healthy: false, error: 'unconfigured' })
+      : checkServiceHealth(config.services.xtts, undefined, healthTimeoutMs),
+    checkServiceHealth(config.services.ttsV2, undefined, healthTimeoutMs),
+    checkServiceHealth(config.services.rag, undefined, healthTimeoutMs),
   ])
 
   // XTTS Service
@@ -73,16 +83,17 @@ export async function GET() {
       health.services.xtts = {
         status: 'healthy',
         url: config.services.xtts.url,
-        latency: xttsHealth.value.latency
+        latency: (xttsHealth.value as { latency?: number }).latency
       }
     }
   } else {
+    const isUnconfigured = xttsHealth.status === 'fulfilled' && (xttsHealth.value as { error?: string }).error === 'unconfigured'
     health.services.xtts = {
-      status: 'unhealthy',
+      status: isUnconfigured ? 'unconfigured' : 'unhealthy',
       url: config.services.xtts.url,
-      error: xttsHealth.status === 'fulfilled' ? xttsHealth.value.error : 'Service check failed'
+      error: xttsHealth.status === 'fulfilled' ? (xttsHealth.value as { error?: string }).error : 'Service check failed'
     }
-    health.status = 'degraded'
+    if (!isUnconfigured) health.status = 'degraded'
   }
 
   // TTS V2 Service (optional)
@@ -113,7 +124,18 @@ export async function GET() {
     }
   }
 
+  health.capabilities.cloning = xttsHealth.status === 'fulfilled' && (xttsHealth.value as { healthy?: boolean }).healthy === true
+  health.capabilities.tts_v2 = ttsV2Health.status === 'fulfilled' && (ttsV2Health.value as { healthy?: boolean }).healthy === true
+  health.capabilities.rag = ragHealth.status === 'fulfilled' && (ragHealth.value as { healthy?: boolean }).healthy === true
+
   health.latency = Date.now() - startTime
 
+  // Fail deploy health when XTTS is configured but unhealthy (required for self-contained TTS)
+  const xttsConfiguredButUnhealthy =
+    config.xttsConfigured &&
+    !(xttsHealth.status === 'fulfilled' && (xttsHealth.value as { healthy?: boolean }).healthy === true)
+  if (xttsConfiguredButUnhealthy) {
+    return NextResponse.json(health, { status: 503 })
+  }
   return NextResponse.json(health)
 }

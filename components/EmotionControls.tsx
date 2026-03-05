@@ -16,7 +16,7 @@ export function EmotionControls({ onStyleChange, previewText }: Props) {
   const [pitch, setPitch] = useState([1.0]);
 
   const handlePreview = async () => {
-    // POST /api/v1/tts/preview w/ params → play
+    // Apply style; use POST /api/tts for preview with voice + params
     onStyleChange({ emotion, speed: speed[0], pitch: pitch[0] });
   };
 

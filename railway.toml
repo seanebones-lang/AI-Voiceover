@@ -1,12 +1,13 @@
-# Multi-service Railway deployment
+# Railway deployment config (single Next.js service)
+# See .railway/env.template for required/optional env vars.
+# Dockerfile is used when present; health check fails (503) when XTTS is configured but unhealthy.
+# For persistent cloned voices, add a volume in Railway dashboard and set VOICES_DIR to the mount path.
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "node server.js"
 healthcheckPath = "/api/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

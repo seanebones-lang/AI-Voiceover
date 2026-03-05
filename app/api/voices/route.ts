@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServiceUrl, withRetry } from '@/lib/config'
+import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { getXaiVoices } from '@/lib/xaiTtsService'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
+
+let clonedVoicesUnavailableLogged = false
 
 interface Voice {
   voice_id: string
@@ -278,20 +280,34 @@ const DEFAULT_VOICES: Voice[] = [
   }
 ]
 
-async function getClonedVoices(): Promise<Voice[]> {
-    try {
-      const response = await withRetry(async () => {
-        return await fetch(`${getServiceUrl('xtts')}/voices`, {
+async function getClonedVoices(): Promise<{ voices: Voice[]; error?: string }> {
+  if (config.isRailway && !config.xttsConfigured) {
+    return { voices: [], error: 'XTTS not configured' }
+  }
+  const timeoutMs = 5000 // Fail fast when XTTS is not running (e.g. local dev)
+  try {
+    const response = await withRetry(async () => {
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const res = await fetch(`${getServiceUrl('xtts')}/voices`, {
           cache: 'no-store',
+          signal: controller.signal,
           headers: {
             'User-Agent': 'NextEleven-VoiceAPI/1.0',
           },
         })
-      }, 2, 1000, 1.5)
-      
-      if (response.ok) {
-        const data = await response.json().catch(() => ({ voices: [] }))
-        return (data.voices || []).map((v: { voice_id?: string; name?: string; description?: string }) => ({
+        clearTimeout(t)
+        return res
+      } catch (e) {
+        clearTimeout(t)
+        throw e
+      }
+    }, 2, 1000, 1.5)
+
+    if (response.ok) {
+      const data = await response.json().catch(() => ({ voices: [] }))
+      const voices = (data.voices || []).map((v: { voice_id?: string; name?: string; description?: string }) => ({
         voice_id: v.voice_id,
         name: v.name || v.voice_id,
         language: 'multilingual',
@@ -299,33 +315,33 @@ async function getClonedVoices(): Promise<Voice[]> {
         category: 'cloned',
         description: v.description || 'Custom cloned voice'
       }))
+      return { voices }
     }
+    return { voices: [], error: `XTTS returned ${response.status}` }
   } catch (error) {
-    console.log('Cloned voices service not available:', error instanceof Error ? error.message : 'Unknown error')
+    if (!clonedVoicesUnavailableLogged) {
+      clonedVoicesUnavailableLogged = true
+      console.log('Cloned voices service not available:', error instanceof Error ? error.message : 'Unknown error')
+    }
+    return {
+      voices: [],
+      error: error instanceof Error ? error.message : 'Cloned voices service unreachable',
+    }
   }
-  return []
 }
 
 export async function GET() {
-  try {
-    // Get cloned voices from sidecar
-    const clonedVoices = await getClonedVoices()
-    const xaiVoices = getXaiVoicesAsList()
-    const allVoices = [...DEFAULT_VOICES, ...xaiVoices, ...clonedVoices]
+  const xaiVoices = getXaiVoicesAsList()
+  const { voices: clonedVoices, error: clonedError } = await getClonedVoices()
+  const allVoices = [...DEFAULT_VOICES, ...xaiVoices, ...clonedVoices]
 
-    return NextResponse.json({
-      voices: allVoices,
-      default_count: DEFAULT_VOICES.length,
-      xai_count: xaiVoices.length,
-      cloned_count: clonedVoices.length
-    })
-  } catch (error) {
-    console.error('Error fetching voices:', error)
-    return NextResponse.json({
-      voices: [...DEFAULT_VOICES, ...getXaiVoicesAsList()],
-      default_count: DEFAULT_VOICES.length,
-      xai_count: getXaiVoicesAsList().length,
-      cloned_count: 0
-    })
-  }
+  return NextResponse.json({
+    voices: allVoices,
+    default_count: DEFAULT_VOICES.length,
+    xai_count: xaiVoices.length,
+    cloned_count: clonedVoices.length,
+    ...(clonedError
+      ? { degraded: true, degraded_reason: clonedError }
+      : {}),
+  })
 }
