@@ -15,14 +15,12 @@ describe('VoiceSelect', () => {
     expect(screen.getByText('Select a voice...')).toBeInTheDocument()
   })
 
-  it('displays all voices', async () => {
-    const user = userEvent.setup()
+  it('displays all voices', () => {
     render(<VoiceSelect voices={mockVoices} value="voice-1" onChange={jest.fn()} />)
     
-    await user.click(screen.getByRole('combobox'))
-    expect(screen.getByRole('option', { name: /Voice One/i })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Voice Two/i })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Cloned Voice/i })).toBeInTheDocument()
+    mockVoices.forEach(voice => {
+      expect(screen.getByText(new RegExp(voice.name))).toBeInTheDocument()
+    })
   })
 
   it('calls onChange when voice is selected', async () => {
@@ -31,8 +29,10 @@ describe('VoiceSelect', () => {
     
     render(<VoiceSelect voices={mockVoices} value="voice-1" onChange={handleChange} />)
     
-    await user.click(screen.getByRole('combobox'))
-    const option = screen.getByRole('option', { name: /Voice Two/i })
+    const trigger = screen.getByRole('combobox')
+    await user.click(trigger)
+    
+    const option = screen.getByText(/Voice Two/)
     await user.click(option)
     
     expect(handleChange).toHaveBeenCalledWith('voice-2')

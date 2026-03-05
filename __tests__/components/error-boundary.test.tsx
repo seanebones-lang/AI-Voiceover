@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 // Component that throws an error
@@ -30,20 +30,18 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('No error')).toBeInTheDocument()
   })
 
-  it('catches errors and displays fallback UI', async () => {
+  it('catches errors and displays fallback UI', () => {
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
     )
     
-    await waitFor(() => {
-      expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: /Try Again/i })).toBeInTheDocument()
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument()
+    expect(screen.getByText(/Try Again/i)).toBeInTheDocument()
   })
 
-  it('shows error details in development', async () => {
+  it('shows error details in development', () => {
     const originalEnv = process.env.NODE_ENV
     process.env.NODE_ENV = 'development'
     
@@ -53,9 +51,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     )
     
-    await waitFor(() => {
-      expect(screen.getByText(/Error Details/i)).toBeInTheDocument()
-    })
+    expect(screen.getByText(/Error Details/i)).toBeInTheDocument()
     
     process.env.NODE_ENV = originalEnv
   })
@@ -67,9 +63,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     )
     
-    await waitFor(() => {
-      expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument()
-    })
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument()
     
     // Reset by rendering without error
     rerender(

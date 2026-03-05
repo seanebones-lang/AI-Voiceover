@@ -1,7 +1,7 @@
 /**
  * Metrics Endpoint
  * Returns system metrics and performance statistics
- * Date: March 2026
+ * Date: January 2026
  */
 
 import { NextResponse } from 'next/server'

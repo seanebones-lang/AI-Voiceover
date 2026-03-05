@@ -1,14 +1,3 @@
-const mockLimit = async () => ({
-  success: true,
-  limit: 100000,
-  remaining: 99999,
-  reset: Date.now() + 60000,
-})
-jest.mock('@upstash/ratelimit', () => ({
-  Ratelimit: jest.fn(() => ({ limit: mockLimit })),
-}))
-jest.mock('@upstash/redis', () => ({ Redis: jest.fn() }))
-
 import { rateLimiter, ttsRateLimiter, cloneRateLimiter } from '@/lib/rate-limit'
 
 describe('Rate Limiting', () => {
@@ -30,19 +19,19 @@ describe('Rate Limiting', () => {
   })
 
   describe('ttsRateLimiter', () => {
-    it('returns limit information', async () => {
+    it('has stricter limits than general limiter', async () => {
+      const generalResult = await rateLimiter.limit(testIP)
       const ttsResult = await ttsRateLimiter.limit(testIP)
-      expect(ttsResult.limit).toBeDefined()
-      expect(ttsResult.remaining).toBeDefined()
-      expect(ttsResult.reset).toBeDefined()
+      
+      // TTS limiter should have lower limit
+      expect(ttsResult.limit).toBeLessThanOrEqual(generalResult.limit)
     })
   })
 
   describe('cloneRateLimiter', () => {
-    it('has limit defined', async () => {
+    it('has very strict limits', async () => {
       const result = await cloneRateLimiter.limit(testIP)
-      expect(result.limit).toBeDefined()
-      expect(result.limit).toBeGreaterThan(0)
+      expect(result.limit).toBeLessThanOrEqual(10) // Very strict
     })
   })
 
