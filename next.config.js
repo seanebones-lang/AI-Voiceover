@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
+  serverExternalPackages: ['ws', 'bufferutil', 'utf-8-validate'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'supabase.co' },
