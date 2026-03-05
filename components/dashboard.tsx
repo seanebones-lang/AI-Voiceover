@@ -4,23 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-
-// Icons as simple SVG components
-const Icons = {
-  Wand2: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>,
-  Volume2: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>,
-  Download: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
-  Mic: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>,
-  Upload: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
-  Trash: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
-  Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
-  Play: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
-  Square: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>,
-  MessageCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>,
-  Layers: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-8.58 3.91a2 2 0 0 1-1.66 0L2 12.5"/><path d="m22 17.5-8.58 3.91a2 2 0 0 1-1.66 0L2 17.5"/></svg>,
-  AlertCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>,
-  Check: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
-}
+import {
+  Wand2, Volume2, Download, Mic, Upload, Trash2, Plus, Play, Square,
+  MessageCircle, Layers, AlertCircle, Check, X,
+} from 'lucide-react'
 
 interface Voice {
   voice_id: string
@@ -652,7 +639,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                <Icons.Volume2 />
+                <Volume2 className="h-5 w-5" />
       </div>
               <div>
                 <h1 className="text-xl font-bold">NextEleven</h1>
@@ -689,10 +676,10 @@ export function Dashboard() {
         <div className="container mx-auto px-4">
           <div className="flex gap-1">
             {[
-              { id: 'tts' as TabType, label: 'Text to Speech', icon: Icons.Wand2 },
-              { id: 'clone' as TabType, label: 'Clone Voice', icon: Icons.Mic },
-              { id: 'conversation' as TabType, label: 'Conversation', icon: Icons.MessageCircle },
-              { id: 'compare' as TabType, label: 'Compare', icon: Icons.Layers },
+              { id: 'tts' as TabType, label: 'Text to Speech', icon: Wand2 },
+              { id: 'clone' as TabType, label: 'Clone Voice', icon: Mic },
+              { id: 'conversation' as TabType, label: 'Conversation', icon: MessageCircle },
+              { id: 'compare' as TabType, label: 'Compare', icon: Layers },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -716,7 +703,7 @@ export function Dashboard() {
         {error && (
           <div className="mb-6 p-4 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive flex items-center gap-3 animate-slide-up">
             <div className="p-2 rounded-full bg-destructive/20">
-              <Icons.AlertCircle />
+              <AlertCircle className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <p className="font-medium">Generation Failed</p>
@@ -727,7 +714,7 @@ export function Dashboard() {
               className="p-1 hover:bg-destructive/20 rounded transition-colors"
               title="Dismiss"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+              <X className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -799,7 +786,7 @@ export function Dashboard() {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                       </svg>
                     ) : (
-                      <Icons.Play />
+                      <Play className="h-5 w-5" />
                     )}
                   </Button>
                 </div>
@@ -907,7 +894,7 @@ export function Dashboard() {
                   </>
                 ) : (
                   <>
-                    <Icons.Wand2 />
+                    <Wand2 className="h-5 w-5" />
                     <span className="ml-2">
                       {batchMode && text.split(/\n\n+/).filter(p => p.trim()).length > 1
                         ? `Generate ${text.split(/\n\n+/).filter(p => p.trim()).length} Clips`
@@ -1030,7 +1017,7 @@ export function Dashboard() {
                 <Card className="border-primary/30 bg-primary/5">
               <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Icons.Volume2 />
+                      <Volume2 className="h-5 w-5" />
                   Generated Audio
                 </CardTitle>
               </CardHeader>
@@ -1038,7 +1025,7 @@ export function Dashboard() {
                     <audio key={audioUrl} src={audioUrl} controls autoPlay className="w-full" />
                 <div className="flex gap-2">
                       <Button onClick={downloadAudio} variant="outline" className="flex-1">
-                        <Icons.Download />
+                        <Download className="h-5 w-5" />
                         <span className="ml-2">Download</span>
                   </Button>
                   <Button
@@ -1215,7 +1202,7 @@ export function Dashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Icons.Mic />
+                  <Mic className="h-5 w-5" />
                   Clone Your Voice
                 </CardTitle>
               <CardDescription>
@@ -1227,7 +1214,7 @@ export function Dashboard() {
                 {cloneSuccess && (
                   <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 text-primary space-y-2">
                     <div className="flex items-center gap-2">
-                      <Icons.Check />
+                      <Check className="h-5 w-5" />
                       <span className="font-medium">{cloneSuccess}</span>
                     </div>
                     {cloneQualityWarnings.length > 0 && (
@@ -1293,7 +1280,7 @@ export function Dashboard() {
                             : 'bg-primary text-primary-foreground hover:bg-primary/90'
                         }`}
                       >
-                        {isRecording ? <Icons.Square /> : <Icons.Mic />}
+                        {isRecording ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                       </button>
                       <p className="text-sm text-muted-foreground">
                         {isRecording ? 'Recording... Click to stop' : 'Click to start recording'}
@@ -1302,7 +1289,7 @@ export function Dashboard() {
                         <div className="w-full space-y-2">
                           <audio src={URL.createObjectURL(recordedBlob)} controls className="w-full" />
                           <Button onClick={addRecordingToFiles} variant="outline" className="w-full">
-                            <Icons.Plus />
+                            <Plus className="h-5 w-5" />
                             <span className="ml-2">Add to Samples</span>
                           </Button>
                         </div>
@@ -1315,7 +1302,7 @@ export function Dashboard() {
                 <div>
                   <label className="text-sm font-medium mb-2 block">Or Upload Audio Files</label>
                   <div className="p-6 rounded-lg border border-dashed border-border bg-card text-center">
-                    <Icons.Upload />
+                    <Upload className="h-5 w-5" />
                     <p className="mt-2 text-sm text-muted-foreground">Drag & drop or click to upload</p>
                     <input
                       type="file"
@@ -1341,7 +1328,7 @@ export function Dashboard() {
                       <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-card border">
                         <span className="text-sm truncate">{file.name}</span>
                         <button onClick={() => removeFile(index)} className="text-destructive hover:text-destructive/80">
-                          <Icons.Trash />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     ))}
@@ -1355,7 +1342,7 @@ export function Dashboard() {
                   className="w-full"
                   size="lg"
                 >
-                  <Icons.Mic />
+                  <Mic className="h-5 w-5" />
                   <span className="ml-2">{cloneLoading ? 'Cloning...' : 'Clone Voice'}</span>
                 </Button>
             </CardContent>
@@ -1369,7 +1356,7 @@ export function Dashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Icons.MessageCircle />
+                  <MessageCircle className="h-5 w-5" />
                   Conversation Generator
                 </CardTitle>
                 <CardDescription>
@@ -1392,7 +1379,7 @@ export function Dashboard() {
                           onClick={() => removeConversationMessage(msg.id)}
                           className="text-destructive hover:text-destructive/80"
                         >
-                          <Icons.Trash />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       )}
       </div>
@@ -1420,7 +1407,7 @@ export function Dashboard() {
                   onClick={addConversationMessage}
                   className="w-full p-3 rounded-lg border border-dashed border-border hover:border-primary text-muted-foreground hover:text-primary transition-colors flex items-center justify-center gap-2"
                 >
-                  <Icons.Plus />
+                  <Plus className="h-5 w-5" />
                   Add Speaker
                 </button>
 
@@ -1436,7 +1423,7 @@ export function Dashboard() {
                   onClick={generateConversation}
                   disabled={conversationLoading}
                 >
-                  <Icons.Play />
+                  <Play className="h-5 w-5" />
                   <span className="ml-2">{conversationLoading ? 'Generating...' : 'Generate Conversation'}</span>
                   </Button>
 
@@ -1444,7 +1431,7 @@ export function Dashboard() {
                 {conversationAudios.length > 0 && (
                   <div className="space-y-3 pt-4 border-t">
                     <h4 className="font-medium flex items-center gap-2">
-                      <Icons.Volume2 />
+                      <Volume2 className="h-5 w-5" />
                       Generated Conversation
                     </h4>
                     {conversationAudios.map((url, index) => {
@@ -1471,7 +1458,7 @@ export function Dashboard() {
           <Card>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Icons.Layers />
+                  <Layers className="h-5 w-5" />
                   Voice Comparison
                 </CardTitle>
                 <CardDescription>
@@ -1540,7 +1527,7 @@ export function Dashboard() {
                   size="lg"
                   disabled={compareLoading1 || compareLoading2 || !compareVoice1 || !compareVoice2 || !compareText.trim()}
                 >
-                  <Icons.Play />
+                  <Play className="h-5 w-5" />
                   <span className="ml-2">
                     {(compareLoading1 || compareLoading2) ? 'Generating...' : 'Generate Both & Compare'}
                   </span>
