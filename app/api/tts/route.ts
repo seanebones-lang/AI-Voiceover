@@ -104,13 +104,12 @@ export async function POST(request: NextRequest) {
     } = validation.data
 
     // 🎯 RAG ENHANCEMENT: Analyze text and optimize TTS parameters
-    console.log('🎯 Enhancing TTS with RAG analysis...')
     const ttsEnhancement = await ragIntegration.enhanceTTSGeneration(
       text.trim(),
       voice_id,
       undefined, // context
       user_id
-    )
+    ).catch(() => ({ rag_enhanced: false, tts_parameters: null }))
 
     // Apply RAG-enhanced parameters if available
     let finalSpeed = speed
