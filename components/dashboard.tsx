@@ -224,16 +224,18 @@ export function Dashboard() {
         }),
       })
       
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = URL.createObjectURL(blob)
-        const audio = new Audio(url)
-        previewAudioRef.current = audio
-        audio.play()
-        audio.onended = () => URL.revokeObjectURL(url)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Preview failed (${response.status})`)
       }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      previewAudioRef.current = audio
+      audio.play()
+      audio.onended = () => URL.revokeObjectURL(url)
     } catch (err) {
-      console.error('Preview failed:', err)
+      setError(err instanceof Error ? err.message : 'Preview failed')
     } finally {
       setPreviewLoading(false)
     }
@@ -409,16 +411,20 @@ export function Dashboard() {
           }),
         })
         
-        if (response.ok) {
-          const blob = await response.blob()
-          const url = URL.createObjectURL(blob)
-          audios.push(url)
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || `Generation failed (${response.status})`)
         }
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        audios.push(url)
       } catch (err) {
-        console.error(`Batch item ${i} failed:`, err)
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        setError(`Paragraph ${i + 1} failed: ${msg}`)
+        break
       }
     }
-    
+
     setBatchAudios(audios)
     setLoading(false)
     
