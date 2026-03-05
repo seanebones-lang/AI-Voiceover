@@ -1138,8 +1138,8 @@ export function Dashboard() {
                   <CardTitle className="text-sm">About</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
-                  <p>Powered by <strong>edge-tts</strong> + <strong>Coqui XTTS</strong></p>
-                  <p>100% self-hosted. No external API keys.</p>
+                  <p>Powered by <strong>Microsoft Edge TTS</strong> + <strong>xAI Grok</strong></p>
+                  <p>Standard voices free. xAI voices require XAI_API_KEY.</p>
                   <p className="text-xs pt-2 border-t mt-3">
                     <span className="text-primary">⌘/Ctrl + Enter</span> to generate<br/>
                     <span className="text-primary">⌘/Ctrl + D</span> to download
@@ -1555,7 +1555,7 @@ export function Dashboard() {
       <footer className="border-t border-border py-6 mt-12">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>© 2026 NextEleven LLC. All Rights Reserved.</p>
-          <p className="text-xs mt-1">100% Self-Hosted • No External APIs • Full Privacy</p>
+          <p className="text-xs mt-1">Edge TTS • xAI Grok Voices • Voice Cloning</p>
       </div>
       </footer>
     </div>
