@@ -67,8 +67,8 @@ export function synthesizeXai(params: {
       clearTimeout(timeout)
       if (chunks.length > 0) {
         resolve(Buffer.concat(chunks))
-      } else if (!finished) {
-        reject(new Error('xAI closed without audio'))
+      } else {
+        reject(new Error('xAI returned no audio — check voice and API key'))
       }
     })
 
@@ -80,7 +80,9 @@ export function synthesizeXai(params: {
           session: {
             voice: voiceId,
             instructions:
-              'You are a helpful assistant. Speak only the user message exactly as given, with no additions.',
+              'You are a text-to-speech engine. Read the provided text aloud exactly as written, ' +
+              'word for word. Do not answer, respond, add commentary, or modify the text in any way. ' +
+              'Simply speak the exact words given.',
             turn_detection: null,
             audio: {
               input: { format: { type: 'audio/pcm', rate: SAMPLE_RATE } },
@@ -99,7 +101,8 @@ export function synthesizeXai(params: {
           },
         })
       )
-      ws.send(JSON.stringify({ type: 'response.create' }))
+      // modalities: ['audio'] forces audio-only output — no conversational text reply
+      ws.send(JSON.stringify({ type: 'response.create', response: { modalities: ['audio'] } }))
     })
 
     ws.on('message', (data: Buffer | string) => {

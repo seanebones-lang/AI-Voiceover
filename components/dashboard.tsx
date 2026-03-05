@@ -1035,7 +1035,7 @@ export function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                    <audio src={audioUrl} controls className="w-full" />
+                    <audio key={audioUrl} src={audioUrl} controls autoPlay className="w-full" />
                 <div className="flex gap-2">
                       <Button onClick={downloadAudio} variant="outline" className="flex-1">
                         <Icons.Download />
