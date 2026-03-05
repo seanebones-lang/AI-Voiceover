@@ -4,8 +4,8 @@ import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
-import { synthesizeXai, pcmToWav, isValidXaiVoice } from '@/lib/xaiTtsService'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
+import { synthesizeXai, pcmToWav, isValidXaiVoice } from '@/lib/xaiTtsService'
 
 export const dynamic = 'force-dynamic'
 
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
         )
       }
     }
-    
+
     try {
       const xttsService = config.services.xtts
       if (voice_id.startsWith('clone_')) {

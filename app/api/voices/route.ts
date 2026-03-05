@@ -308,7 +308,6 @@ async function getClonedVoices(): Promise<Voice[]> {
 
 export async function GET() {
   try {
-    // Get cloned voices from sidecar
     const clonedVoices = await getClonedVoices()
     const xaiVoices = getXaiVoicesAsList()
     const allVoices = [...DEFAULT_VOICES, ...xaiVoices, ...clonedVoices]
