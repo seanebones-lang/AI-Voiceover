@@ -11,12 +11,12 @@ import { getCloneTelemetry } from '@/lib/monitoring'
 export const dynamic = 'force-dynamic'
 
 function isLocalRequest(request: NextRequest): boolean {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const host = request.headers.get('host') || ''
-  if (forwarded) {
-    const ip = forwarded.split(',')[0]?.trim()
-    return ip === '127.0.0.1' || ip === '::1'
+  // Do not trust X-Forwarded-For: clients can spoof it. When behind a proxy,
+  // require DIAGNOSTIC_SECRET for access.
+  if (request.headers.get('x-forwarded-for')) {
+    return false
   }
+  const host = request.headers.get('host') || ''
   return host.startsWith('localhost') || host.startsWith('127.0.0.1')
 }
 
