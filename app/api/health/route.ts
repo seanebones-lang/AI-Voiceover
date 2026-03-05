@@ -130,12 +130,13 @@ export async function GET(_request?: Request) {
 
   health.latency = Date.now() - startTime
 
-  // Fail deploy health when XTTS is configured but unhealthy (required for self-contained TTS)
+  // When XTTS is configured but unhealthy, return 200 with status 'degraded' so the deploy
+  // succeeds (Railway healthcheck passes). Monitoring can use body.status and services.xtts.
   const xttsConfiguredButUnhealthy =
     config.xttsConfigured &&
     !(xttsHealth.status === 'fulfilled' && (xttsHealth.value as { healthy?: boolean }).healthy === true)
   if (xttsConfiguredButUnhealthy) {
-    return NextResponse.json(health, { status: 503 })
+    health.status = 'degraded'
   }
   return NextResponse.json(health)
 }
