@@ -20,7 +20,7 @@ export interface Metrics {
   timestamp: string
   error?: string
   requestId?: string
-  voiceType?: 'cloned' | 'standard' | 'xai'
+  voiceType?: 'cloned' | 'standard' | 'xai' | 'edge-tts'
 }
 
 /** Clone-flow telemetry counters (in-memory; extend to external in production) */
