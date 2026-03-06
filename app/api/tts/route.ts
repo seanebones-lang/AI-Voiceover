@@ -225,6 +225,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Edge TTS voices (default_english, female_english, etc.): use Microsoft Edge TTS — no API key required
+    if (isEdgeVoice(voice_id)) {
+      try {
+        const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
+        const latency = Date.now() - startTime
+        setCached(cacheKey, mp3.buffer.slice(mp3.byteOffset, mp3.byteOffset + mp3.byteLength), 'audio/mpeg')
+        recordMetric({
+          endpoint: '/api/tts',
+          method: 'POST',
+          statusCode: 200,
+          latency,
+          timestamp: new Date().toISOString(),
+          requestId,
+          voiceType: 'edge',
+        })
+        logger.info('Edge TTS generated successfully', { requestId, voiceId: voice_id, latency })
+        return new NextResponse(mp3, {
+          headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': String(mp3.byteLength),
+            'X-Generation-Latency': latency.toString(),
+            'X-Voice-Type': 'edge',
+            'X-Request-Id': requestId,
+          },
+        })
+      } catch (edgeErr) {
+        const msg = edgeErr instanceof Error ? edgeErr.message : String(edgeErr)
+        logger.error('Edge TTS failed', edgeErr, { requestId })
+        return NextResponse.json(
+          { error: 'Edge TTS failed', details: msg, requestId },
+          { status: 502, headers: { 'X-Request-Id': requestId } }
+        )
+      }
+    }
+
     try {
       const xttsService = config.services.xtts
       if (voice_id.startsWith('clone_')) {
