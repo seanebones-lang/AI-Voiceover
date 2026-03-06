@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
           latency,
           timestamp: new Date().toISOString(),
           requestId,
-          voiceType: 'edge',
+          voiceType: 'edge-tts',
         })
         logger.info('Edge TTS generated successfully', { requestId, voiceId: voice_id, latency })
         return new NextResponse(mp3, {
