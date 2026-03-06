@@ -333,11 +333,17 @@ async function getClonedVoices(): Promise<{ voices: Voice[]; error?: string }> {
 export async function GET() {
   const xaiVoices = getXaiVoicesAsList()
   const { voices: clonedVoices, error: clonedError } = await getClonedVoices()
-  const allVoices = [...DEFAULT_VOICES, ...xaiVoices, ...clonedVoices]
+
+  // Only include DEFAULT_VOICES (edge-tts) when XTTS is available to synthesize them.
+  // On Railway without an XTTS sidecar, these voices can't be generated.
+  const xttsAvailable = !clonedError || clonedVoices.length > 0
+  const standardVoices = xttsAvailable ? DEFAULT_VOICES : []
+
+  const allVoices = [...standardVoices, ...xaiVoices, ...clonedVoices]
 
   return NextResponse.json({
     voices: allVoices,
-    default_count: DEFAULT_VOICES.length,
+    default_count: standardVoices.length,
     xai_count: xaiVoices.length,
     cloned_count: clonedVoices.length,
     ...(clonedError
