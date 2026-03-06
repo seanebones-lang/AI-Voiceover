@@ -6,6 +6,7 @@ import { validateTTSRequest, extractClientIP } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeXai, pcmToWav, isValidXaiVoice } from '@/lib/xaiTtsService'
+import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -138,31 +139,43 @@ export async function POST(request: NextRequest) {
       console.log(`✅ RAG Enhanced TTS: speed=${finalSpeed}, emotion=${params.emotion_enhancement}`)
     }
 
-    console.log(`🎤 TTS: voice=${voice_id}, speed=${finalSpeed}, pitch=${finalPitch}, volume=${finalVolume}`)
-    
-    // Edge TTS voices (Guy, Sonia, Jenny, etc.): Microsoft Neural TTS — free, no sidecar needed
-    if (isEdgeVoice(voice_id)) {
-      try {
-        const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
-        const latency = Date.now() - startTime
-        recordMetric({ endpoint: '/api/tts', method: 'POST', statusCode: 200, latency, timestamp: new Date().toISOString(), requestId, voiceType: 'edge-tts' })
-        logger.info('Edge TTS generated successfully', { requestId, voiceId: voice_id, latency })
-        return new NextResponse(new Uint8Array(mp3), {
-          headers: {
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': String(mp3.length),
-            'X-Generation-Latency': latency.toString(),
-            'X-Voice-Type': 'edge-tts',
-            'X-Request-Id': requestId,
-          },
-        })
-      } catch (edgeErr) {
-        const msg = edgeErr instanceof Error ? edgeErr.message : String(edgeErr)
-        logger.error('Edge TTS failed', edgeErr, { requestId })
-        return NextResponse.json({ error: 'Edge TTS failed', details: msg, requestId }, { status: 502, headers: { 'X-Request-Id': requestId } })
-      }
+    const cacheKey = buildTtsCacheKey({
+      text: text.trim(),
+      voice_id,
+      language,
+      speed: finalSpeed,
+      pitch: finalPitch,
+      volume: finalVolume,
+      reverb: finalReverb,
+      echo: finalEcho,
+      noise_reduction: finalNoiseReduction,
+      special_effect: finalSpecialEffect,
+    })
+    const cached = getCached(cacheKey)
+    if (cached) {
+      const latency = Date.now() - startTime
+      recordMetric({
+        endpoint: '/api/tts',
+        method: 'POST',
+        statusCode: 200,
+        latency,
+        timestamp: new Date().toISOString(),
+        requestId,
+        voiceType: voice_id.startsWith('clone_') ? 'cloned' : 'standard',
+      })
+      return new NextResponse(cached.buffer, {
+        headers: {
+          'Content-Type': cached.contentType,
+          'Content-Length': String(cached.buffer.byteLength),
+          'X-Generation-Latency': latency.toString(),
+          'X-Voice-Type': 'cached',
+          'X-Request-Id': requestId,
+        },
+      })
     }
 
+    console.log(`🎤 TTS: voice=${voice_id}, speed=${finalSpeed}, pitch=${finalPitch}, volume=${finalVolume}`)
+    
     // xAI voices (Eve, Ara, Rex, Sal, Leo): use Grok Voice Agent — requires XAI_API_KEY
     if (isValidXaiVoice(voice_id)) {
       const apiKey = process.env.XAI_API_KEY
@@ -181,6 +194,8 @@ export async function POST(request: NextRequest) {
         const pcm = await synthesizeXai({ text: text.trim(), voiceId: voice_id, apiKey })
         const wav = pcmToWav(pcm)
         const latency = Date.now() - startTime
+        const buffer = new Uint8Array(wav).buffer
+        setCached(cacheKey, buffer, 'audio/wav')
         recordMetric({
           endpoint: '/api/tts',
           method: 'POST',
@@ -265,6 +280,7 @@ export async function POST(request: NextRequest) {
       const audioBuffer = await xttsResponse.arrayBuffer()
       const latency = Date.now() - startTime
       const contentType = xttsResponse.headers.get('content-type') || 'audio/mpeg'
+      setCached(cacheKey, audioBuffer, contentType)
 
       recordMetric({
         endpoint: '/api/tts',
@@ -298,6 +314,8 @@ export async function POST(request: NextRequest) {
       const errMsg = sidecarError instanceof Error ? sidecarError.message : String(sidecarError)
       const isUnreachable =
         /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|connection refused/i.test(errMsg)
+
+      // Self-contained: no external fallback. Return 503 when XTTS is unreachable.
       recordMetric({
         endpoint: '/api/tts',
         method: 'POST',
@@ -316,7 +334,9 @@ export async function POST(request: NextRequest) {
           requestId,
           ...(isUnreachable && config.isRailway
             ? {
-                hint: 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL. See DEPLOY.md.',
+                hint: voice_id.startsWith('clone_')
+                  ? 'Cloning requires XTTS. Deploy the XTTS service and set XTTS_URL, or check GET /api/health for capabilities.'
+                  : 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL. See RAILWAY_DEPLOY.md.',
               }
             : {}),
         },

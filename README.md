@@ -1,6 +1,6 @@
 # 🎙️ AI Voice-Over Generator
 
-A production-ready full-stack web application that converts text to natural-sounding speech using ElevenLabs API. Built with Node.js, Express, and modern vanilla JavaScript with enterprise-grade security and error handling.
+A production-ready full-stack web application that converts text to natural-sounding speech using ElevenLabs API. Built with Node.js, Express, and modern vanilla JavaScript with enterprise-grade security and error handling. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen)](https://nodejs.org)

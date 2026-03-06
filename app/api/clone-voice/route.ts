@@ -45,6 +45,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (config.isRailway && !config.xttsConfigured) {
+      return NextResponse.json(
+        {
+          error: 'Voice cloning is not available',
+          hint: 'Deploy the XTTS service and set XTTS_URL to enable cloning.',
+        },
+        { status: 503, headers: corsHeaders }
+      )
+    }
+
     // Get form data from request
     const formData = await request.formData()
     

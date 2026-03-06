@@ -37,6 +37,7 @@ export function Dashboard() {
   const [text, setText] = useState('')
   const [selectedVoice, setSelectedVoice] = useState<string>('')
   const [voices, setVoices] = useState<Voice[]>([])
+  const [voicesDegraded, setVoicesDegraded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
@@ -117,12 +118,17 @@ export function Dashboard() {
   
   // Service health state
   const [serviceHealth, setServiceHealth] = useState<'checking' | 'healthy' | 'degraded' | 'offline'>('checking')
+  const [capabilities, setCapabilities] = useState<{ tts_default?: boolean; tts_xai?: boolean; cloning?: boolean } | null>(null)
   
-  // Check service health
+  // Check service health (with timeout so UI never hangs)
   useEffect(() => {
+    const HEALTH_TIMEOUT_MS = 8000
     const checkHealth = async () => {
       try {
-        const res = await fetch('/api/health')
+        const controller = new AbortController()
+        const id = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
+        const res = await fetch('/api/health', { signal: controller.signal })
+        clearTimeout(id)
         const data = await res.json()
         if (data.status === 'healthy' || data.status === 'ok') {
           setServiceHealth('healthy')
@@ -131,6 +137,7 @@ export function Dashboard() {
         } else {
           setServiceHealth('offline')
         }
+        if (data.capabilities) setCapabilities(data.capabilities)
       } catch {
         setServiceHealth('offline')
       }
@@ -242,15 +249,28 @@ export function Dashboard() {
   }
 
   async function loadVoices() {
+    const VOICES_TIMEOUT_MS = 8000
     try {
-      const response = await fetch('/api/voices')
+      const controller = new AbortController()
+      const id = setTimeout(() => controller.abort(), VOICES_TIMEOUT_MS)
+      const response = await fetch('/api/voices', { signal: controller.signal })
+      clearTimeout(id)
       const data = await response.json()
       setVoices(data.voices || [])
+      setVoicesDegraded(!!data.degraded)
       if (data.voices?.length > 0) {
         setSelectedVoice(data.voices[0].voice_id)
       }
     } catch (err) {
       console.error('Failed to load voices:', err)
+      setVoicesDegraded(true)
+      // Fallback so UI is still usable when API is slow or XTTS is down
+      const fallback = [
+        { voice_id: 'default_english', name: 'Guy (US English)', language: 'en', source: 'edge-tts' },
+        { voice_id: 'female_english', name: 'Jenny (US English)', language: 'en', source: 'edge-tts' },
+      ]
+      setVoices(fallback)
+      setSelectedVoice('default_english')
     }
   }
 
@@ -669,6 +689,11 @@ export function Dashboard() {
                  serviceHealth === 'healthy' ? 'Online' :
                  serviceHealth === 'degraded' ? 'Degraded' : 'Offline'}
               </div>
+              {capabilities && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  Standard {capabilities.tts_default ? '✓' : '—'} · xAI {capabilities.tts_xai ? '✓' : '—'} · Cloning {capabilities.cloning ? '✓' : '—'}
+                </span>
+              )}
               <span className="px-3 py-1 text-xs font-mono rounded-full bg-primary/20 text-primary border border-primary/30">
                 v2.2
               </span>
@@ -752,9 +777,35 @@ export function Dashboard() {
                   </button>
                 ))}
               </div>
+              {/* Creator workflow presets: one-click speed/pitch/effects for pro-reading and short-form */}
+              <div className="flex flex-wrap gap-2">
+                <span className="text-xs text-muted-foreground mr-2 self-center">Workflow:</span>
+                {[
+                  { label: 'Pro Reading', speed: 0.95, pitch: 0, effect: 'none' },
+                  { label: 'TikTok Hook', speed: 1.15, pitch: 0, effect: 'none' },
+                  { label: 'TikTok Story', speed: 1.05, pitch: 0, effect: 'none' },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    onClick={() => {
+                      setSpeed([p.speed])
+                      setPitch([p.pitch])
+                      setSpecialEffect(p.effect)
+                    }}
+                    className="px-2.5 py-1 text-xs rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               
               {/* Voice Selection */}
               <div>
+                {voicesDegraded && (
+                  <p className="text-amber-600 dark:text-amber-400 text-sm mb-2" role="status">
+                    Cloned voices temporarily unavailable. Standard voices are still available.
+                  </p>
+                )}
                 <label className="text-sm font-medium mb-2 block">Select Voice</label>
                 <div className="flex gap-2">
                   <select
