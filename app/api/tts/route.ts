@@ -228,9 +228,10 @@ export async function POST(request: NextRequest) {
     // Edge TTS voices (default_english, female_english, etc.): use Microsoft Edge TTS — no API key required
     if (isEdgeVoice(voice_id)) {
       try {
-        const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
+        const mp3Buffer = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
+        const mp3 = new Uint8Array(mp3Buffer)
         const latency = Date.now() - startTime
-        setCached(cacheKey, mp3.buffer.slice(mp3.byteOffset, mp3.byteOffset + mp3.byteLength) as ArrayBuffer, 'audio/mpeg')
+        setCached(cacheKey, mp3.buffer as ArrayBuffer, 'audio/mpeg')
         recordMetric({
           endpoint: '/api/tts',
           method: 'POST',
