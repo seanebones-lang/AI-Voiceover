@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
-import { getXaiVoices } from '@/lib/xaiTtsService'
+
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -15,19 +15,6 @@ interface Voice {
   source: string
   category: string
   description?: string
-}
-
-// xAI voices (Eve, Ara, Rex, Sal, Leo) — work without XTTS when XAI_API_KEY is set
-function getXaiVoicesAsList(): Voice[] {
-  return getXaiVoices().map((v) => ({
-    voice_id: v.voice_id,
-    name: v.name,
-    language: 'en',
-    gender: v.gender,
-    source: v.source,
-    category: v.category,
-    description: v.description,
-  }))
 }
 
 // Default voices using edge-tts (Microsoft TTS) - Expanded with high-quality voices
@@ -331,20 +318,17 @@ async function getClonedVoices(): Promise<{ voices: Voice[]; error?: string }> {
 }
 
 export async function GET() {
-  const xaiVoices = getXaiVoicesAsList()
   const { voices: clonedVoices, error: clonedError } = await getClonedVoices()
 
-  // Only include DEFAULT_VOICES (edge-tts) when XTTS is available to synthesize them.
-  // On Railway without an XTTS sidecar, these voices can't be generated.
+  // Only include DEFAULT_VOICES when XTTS is available to synthesize them.
   const xttsAvailable = !clonedError || clonedVoices.length > 0
   const standardVoices = xttsAvailable ? DEFAULT_VOICES : []
 
-  const allVoices = [...standardVoices, ...xaiVoices, ...clonedVoices]
+  const allVoices = [...standardVoices, ...clonedVoices]
 
   return NextResponse.json({
     voices: allVoices,
     default_count: standardVoices.length,
-    xai_count: xaiVoices.length,
     cloned_count: clonedVoices.length,
     ...(clonedError
       ? { degraded: true, degraded_reason: clonedError }
