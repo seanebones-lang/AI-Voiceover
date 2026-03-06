@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
       try {
         const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
         const latency = Date.now() - startTime
-        setCached(cacheKey, mp3.buffer.slice(mp3.byteOffset, mp3.byteOffset + mp3.byteLength), 'audio/mpeg')
+        setCached(cacheKey, mp3.buffer.slice(mp3.byteOffset, mp3.byteOffset + mp3.byteLength) as ArrayBuffer, 'audio/mpeg')
         recordMetric({
           endpoint: '/api/tts',
           method: 'POST',
