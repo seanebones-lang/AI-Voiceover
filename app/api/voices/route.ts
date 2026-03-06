@@ -319,16 +319,11 @@ async function getClonedVoices(): Promise<{ voices: Voice[]; error?: string }> {
 
 export async function GET() {
   const { voices: clonedVoices, error: clonedError } = await getClonedVoices()
-
-  // Only include DEFAULT_VOICES when XTTS is available to synthesize them.
-  const xttsAvailable = !clonedError || clonedVoices.length > 0
-  const standardVoices = xttsAvailable ? DEFAULT_VOICES : []
-
-  const allVoices = [...standardVoices, ...clonedVoices]
+  const allVoices = [...DEFAULT_VOICES, ...clonedVoices]
 
   return NextResponse.json({
     voices: allVoices,
-    default_count: standardVoices.length,
+    default_count: DEFAULT_VOICES.length,
     cloned_count: clonedVoices.length,
     ...(clonedError
       ? { degraded: true, degraded_reason: clonedError }
