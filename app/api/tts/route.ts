@@ -4,7 +4,6 @@ import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
-import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeXai, pcmToWav, isValidXaiVoice } from '@/lib/xaiTtsService'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
 
@@ -220,42 +219,6 @@ export async function POST(request: NextRequest) {
         logger.error('xAI TTS failed', xaiErr, { requestId })
         return NextResponse.json(
           { error: 'xAI TTS failed', details: msg, requestId },
-          { status: 502, headers: { 'X-Request-Id': requestId } }
-        )
-      }
-    }
-
-    // Edge TTS voices (default_english, female_english, etc.): use Microsoft Edge TTS — no API key required
-    if (isEdgeVoice(voice_id)) {
-      try {
-        const mp3Buffer = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
-        const mp3 = new Uint8Array(mp3Buffer)
-        const latency = Date.now() - startTime
-        setCached(cacheKey, mp3.buffer as ArrayBuffer, 'audio/mpeg')
-        recordMetric({
-          endpoint: '/api/tts',
-          method: 'POST',
-          statusCode: 200,
-          latency,
-          timestamp: new Date().toISOString(),
-          requestId,
-          voiceType: 'edge-tts',
-        })
-        logger.info('Edge TTS generated successfully', { requestId, voiceId: voice_id, latency })
-        return new NextResponse(mp3, {
-          headers: {
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': String(mp3.byteLength),
-            'X-Generation-Latency': latency.toString(),
-            'X-Voice-Type': 'edge',
-            'X-Request-Id': requestId,
-          },
-        })
-      } catch (edgeErr) {
-        const msg = edgeErr instanceof Error ? edgeErr.message : String(edgeErr)
-        logger.error('Edge TTS failed', edgeErr, { requestId })
-        return NextResponse.json(
-          { error: 'Edge TTS failed', details: msg, requestId },
           { status: 502, headers: { 'X-Request-Id': requestId } }
         )
       }
