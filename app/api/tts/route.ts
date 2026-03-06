@@ -5,6 +5,7 @@ import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
+import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 
 export const dynamic = 'force-dynamic'
 
@@ -173,7 +174,31 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🎤 TTS: voice=${voice_id}, speed=${finalSpeed}, pitch=${finalPitch}, volume=${finalVolume}`)
-    
+
+    // Route DEFAULT_VOICES (edge-tts source) to Edge TTS
+    if (isEdgeVoice(voice_id)) {
+      try {
+        const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
+        const latency = Date.now() - startTime
+        const buf = new Uint8Array(mp3).buffer as ArrayBuffer
+        setCached(cacheKey, buf, 'audio/mpeg')
+        recordMetric({ endpoint: '/api/tts', method: 'POST', statusCode: 200, latency, timestamp: new Date().toISOString(), requestId, voiceType: 'standard' })
+        return new NextResponse(new Uint8Array(mp3), {
+          headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': mp3.byteLength.toString(),
+            'X-Generation-Latency': latency.toString(),
+            'X-Voice-Type': 'edge-tts',
+            'X-Request-Id': requestId,
+          },
+        })
+      } catch (edgeErr) {
+        const msg = edgeErr instanceof Error ? edgeErr.message : String(edgeErr)
+        logger.error('Edge TTS failed', edgeErr, { requestId })
+        return NextResponse.json({ error: 'Edge TTS failed', details: msg, requestId }, { status: 503, headers: { 'X-Request-Id': requestId } })
+      }
+    }
+
     try {
       const xttsService = config.services.xtts
       if (voice_id.startsWith('clone_')) {

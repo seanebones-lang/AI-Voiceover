@@ -4,7 +4,30 @@
  * Voices match the en-US-GuyNeural, en-GB-SoniaNeural, etc. family.
  */
 import WebSocket from 'ws'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
+
+const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const CHROMIUM_FULL_VERSION = '143.0.3650.75'
+const SEC_MS_GEC_VERSION = `1-${CHROMIUM_FULL_VERSION}`
+// Seconds between Windows epoch (1601-01-01) and Unix epoch (1970-01-01)
+const WIN_EPOCH_OFFSET = 11644473600
+
+function generateSecMsGec(): string {
+  const unixSec = Date.now() / 1000
+  const winSec = unixSec + WIN_EPOCH_OFFSET
+  // Round down to nearest 5-minute window (300 seconds)
+  const rounded = winSec - (winSec % 300)
+  // Convert to 100-nanosecond intervals
+  const ticks = Math.floor(rounded * 1e7)
+  return createHash('sha256')
+    .update(`${ticks}${TRUSTED_CLIENT_TOKEN}`, 'ascii')
+    .digest('hex')
+    .toUpperCase()
+}
+
+function generateMuid(): string {
+  return randomUUID().replace(/-/g, '').toUpperCase()
+}
 
 // Map internal voice IDs → Microsoft Neural voice names
 export const EDGE_VOICE_MAP: Record<string, string> = {
@@ -80,9 +103,11 @@ export function synthesizeEdge(params: {
   const connectionId = randomUUID().replace(/-/g, '')
   const requestId = randomUUID().replace(/-/g, '')
 
+  const secMsGec = generateSecMsGec()
   const WS_URL =
     `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
-    `?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connectionId}`
+    `?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&ConnectionId=${connectionId}` +
+    `&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=${SEC_MS_GEC_VERSION}`
 
   return new Promise((resolve, reject) => {
     const audioChunks: Buffer[] = []
@@ -96,9 +121,14 @@ export function synthesizeEdge(params: {
     const ws = new WebSocket(WS_URL, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+          `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ` +
+          `(KHTML, like Gecko) Chrome/${CHROMIUM_FULL_VERSION} Safari/537.36 Edg/${CHROMIUM_FULL_VERSION}`,
         Origin: 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        Cookie: `muid=${generateMuid()};`,
+        Pragma: 'no-cache',
+        'Cache-Control': 'no-cache',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
     })
 
