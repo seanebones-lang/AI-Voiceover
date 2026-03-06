@@ -74,37 +74,37 @@ export function synthesizeXai(params: {
 
     let finished = false
     ws.on('open', () => {
-      // Configure session: strong TTS-only instructions force verbatim reading
+      // Configure session for pure TTS
       ws.send(
         JSON.stringify({
           type: 'session.update',
           session: {
             voice: voiceId,
-            instructions:
-              'You are a text-to-speech engine. Read aloud exactly and only the text the user sends, verbatim, word for word. Do not paraphrase, summarize, greet, respond conversationally, or add anything. Speak only the exact words provided.',
+            instructions: 'You are a text-to-speech engine. Only produce audio output.',
             turn_detection: null,
             modalities: ['audio'],
           },
         })
       )
-      // Send text as user input — model will speak it per the TTS instructions above
+      // Send text as an ASSISTANT message — this tells the model the assistant
+      // has already decided to say these words, so it renders audio for them
+      // verbatim without interpreting or responding to the content.
       ws.send(
         JSON.stringify({
           type: 'conversation.item.create',
           item: {
             type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: text.trim() }],
+            role: 'assistant',
+            content: [{ type: 'text', text: text.trim() }],
           },
         })
       )
-      // Request audio-only response
+      // Request audio rendering of the assistant message
       ws.send(
         JSON.stringify({
           type: 'response.create',
           response: {
             modalities: ['audio'],
-            instructions: 'Read the text exactly as provided. Do not add anything.',
           },
         })
       )
