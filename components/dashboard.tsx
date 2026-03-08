@@ -41,7 +41,9 @@ export function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioError, setAudioError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [speed, setSpeed] = useState([1.0])
   const [pitch, setPitch] = useState([0])
   const [volume, setVolume] = useState([1.0])
@@ -293,6 +295,7 @@ export function Dashboard() {
     setLoading(true)
     setAudioUrl(null)
     setAudioBlob(null)
+    setAudioError(null)
     setError(null)
 
     try {
@@ -318,7 +321,16 @@ export function Dashboard() {
         throw new Error(errorData.error || errorData.details?.message || 'Generation failed')
       }
 
-      const blob = await response.blob()
+      const contentType = response.headers.get('content-type') || 'audio/mpeg'
+      const rawBlob = await response.blob()
+
+      // Re-wrap blob with explicit MIME type to ensure browser can decode it
+      const blob = new Blob([rawBlob], { type: contentType })
+
+      if (blob.size === 0) {
+        throw new Error('Server returned empty audio data')
+      }
+
       const url = URL.createObjectURL(blob)
       setAudioBlob(blob)
       setAudioUrl(url)
@@ -1070,8 +1082,7 @@ export function Dashboard() {
 
             {/* Audio Player Sidebar */}
         <div className="space-y-6">
-          {audioUrl && (
-                <Card className="border-primary/30 bg-primary/5">
+              <Card className={audioUrl ? "border-primary/30 bg-primary/5" : ""}>
               <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Volume2 className="h-5 w-5" />
@@ -1079,15 +1090,43 @@ export function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                    <audio key={audioUrl} src={audioUrl} controls autoPlay className="w-full" />
+                {loading ? (
+                  <div className="flex items-center justify-center py-6 text-muted-foreground">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-primary mr-2" />
+                    Generating audio...
+                  </div>
+                ) : audioUrl ? (
+                  <>
+                    <audio
+                      ref={audioRef}
+                      key={audioUrl}
+                      src={audioUrl}
+                      controls
+                      autoPlay
+                      className="w-full"
+                      onError={() => {
+                        setAudioError('Browser could not play this audio. Try downloading instead.')
+                      }}
+                      onLoadedData={() => setAudioError(null)}
+                    />
+                    {audioError && (
+                      <p className="text-xs text-yellow-500">{audioError}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    Enter text and click generate to create audio
+                  </div>
+                )}
                 <div className="flex gap-2">
-                      <Button onClick={downloadAudio} variant="outline" className="flex-1">
+                      <Button onClick={downloadAudio} variant="outline" className="flex-1" disabled={!audioBlob}>
                         <Download className="h-5 w-5" />
                         <span className="ml-2">Download</span>
                   </Button>
                   <Button
                     variant="outline"
                     className="flex-1"
+                        disabled={!audioBlob}
                         onClick={async () => {
                           if (audioBlob) {
                             try {
@@ -1114,7 +1153,6 @@ export function Dashboard() {
                 </div>
               </CardContent>
             </Card>
-          )}
 
               {/* Stats Card */}
               <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
