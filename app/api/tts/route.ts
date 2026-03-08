@@ -188,7 +188,17 @@ export async function POST(request: NextRequest) {
         logger.warn('Edge TTS WebSocket failed, trying edge-tts-universal fallback', { requestId, error: wsErr instanceof Error ? wsErr.message : String(wsErr) })
       }
 
-      if (!mp3) {
+      // Validate WebSocket result is actually audio (MP3 starts with ID3 or 0xFF sync)
+      if (mp3 && mp3.length > 0) {
+        const isValidMp3 = (mp3[0] === 0x49 && mp3[1] === 0x44 && mp3[2] === 0x33) || // ID3
+                           (mp3[0] === 0xFF && (mp3[1] & 0xE0) === 0xE0)                // MPEG sync
+        if (!isValidMp3) {
+          logger.warn('Edge TTS WebSocket returned non-MP3 data', { requestId, firstBytes: `${mp3[0].toString(16)} ${mp3[1].toString(16)} ${mp3[2]?.toString(16)}`, length: mp3.length })
+          mp3 = null
+        }
+      }
+
+      if (!mp3 || mp3.length === 0) {
         try {
           edgeMethod = 'universal'
           mp3 = await synthesizeEdgeFallback(text.trim(), voice_id, { speed: finalSpeed, pitch: finalPitch, volume: finalVolume })
@@ -199,11 +209,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      if (!mp3 || mp3.length === 0) {
+        return NextResponse.json({ error: 'Both Edge TTS methods returned empty audio', requestId }, { status: 503, headers: { 'X-Request-Id': requestId } })
+      }
+
       const latency = Date.now() - startTime
-      const buf = new Uint8Array(mp3).buffer as ArrayBuffer
-      setCached(cacheKey, buf, 'audio/mpeg')
+      // Safely convert Buffer to ArrayBuffer (Buffer may have byteOffset != 0)
+      const audioBytes = new Uint8Array(mp3.buffer, mp3.byteOffset, mp3.byteLength)
+      setCached(cacheKey, audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.byteLength), 'audio/mpeg')
       recordMetric({ endpoint: '/api/tts', method: 'POST', statusCode: 200, latency, timestamp: new Date().toISOString(), requestId, voiceType: 'standard' })
-      return new NextResponse(new Uint8Array(mp3), {
+      logger.info('Edge TTS audio generated', { requestId, method: edgeMethod, audioSize: mp3.length, latency })
+      return new NextResponse(audioBytes, {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Content-Length': mp3.byteLength.toString(),

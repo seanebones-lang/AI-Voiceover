@@ -237,12 +237,17 @@ export function Dashboard() {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || `Preview failed (${response.status})`)
       }
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
+      const contentType = response.headers.get('content-type') || 'audio/mpeg'
+      const arrayBuffer = await response.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuffer)
+      let binary = ''
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      const dataUrl = `data:${contentType};base64,${btoa(binary)}`
+      const audio = new Audio(dataUrl)
       previewAudioRef.current = audio
       audio.play()
-      audio.onended = () => URL.revokeObjectURL(url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed')
     } finally {
@@ -322,18 +327,32 @@ export function Dashboard() {
       }
 
       const contentType = response.headers.get('content-type') || 'audio/mpeg'
-      const rawBlob = await response.blob()
 
-      // Re-wrap blob with explicit MIME type to ensure browser can decode it
-      const blob = new Blob([rawBlob], { type: contentType })
+      // If server returned JSON error with 200 status, handle it
+      if (contentType.includes('application/json')) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Server returned error instead of audio')
+      }
 
-      if (blob.size === 0) {
+      const arrayBuffer = await response.arrayBuffer()
+
+      if (arrayBuffer.byteLength === 0) {
         throw new Error('Server returned empty audio data')
       }
 
-      const url = URL.createObjectURL(blob)
+      // Create blob with explicit MIME type
+      const blob = new Blob([arrayBuffer], { type: contentType })
+
+      // Use base64 data URL for maximum browser compatibility with audio elements
+      const bytes = new Uint8Array(arrayBuffer)
+      let binary = ''
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      const dataUrl = `data:${contentType};base64,${btoa(binary)}`
+
       setAudioBlob(blob)
-      setAudioUrl(url)
+      setAudioUrl(dataUrl)
       
       // Add to history
       const voice = voices.find(v => v.voice_id === selectedVoice)
@@ -342,7 +361,7 @@ export function Dashboard() {
         text: text.trim(),
         voiceId: selectedVoice,
         voiceName: voice?.name || selectedVoice,
-        audioUrl: url,
+        audioUrl: dataUrl,
         timestamp: new Date()
       }, ...prev].slice(0, 20)) // Keep last 20
       
