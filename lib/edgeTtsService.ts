@@ -7,7 +7,7 @@ import WebSocket from 'ws'
 import { randomUUID, createHash } from 'crypto'
 
 const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
-const CHROMIUM_FULL_VERSION = '143.0.3650.75'
+const CHROMIUM_FULL_VERSION = '146.0.6785.90'
 const SEC_MS_GEC_VERSION = `1-${CHROMIUM_FULL_VERSION}`
 // Seconds between Windows epoch (1601-01-01) and Unix epoch (1970-01-01)
 const WIN_EPOCH_OFFSET = 11644473600
