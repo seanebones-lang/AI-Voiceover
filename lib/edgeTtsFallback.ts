@@ -70,6 +70,27 @@ export async function synthesizeEdgeTts(
     volume: volume !== 1 ? `${volume * 100}%` : undefined,
   })
   const result = await tts.synthesize()
-  const arrayBuffer = await result.audio.arrayBuffer()
-  return Buffer.from(arrayBuffer)
+
+  // Handle different possible return types from edge-tts-universal
+  let buffer: Buffer
+  if (result.audio instanceof Buffer) {
+    buffer = result.audio
+  } else if (result.audio instanceof ArrayBuffer) {
+    buffer = Buffer.from(result.audio)
+  } else if (result.audio && typeof result.audio.arrayBuffer === 'function') {
+    const arrayBuffer = await result.audio.arrayBuffer()
+    buffer = Buffer.from(arrayBuffer)
+  } else if (result.audio && typeof result.audio === 'object' && 'buffer' in result.audio) {
+    // Handle Uint8Array or typed array
+    buffer = Buffer.from((result.audio as { buffer: ArrayBuffer }).buffer)
+  } else {
+    throw new Error(`Unexpected audio type from edge-tts-universal: ${typeof result.audio}`)
+  }
+
+  if (buffer.length === 0) {
+    throw new Error('Edge TTS returned empty audio buffer')
+  }
+
+  console.log(`✅ Edge TTS fallback: ${buffer.length} bytes, voice=${edgeVoice}`)
+  return buffer
 }
