@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
+import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
 import { config, withRetry } from '@/lib/config'
 import { ttsRateLimiter } from '@/lib/rate-limit'
 import { extractClientIP } from '@/lib/validation'
@@ -43,24 +44,38 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Route standard (edge-tts) voices to Edge TTS
+  // Route standard (edge-tts) voices to Edge TTS with fallback
   if (!voice_id || isEdgeVoice(voice_id)) {
+    const resolvedVoice = voice_id || 'default_english'
+    let mp3: Buffer | null = null
+    let edgeMethod = 'websocket'
+
     try {
-      const mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id || 'default_english', speed, pitch })
-      const buf = new Uint8Array(mp3).buffer as ArrayBuffer
-      setCached(cacheKey, buf, 'audio/mpeg')
-      return new NextResponse(new Uint8Array(mp3), {
-        headers: {
-          'Content-Type': 'audio/mpeg',
-          'Content-Length': mp3.byteLength.toString(),
-          'X-Voice-Type': 'edge-tts',
-          'X-Request-Id': requestId,
-        },
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return NextResponse.json({ error: 'Edge TTS failed', details: msg }, { status: 503 })
+      mp3 = await synthesizeEdge({ text: text.trim(), voiceId: resolvedVoice, speed, pitch })
+    } catch {
+      // WebSocket method failed, try fallback
     }
+
+    if (!mp3) {
+      try {
+        edgeMethod = 'universal'
+        mp3 = await synthesizeEdgeFallback(text.trim(), resolvedVoice, { speed, pitch })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: 'Edge TTS failed', details: msg }, { status: 503 })
+      }
+    }
+
+    const buf = new Uint8Array(mp3).buffer as ArrayBuffer
+    setCached(cacheKey, buf, 'audio/mpeg')
+    return new NextResponse(new Uint8Array(mp3), {
+      headers: {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': mp3.byteLength.toString(),
+        'X-Voice-Type': `edge-tts-${edgeMethod}`,
+        'X-Request-Id': requestId,
+      },
+    })
   }
 
   // Cloned voices → XTTS sidecar
