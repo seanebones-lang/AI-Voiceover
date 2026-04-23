@@ -23,8 +23,7 @@ describe('Clone flow integration', () => {
         json: async () => ({ voices: [] }),
       })
 
-      const req = new NextRequest('http://localhost/api/voices')
-      const res = await getVoices(req)
+      const res = await getVoices()
       const data = await res.json()
 
       expect(res.status).toBe(200)
@@ -44,8 +43,7 @@ describe('Clone flow integration', () => {
         json: async () => ({ voices: cloned }),
       })
 
-      const req = new NextRequest('http://localhost/api/voices')
-      const res = await getVoices(req)
+      const res = await getVoices()
       const data = await res.json()
 
       expect(res.status).toBe(200)

@@ -260,6 +260,7 @@ export function useTTSStream(wsUrl?: string) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [progress, setProgress] = useState({ samples: 0, duration: 0 })
   const [error, setError] = useState<Error | null>(null)
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
     clientRef.current = new TTSStreamClient(wsUrl)
@@ -282,12 +283,14 @@ export function useTTSStream(wsUrl?: string) {
     setError(null)
 
     try {
+      setConnected(clientRef.current.connected)
       const result = await clientRef.current.stream({
         text,
         voiceId,
         emotion: emotion as StreamOptions['emotion'],
         language,
         onStart: () => {
+          setConnected(clientRef.current?.connected ?? false)
           console.log('🎵 Audio playback started')
         },
         onProgress: (samples, duration) => {
@@ -300,14 +303,17 @@ export function useTTSStream(wsUrl?: string) {
         onError: (err) => {
           setError(err)
           setIsStreaming(false)
+          setConnected(clientRef.current?.connected ?? false)
         }
       })
 
+      setConnected(clientRef.current.connected)
       return result
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       setError(error)
       setIsStreaming(false)
+      setConnected(clientRef.current?.connected ?? false)
       return null
     }
   }, [])
@@ -315,6 +321,7 @@ export function useTTSStream(wsUrl?: string) {
   const stop = useCallback(() => {
     clientRef.current?.stop()
     setIsStreaming(false)
+    setConnected(clientRef.current?.connected ?? false)
   }, [])
 
   return {
@@ -323,6 +330,6 @@ export function useTTSStream(wsUrl?: string) {
     isStreaming,
     progress,
     error,
-    connected: clientRef.current?.connected ?? false
+    connected
   }
 }

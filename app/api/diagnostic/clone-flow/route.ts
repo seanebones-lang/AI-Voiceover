@@ -5,28 +5,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { allowDiagnosticRoute } from '@/lib/api-access'
+import { jsonApiError } from '@/lib/api-response'
 import { config, checkServiceHealth } from '@/lib/config'
 import { getCloneTelemetry } from '@/lib/monitoring'
 
 export const dynamic = 'force-dynamic'
 
-function isLocalRequest(request: NextRequest): boolean {
-  // Do not trust X-Forwarded-For: clients can spoof it. When behind a proxy,
-  // require DIAGNOSTIC_SECRET for access.
-  if (request.headers.get('x-forwarded-for')) {
-    return false
-  }
-  const host = request.headers.get('host') || ''
-  return host.startsWith('localhost') || host.startsWith('127.0.0.1')
-}
-
 export async function GET(request: NextRequest) {
-  const secret = process.env.DIAGNOSTIC_SECRET
-  const provided = request.headers.get('x-diagnostic-secret')
-  const allowed = secret ? provided === secret : isLocalRequest(request)
-
-  if (!allowed) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!allowDiagnosticRoute(request)) {
+    return jsonApiError(403, 'Forbidden', { code: 'FORBIDDEN' })
   }
   const steps: { name: string; status: 'ok' | 'degraded' | 'fail'; detail?: string }[] = []
   let overall: 'ok' | 'degraded' | 'fail' = 'ok'
@@ -93,6 +81,7 @@ export async function GET(request: NextRequest) {
         status: 'fail',
         error: error instanceof Error ? error.message : String(error),
         steps,
+        code: 'DIAGNOSTIC_ERROR',
       },
       { status: 500 }
     )

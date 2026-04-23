@@ -29,6 +29,15 @@ function formatTimeAgo(date: Date): string {
   return date.toLocaleDateString()
 }
 
+function safeJsonParse<T>(value: string | null): T | null {
+  if (!value) return null
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
+
 export function Dashboard() {
   // Active tab
   const [activeTab, setActiveTab] = useState<TabType>('tts')
@@ -44,9 +53,26 @@ export function Dashboard() {
   const [audioError, setAudioError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const generateSpeechRef = useRef<() => Promise<void> | void>(() => {})
+  const downloadAudioRef = useRef<() => void>(() => {})
+  const objectUrlsRef = useRef<Set<string>>(new Set())
   const [speed, setSpeed] = useState([1.0])
   const [pitch, setPitch] = useState([0])
   const [volume, setVolume] = useState([1.0])
+
+  function registerObjectUrl(blob: Blob): string {
+    const url = URL.createObjectURL(blob)
+    objectUrlsRef.current.add(url)
+    return url
+  }
+
+  function revokeObjectUrl(url: string | null | undefined) {
+    if (!url) return
+    if (objectUrlsRef.current.has(url)) {
+      URL.revokeObjectURL(url)
+      objectUrlsRef.current.delete(url)
+    }
+  }
 
   // Audio Effects State
   const [reverb, setReverb] = useState([0])
@@ -98,16 +124,27 @@ export function Dashboard() {
   // Load presets from localStorage
   useEffect(() => {
     const presets = localStorage.getItem('nexteleven_presets')
-    if (presets) setSavedPresets(JSON.parse(presets))
+    const parsedPresets = safeJsonParse<typeof savedPresets>(presets)
+    if (parsedPresets && Array.isArray(parsedPresets)) {
+      setSavedPresets(parsedPresets)
+    }
     
     const stats = localStorage.getItem('nexteleven_stats')
-    if (stats) {
-      const { gens, chars } = JSON.parse(stats)
-      setTotalGenerations(gens || 0)
-      setTotalCharacters(chars || 0)
+    const parsedStats = safeJsonParse<{ gens?: number; chars?: number }>(stats)
+    if (parsedStats) {
+      setTotalGenerations(parsedStats.gens || 0)
+      setTotalCharacters(parsedStats.chars || 0)
     }
   }, [])
-  
+
+  useEffect(() => {
+    const trackedUrls = objectUrlsRef.current
+    return () => {
+      trackedUrls.forEach((url) => URL.revokeObjectURL(url))
+      trackedUrls.clear()
+    }
+  }, [])
+
   // History State
   const [history, setHistory] = useState<Array<{
     id: string
@@ -155,12 +192,12 @@ export function Dashboard() {
       // Ctrl/Cmd + Enter to generate
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && text.trim() && selectedVoice && !loading) {
         e.preventDefault()
-        generateSpeech()
+        generateSpeechRef.current()
       }
       // Ctrl/Cmd + D to download
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && audioUrl) {
         e.preventDefault()
-        downloadAudio()
+        downloadAudioRef.current()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -178,8 +215,19 @@ export function Dashboard() {
   const [cloneRecommendations, setCloneRecommendations] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
+  const [recordedBlobUrl, setRecordedBlobUrl] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+
+  useEffect(() => {
+    if (!recordedBlob) {
+      setRecordedBlobUrl(null)
+      return
+    }
+    const url = registerObjectUrl(recordedBlob)
+    setRecordedBlobUrl(url)
+    return () => revokeObjectUrl(url)
+  }, [recordedBlob])
 
   // Conversation State
   const [conversationMessages, setConversationMessages] = useState<Array<{
@@ -238,11 +286,11 @@ export function Dashboard() {
         throw new Error(errorData.error || `Preview failed (${response.status})`)
       }
       const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
+      const url = registerObjectUrl(blob)
       const audio = new Audio(url)
       previewAudioRef.current = audio
       audio.play()
-      audio.onended = () => URL.revokeObjectURL(url)
+      audio.onended = () => revokeObjectUrl(url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed')
     } finally {
@@ -293,6 +341,7 @@ export function Dashboard() {
     }
 
     setLoading(true)
+    revokeObjectUrl(audioUrl)
     setAudioUrl(null)
     setAudioBlob(null)
     setAudioError(null)
@@ -331,7 +380,8 @@ export function Dashboard() {
         throw new Error('Server returned empty audio data')
       }
 
-      const url = URL.createObjectURL(blob)
+      revokeObjectUrl(audioUrl)
+      const url = registerObjectUrl(blob)
       setAudioBlob(blob)
       setAudioUrl(url)
       
@@ -365,15 +415,18 @@ export function Dashboard() {
 
   function downloadAudio() {
     if (!audioBlob) return
-    const url = URL.createObjectURL(audioBlob)
+    const url = registerObjectUrl(audioBlob)
     const a = document.createElement('a')
     a.href = url
     a.download = `nexteleven-${Date.now()}.${outputFormat}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    revokeObjectUrl(url)
   }
+
+  generateSpeechRef.current = generateSpeech
+  downloadAudioRef.current = downloadAudio
 
   // ============ Preset Functions ============
   function saveCurrentAsPreset() {
@@ -416,6 +469,7 @@ export function Dashboard() {
   // ============ Batch Generation ============
   async function generateBatch(paragraphs: string[]) {
     setLoading(true)
+    batchAudios.forEach((url) => revokeObjectUrl(url))
     setBatchAudios([])
     setBatchProgress({ current: 0, total: paragraphs.length })
     setError(null)
@@ -448,7 +502,7 @@ export function Dashboard() {
           throw new Error(errorData.error || `Generation failed (${response.status})`)
         }
         const blob = await response.blob()
-        const url = URL.createObjectURL(blob)
+        const url = registerObjectUrl(blob)
         audios.push(url)
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -600,6 +654,7 @@ export function Dashboard() {
 
     setConversationLoading(true)
     setConversationError(null)
+    conversationAudios.forEach((url) => revokeObjectUrl(url))
     setConversationAudios([])
 
     try {
@@ -620,7 +675,7 @@ export function Dashboard() {
         }
 
         const blob = await response.blob()
-        const url = URL.createObjectURL(blob)
+        const url = registerObjectUrl(blob)
         audioUrls.push(url)
       }
 
@@ -653,7 +708,9 @@ export function Dashboard() {
       if (!response.ok) throw new Error('Generation failed')
 
       const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
+      const targetUrl = voiceNum === 1 ? compareAudio1 : compareAudio2
+      revokeObjectUrl(targetUrl)
+      const url = registerObjectUrl(blob)
       
       if (voiceNum === 1) setCompareAudio1(url)
       else setCompareAudio2(url)
@@ -1187,7 +1244,7 @@ export function Dashboard() {
                 <CardContent>
                   {savedPresets.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-2">
-                      No presets saved yet.<br/>Configure your voice settings and click "Save Current"
+                      No presets saved yet.<br/>Configure your voice settings and click &quot;Save Current&quot;
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -1244,11 +1301,12 @@ export function Dashboard() {
                               timestamp: h.timestamp.toISOString()
                             }))
                             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                            const url = URL.createObjectURL(blob)
+                            const url = registerObjectUrl(blob)
                             const a = document.createElement('a')
                             a.href = url
                             a.download = `nexteleven-history-${new Date().toISOString().slice(0,10)}.json`
                             a.click()
+                            revokeObjectUrl(url)
                           }}
                           className="text-xs text-muted-foreground hover:text-primary transition-colors"
                           title="Export history"
@@ -1256,7 +1314,10 @@ export function Dashboard() {
                           Export
                         </button>
                         <button 
-                          onClick={() => setHistory([])}
+                          onClick={() => {
+                            history.forEach((item) => revokeObjectUrl(item.audioUrl))
+                            setHistory([])
+                          }}
                           className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                         >
                           Clear
@@ -1380,9 +1441,9 @@ export function Dashboard() {
                       <p className="text-sm text-muted-foreground">
                         {isRecording ? 'Recording... Click to stop' : 'Click to start recording'}
                       </p>
-                      {recordedBlob && (
+                      {recordedBlob && recordedBlobUrl && (
                         <div className="w-full space-y-2">
-                          <audio src={URL.createObjectURL(recordedBlob)} controls className="w-full" />
+                          <audio src={recordedBlobUrl} controls className="w-full" />
                           <Button onClick={addRecordingToFiles} variant="outline" className="w-full">
                             <Plus className="h-5 w-5" />
                             <span className="ml-2">Add to Samples</span>
@@ -1534,7 +1595,7 @@ export function Dashboard() {
                       return (
                         <div key={index} className="p-3 rounded-lg bg-card border">
                           <p className="text-sm text-muted-foreground mb-2">
-                            {msg?.speaker || `Speaker ${index + 1}`}: "{msg?.text?.substring(0, 50)}..."
+                            {msg?.speaker || `Speaker ${index + 1}`}: &quot;{msg?.text?.substring(0, 50)}...&quot;
                           </p>
                           <audio src={url} controls className="w-full" />
                         </div>

@@ -1,37 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
+import { jsonApiError } from '@/lib/api-response'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
 import { config, withRetry } from '@/lib/config'
 import { ttsRateLimiter } from '@/lib/rate-limit'
-import { extractClientIP } from '@/lib/validation'
+import { extractClientIP, validateTTSRequest } from '@/lib/validation'
 import { generateRequestId } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
+  const denied = denyUnlessMutableApiAuthorized(request)
+  if (denied) return denied
+
   const requestId = generateRequestId()
   const ip = extractClientIP(request)
 
   const { success } = await ttsRateLimiter.limit(ip)
   if (!success) {
-    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+    return jsonApiError(429, 'Rate limit exceeded', {
+      code: 'RATE_LIMITED',
+      requestId,
+    })
   }
 
   const body = await request.json().catch(() => null)
-  if (!body?.text?.trim()) {
-    return NextResponse.json({ error: 'text is required' }, { status: 400 })
+  if (!body) {
+    return jsonApiError(400, 'Invalid JSON in request body', {
+      code: 'INVALID_JSON',
+      requestId,
+    })
+  }
+
+  const validation = validateTTSRequest(body)
+  if (!validation.success || !validation.data) {
+    return jsonApiError(400, validation.error || 'Validation failed', {
+      code: 'VALIDATION_ERROR',
+      requestId,
+    })
   }
 
   const {
     text,
-    voice_id = 'default_english',
+    voice_id,
+    language = 'en',
     speed = 1.0,
     pitch = 0,
+    volume = 1.0,
+    reverb = 0,
+    echo = 0,
+    noise_reduction = false,
+    special_effect = 'none',
     // emotion and effect are accepted but not yet applied at the sidecar level
-  } = body
+  } = validation.data
 
-  const cacheKey = buildTtsCacheKey({ text: text.trim(), voice_id, language: 'en', speed, pitch, volume: 1, reverb: 0, echo: 0, noise_reduction: false, special_effect: 'none' })
+  const cacheKey = buildTtsCacheKey({
+    text: text.trim(),
+    voice_id,
+    language,
+    speed,
+    pitch,
+    volume,
+    reverb,
+    echo,
+    noise_reduction,
+    special_effect,
+  })
   const cached = getCached(cacheKey)
   if (cached) {
     return new NextResponse(cached.buffer, {
@@ -62,7 +98,11 @@ export async function POST(request: NextRequest) {
         mp3 = await synthesizeEdgeFallback(text.trim(), resolvedVoice, { speed, pitch })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        return NextResponse.json({ error: 'Edge TTS failed', details: msg }, { status: 503 })
+        return jsonApiError(503, 'Edge TTS failed', {
+          code: 'EDGE_TTS_FAILED',
+          details: msg,
+          requestId,
+        })
       }
     }
 
@@ -88,7 +128,7 @@ export async function POST(request: NextRequest) {
         const res = await fetch(`${xttsService.url}/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-          body: JSON.stringify({ text: text.trim(), voice_id, language: 'en', speed, pitch }),
+          body: JSON.stringify({ text: text.trim(), voice_id, language, speed, pitch, volume, reverb, echo, noise_reduction, special_effect }),
           signal: controller.signal,
         })
         clearTimeout(t)
@@ -118,6 +158,10 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: 'TTS service unavailable', details: msg }, { status: 503 })
+    return jsonApiError(503, 'TTS service unavailable', {
+      code: 'XTTS_UNAVAILABLE',
+      details: msg,
+      requestId,
+    })
   }
 }

@@ -56,7 +56,7 @@ export const ConsentModal = React.memo(function ConsentModal({ open, onAccept, o
               <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
                 ⚠️ Warning: Unauthorized voice cloning may violate privacy laws,
                 impersonation statutes, and terms of service. Always obtain proper
-                consent before cloning someone's voice.
+                consent before cloning someone&apos;s voice.
               </p>
             </div>
           </div>

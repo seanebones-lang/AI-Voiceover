@@ -44,7 +44,7 @@ export function EmotionControls({ onStyleChange, previewText }: Props) {
         <Slider value={pitch} onValueChange={setPitch} min={0.8} max={1.2} step={0.05} />
       </div>
       {previewText && (
-        <Button onClick={handlePreview} className="w-full">Preview: "{previewText.slice(0, 20)}..."</Button>
+        <Button onClick={handlePreview} className="w-full">Preview: &quot;{previewText.slice(0, 20)}...&quot;</Button>
       )}
     </div>
   );

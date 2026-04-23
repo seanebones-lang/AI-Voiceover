@@ -101,7 +101,8 @@ export function AudioVisualizer({
       }
     }
 
-    animationRef.current = requestAnimationFrame(draw)
+    // eslint-disable-next-line react-hooks/immutability
+    animationRef.current = requestAnimationFrame(() => draw())
   }, [variant, color])
 
   const drawIdle = useCallback(() => {
@@ -131,7 +132,8 @@ export function AudioVisualizer({
     }
 
     if (!isPlaying) {
-      animationRef.current = requestAnimationFrame(drawIdle)
+      // eslint-disable-next-line react-hooks/immutability
+      animationRef.current = requestAnimationFrame(() => drawIdle())
     }
   }, [variant, isPlaying])
 

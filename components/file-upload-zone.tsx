@@ -41,22 +41,18 @@ export const FileUploadZone = React.memo(function FileUploadZone({
   // Load durations for all files
   useEffect(() => {
     const loadDurations = async () => {
+      const selectedFiles = [...files]
+      if (selectedFiles.length === 0) {
+        setFilesWithDuration([])
+        onDurationChange?.(0)
+        return
+      }
       const filesWithDurations: FileWithDuration[] = []
       const loading = new Set<number>()
       
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i]
         const fileWithDuration: FileWithDuration = file
-        
-        // Check if we already have duration
-        const existing = filesWithDuration.find((f, idx) => 
-          f.name === file.name && f.size === file.size && f.duration !== undefined
-        )
-        
-        if (existing && existing.duration !== undefined) {
-          filesWithDurations.push({ ...file, duration: existing.duration, durationWarning: existing.durationWarning })
-          continue
-        }
         
         loading.add(i)
         setLoadingDurations(new Set(loading))
@@ -89,14 +85,7 @@ export const FileUploadZone = React.memo(function FileUploadZone({
       }
     }
     
-    if (files.length > 0) {
-      loadDurations()
-    } else {
-      setFilesWithDuration([])
-      if (onDurationChange) {
-        onDurationChange(0)
-      }
-    }
+    loadDurations()
   }, [files, onDurationChange])
 
   const handleFileSelect = useCallback((selectedFiles: FileList | null) => {
@@ -135,6 +124,10 @@ export const FileUploadZone = React.memo(function FileUploadZone({
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={ariaLabel}
         className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center hover:border-purple-500/50 transition-colors duration-200"
       >
         <Upload className="h-10 w-10 text-slate-500 mx-auto mb-3" aria-hidden="true" />
@@ -151,7 +144,6 @@ export const FileUploadZone = React.memo(function FileUploadZone({
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
           className="hidden"
-          aria-label={ariaLabel}
         />
         <button
           type="button"

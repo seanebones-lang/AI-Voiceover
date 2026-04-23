@@ -1,5 +1,4 @@
 import { POST } from '@/app/api/clone-voice/route'
-import { NextRequest } from 'next/server'
 
 // Mock dependencies
 jest.mock('@/lib/rate-limit', () => ({
@@ -28,6 +27,15 @@ jest.mock('@/lib/config', () => ({
 
 global.fetch = jest.fn()
 
+function createMockRequest(formData: FormData) {
+  return {
+    formData: async () => formData,
+    headers: {
+      get: (_name: string) => null,
+    },
+  } as any
+}
+
 describe('POST /api/clone-voice', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -37,10 +45,7 @@ describe('POST /api/clone-voice', () => {
     const formData = new FormData()
     formData.append('files', new File(['content'], 'test.wav', { type: 'audio/wav' }))
 
-    const request = new NextRequest('http://localhost/api/clone-voice', {
-      method: 'POST',
-      body: formData,
-    })
+    const request = createMockRequest(formData)
 
     const response = await POST(request)
     const data = await response.json()
@@ -53,10 +58,7 @@ describe('POST /api/clone-voice', () => {
     const formData = new FormData()
     formData.append('name', 'Test Voice')
 
-    const request = new NextRequest('http://localhost/api/clone-voice', {
-      method: 'POST',
-      body: formData,
-    })
+    const request = createMockRequest(formData)
 
     const response = await POST(request)
     const data = await response.json()
@@ -76,10 +78,7 @@ describe('POST /api/clone-voice', () => {
       formData.append('files', file)
     }
 
-    const request = new NextRequest('http://localhost/api/clone-voice', {
-      method: 'POST',
-      body: formData,
-    })
+    const request = createMockRequest(formData)
 
     const response = await POST(request)
     const data = await response.json()
@@ -100,10 +99,7 @@ describe('POST /api/clone-voice', () => {
       json: async () => ({ voice_id: 'clone_123' }),
     })
 
-    const request = new NextRequest('http://localhost/api/clone-voice', {
-      method: 'POST',
-      body: formData,
-    })
+    const request = createMockRequest(formData)
 
     const response = await POST(request)
     const data = await response.json()
@@ -125,10 +121,7 @@ describe('POST /api/clone-voice', () => {
     formData.append('name', 'Test Voice')
     formData.append('files', new File(['content'], 'test.wav', { type: 'audio/wav' }))
 
-    const request = new NextRequest('http://localhost/api/clone-voice', {
-      method: 'POST',
-      body: formData,
-    })
+    const request = createMockRequest(formData)
 
     const response = await POST(request)
     const data = await response.json()

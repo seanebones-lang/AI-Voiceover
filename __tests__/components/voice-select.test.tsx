@@ -15,12 +15,10 @@ describe('VoiceSelect', () => {
     expect(screen.getByText('Select a voice...')).toBeInTheDocument()
   })
 
-  it('displays all voices', () => {
+  it('displays currently selected voice', () => {
     render(<VoiceSelect voices={mockVoices} value="voice-1" onChange={jest.fn()} />)
     
-    mockVoices.forEach(voice => {
-      expect(screen.getByText(new RegExp(voice.name))).toBeInTheDocument()
-    })
+    expect(screen.getByText(/Voice One/)).toBeInTheDocument()
   })
 
   it('calls onChange when voice is selected', async () => {

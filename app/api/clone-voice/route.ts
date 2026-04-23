@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
 import { cloneRateLimiter } from '@/lib/rate-limit'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateAudioFile, extractClientIP } from '@/lib/validation'
@@ -14,6 +15,9 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = denyUnlessMutableApiAuthorized(request)
+  if (denied) return denied
+
   const origin = request.headers.get('origin')
   const corsHeaders = getCorsHeaders(origin)
   try {
@@ -124,22 +128,6 @@ export async function POST(request: NextRequest) {
     
     const xttsService = config.services.xtts
 
-    // Check for duplicate voice names
-    try {
-      const existingVoices = await fetch(`${xttsService.url}/voices`).then(r => r.json()).catch(() => ({ voices: [] }))
-      const duplicate = existingVoices.voices?.find((v: { name?: string }) => 
-        v.name?.toLowerCase() === sanitizedName.toLowerCase()
-      )
-      if (duplicate) {
-        return NextResponse.json(
-          { error: `Voice "${sanitizedName}" already exists. Please choose a different name.` },
-          { status: 409, headers: corsHeaders }
-        )
-      }
-    } catch {
-      // If we can't check, continue (non-blocking)
-    }
-    
     // Update formData with sanitized name
     formData.set('name', sanitizedName)
     
@@ -163,10 +151,17 @@ export async function POST(request: NextRequest) {
     }, xttsService.retries, 2000, 2)
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Clone service error' }))
+      const error = await response.json().catch(() => ({ detail: 'Clone service error' })) as { detail?: string; error?: string; message?: string }
+      const upstreamMessage = error.detail || error.error || error.message || 'Voice cloning failed'
+      const duplicateName = response.status === 409 || /already exists|duplicate/i.test(upstreamMessage)
+
       return NextResponse.json(
-        { error: error.detail || 'Voice cloning failed' },
-        { status: response.status, headers: corsHeaders }
+        {
+          error: duplicateName
+            ? `Voice "${sanitizedName}" already exists. Please choose a different name.`
+            : upstreamMessage,
+        },
+        { status: duplicateName ? 409 : response.status, headers: corsHeaders }
       )
     }
 

@@ -42,11 +42,6 @@ export default function PlaygroundPage() {
   // Refs
   const audioRef = useRef<HTMLAudioElement>(null)
   
-  // Load voices on mount
-  useEffect(() => {
-    loadVoices()
-  }, [])
-  
   const loadVoices = useCallback(async () => {
     try {
       // Check cache first (5 minute TTL)
@@ -89,6 +84,11 @@ export default function PlaygroundPage() {
       console.error('Failed to load voices:', e)
     }
   }, [selectedVoice])
+
+  // Load voices on mount
+  useEffect(() => {
+    loadVoices()
+  }, [loadVoices])
   
   const generateSpeech = useCallback(async () => {
     if (!text.trim()) {
@@ -112,6 +112,7 @@ export default function PlaygroundPage() {
           voice_id: selectedVoice || undefined,
           emotion: selectedEmotion,
           speed,
+          pitch,
           effect: selectedEffect !== 'none' ? selectedEffect : undefined,
         }),
       })

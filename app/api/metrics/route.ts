@@ -6,27 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { allowDiagnosticRoute } from '@/lib/api-access'
+import { jsonApiError } from '@/lib/api-response'
 import { getMetricsSummary } from '@/lib/monitoring'
 
 export const dynamic = 'force-dynamic'
 
-function isLocalRequest(request: NextRequest): boolean {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const host = request.headers.get('host') || ''
-  if (forwarded) {
-    const ip = forwarded.split(',')[0]?.trim()
-    return ip === '127.0.0.1' || ip === '::1'
-  }
-  return host.startsWith('localhost') || host.startsWith('127.0.0.1')
-}
-
 export async function GET(request: NextRequest) {
-  const secret = process.env.DIAGNOSTIC_SECRET
-  const provided = request.headers.get('x-diagnostic-secret')
-  const allowed = secret ? provided === secret : isLocalRequest(request)
-
-  if (!allowed) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!allowDiagnosticRoute(request)) {
+    return jsonApiError(403, 'Forbidden', { code: 'FORBIDDEN' })
   }
   try {
     const summary = getMetricsSummary()
@@ -35,10 +23,7 @@ export async function GET(request: NextRequest) {
       metrics: summary,
       timestamp: new Date().toISOString(),
     })
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to retrieve metrics' },
-      { status: 500 }
-    )
+  } catch {
+    return jsonApiError(500, 'Failed to retrieve metrics', { code: 'METRICS_ERROR' })
   }
 }

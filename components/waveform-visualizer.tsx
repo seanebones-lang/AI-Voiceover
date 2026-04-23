@@ -41,7 +41,8 @@ export const WaveformVisualizer = React.memo(function WaveformVisualizer({
     setWaveformData(waveform)
 
     if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) {
-      animationFrameRef.current = requestAnimationFrame(updateWaveform)
+      // eslint-disable-next-line react-hooks/immutability
+      animationFrameRef.current = requestAnimationFrame(() => updateWaveform())
     }
   }, [])
 

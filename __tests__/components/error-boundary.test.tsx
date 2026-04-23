@@ -38,12 +38,12 @@ describe('ErrorBoundary', () => {
     )
     
     expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument()
-    expect(screen.getByText(/Try Again/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
   })
 
   it('shows error details in development', () => {
     const originalEnv = process.env.NODE_ENV
-    process.env.NODE_ENV = 'development'
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'development'
     
     render(
       <ErrorBoundary>
@@ -53,7 +53,7 @@ describe('ErrorBoundary', () => {
     
     expect(screen.getByText(/Error Details/i)).toBeInTheDocument()
     
-    process.env.NODE_ENV = originalEnv
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = originalEnv
   })
 
   it('allows resetting error state', async () => {

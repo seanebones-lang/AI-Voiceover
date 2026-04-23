@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
 import { ttsRateLimiter } from '@/lib/rate-limit'
 import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
@@ -33,6 +34,9 @@ interface TTSRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = denyUnlessMutableApiAuthorized(request)
+  if (denied) return denied
+
   const startTime = Date.now()
   const requestId = request.headers.get('x-request-id') || generateRequestId()
   const ip = extractClientIP(request)

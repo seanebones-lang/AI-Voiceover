@@ -4,6 +4,8 @@
  * March 2026
  */
 
+import { createHash } from 'node:crypto'
+
 const MAX_ENTRIES = 200
 
 interface CacheEntry {
@@ -15,14 +17,9 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const keyOrder: string[] = []
 
-function hash(str: string): string {
-  let h = 0
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i)
-    h = ((h << 5) - h) + c
-    h = h & h
-  }
-  return String(h)
+function hash(payload: string): string {
+  // Collision-resistant hash so distinct requests do not share audio.
+  return createHash('sha256').update(payload).digest('hex')
 }
 
 export function buildTtsCacheKey(params: {
