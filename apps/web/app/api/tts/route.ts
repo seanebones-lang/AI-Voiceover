@@ -367,7 +367,7 @@ export async function POST(request: NextRequest) {
             ? {
                 hint: voice_id.startsWith('clone_')
                   ? 'Cloning requires XTTS. Deploy the XTTS service and set XTTS_URL, or check GET /api/health for capabilities.'
-                  : 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL. See RAILWAY_DEPLOY.md.',
+                  : 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL.',
               }
             : {}),
         },

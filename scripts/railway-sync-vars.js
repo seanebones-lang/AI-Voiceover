@@ -2,8 +2,8 @@
 /**
  * Sync env vars to Railway via GraphQL API.
  * Usage: set RAILWAY_TOKEN, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID, RAILWAY_SERVICE_ID,
- *        then any vars you want to upsert (e.g. NEXTAUTH_SECRET, NEXTAUTH_URL, NODE_ENV).
- * Example: RAILWAY_TOKEN=xxx RAILWAY_PROJECT_ID=xxx RAILWAY_ENVIRONMENT_ID=xxx RAILWAY_SERVICE_ID=xxx NEXTAUTH_SECRET=secret NEXTAUTH_URL=https://app.up.railway.app node scripts/railway-sync-vars.js
+ *        then any vars you want to upsert (e.g. CLERK_SECRET_KEY, DATABASE_URL, NODE_ENV).
+ * Example: RAILWAY_TOKEN=xxx RAILWAY_PROJECT_ID=xxx RAILWAY_ENVIRONMENT_ID=xxx RAILWAY_SERVICE_ID=xxx CLERK_SECRET_KEY=sk_test_xxx DATABASE_URL=postgres://... REDIS_URL=redis://... node scripts/railway-sync-vars.js
  */
 const endpoint = 'https://backboard.railway.com/graphql/v2'
 const token = process.env.RAILWAY_TOKEN
@@ -13,15 +13,19 @@ const serviceId = process.env.RAILWAY_SERVICE_ID
 
 const varKeys = [
   'NODE_ENV',
-  'NEXTAUTH_SECRET',
-  'NEXTAUTH_URL',
-  'UPSTASH_REDIS_REST_URL',
-  'UPSTASH_REDIS_REST_TOKEN',
+  'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
+  'CLERK_SECRET_KEY',
+  'CLERK_WEBHOOK_SIGNING_SECRET',
+  'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'DATABASE_URL',
+  'REDIS_URL',
   'XAI_API_KEY',
   'XTTS_URL',
-  'TTS_V2_URL',
-  'RAG_API_URL',
-  'ALLOWED_ORIGINS',
+  'DIAGNOSTIC_SECRET',
+  'API_ROUTE_SECRET',
+  'ALLOWED_EMAILS',
 ]
 
 if (!token || !projectId || !environmentId || !serviceId) {
