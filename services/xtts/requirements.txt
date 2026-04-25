@@ -8,12 +8,15 @@ aiofiles>=23.2.1
 edge-tts>=6.1.9
 
 # Real voice cloning with XTTS
-TTS>=0.22.0
+# Pin known-compatible versions to avoid runtime import issues
+# like "cannot import name 'BeamSearchScorer' from transformers".
+TTS==0.22.0
+transformers==4.38.2
 
 # PyTorch CPU (smaller than full version)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-torchaudio>=2.0.0
+torch==2.5.1
+torchaudio==2.5.1
 
 # Audio processing
 numpy>=1.24.0

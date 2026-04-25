@@ -1,0 +1,73 @@
+/**
+ * Railway worker: consumes BullMQ `voice` queue jobs created by the web app.
+ * Set REDIS_URL (and DATABASE_URL if jobs persist results to Postgres).
+ */
+import { Worker } from "bullmq"
+import { Redis } from "ioredis"
+import { eq } from "drizzle-orm"
+import { getDb, voiceJobs } from "@ai-voiceover/db"
+
+const redisUrl = process.env.REDIS_URL
+if (!redisUrl) {
+  console.error("[workers] REDIS_URL is required")
+  process.exit(1)
+}
+
+const connection = new Redis(redisUrl, { maxRetriesPerRequest: null })
+
+const worker = new Worker(
+  "voice",
+  async (job) => {
+    const { rowId, type } = job.data as { rowId?: string; type?: string }
+    if (!rowId) {
+      console.warn("[workers] job missing rowId", job.id)
+      return
+    }
+
+    const db = getDb()
+    await db
+      .update(voiceJobs)
+      .set({
+        status: "running",
+        updatedAt: new Date(),
+        bullmqJobId: String(job.id),
+      })
+      .where(eq(voiceJobs.id, rowId))
+
+    try {
+      // Stub: replace with real TTS / clone pipeline (ffmpeg, xtts, etc.)
+      await new Promise((r) => setTimeout(r, 50))
+      const result =
+        type === "clone"
+          ? { ok: true, outputUrl: null as string | null, note: "clone_stub" }
+          : { ok: true, audioBase64: null as string | null, note: "tts_stub" }
+
+      await db
+        .update(voiceJobs)
+        .set({
+          status: "succeeded",
+          result: result as Record<string, unknown>,
+          updatedAt: new Date(),
+        })
+        .where(eq(voiceJobs.id, rowId))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await db
+        .update(voiceJobs)
+        .set({
+          status: "failed",
+          errorMessage: message,
+          updatedAt: new Date(),
+        })
+        .where(eq(voiceJobs.id, rowId))
+      throw err
+    }
+  },
+  { connection }
+)
+
+worker.on("failed", (job, err) => {
+  console.error("[workers] job failed", job?.id, err)
+})
+
+console.log("[workers] voice queue worker started")

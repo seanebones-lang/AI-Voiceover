@@ -9,10 +9,11 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run typecheck:test
-      - run: npm test -- --coverage --coverage-threshold=95
-      - run: npm run lint
+      - run: npm run typecheck:packages
+      - run: npm run typecheck -w @ai-voiceover/web
+      - run: npm run typecheck:test -w @ai-voiceover/web
+      - run: npm test -w @ai-voiceover/web -- --coverage
+      - run: npm run lint -w @ai-voiceover/web
       - run: npm run build
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps

@@ -17,6 +17,7 @@ import json
 import datetime
 import hashlib
 import subprocess
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -66,28 +67,10 @@ try:
     tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
     HAS_XTTS = True
     
-    # Verify XTTS actually works by testing a simple generation
-    logger.info("🔄 Verifying XTTS is working...")
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as test_file:
-            test_path = test_file.name
-        # Quick test generation
-        tts_model.tts_to_file(
-            text="Test",
-            file_path=test_path,
-            speaker_wav=None,  # Use default speaker for test
-            language="en"
-        )
-        if os.path.exists(test_path) and os.path.getsize(test_path) > 1000:
-            os.unlink(test_path)
-            logger.info("✅ XTTS model loaded and verified - REAL voice cloning enabled!")
-        else:
-            raise ValueError("XTTS test generation produced invalid output")
-    except Exception as test_error:
-        logger.error(f"❌ XTTS verification failed: {test_error}")
-        HAS_XTTS = False
-        XTTS_LOAD_ERROR = f"XTTS loaded but verification failed: {test_error}"
-        tts_model = None
+    # XTTS v2 is multi-speaker; a startup synthesis test without speaker_wav
+    # is invalid and would incorrectly disable cloning. Loading the model is
+    # sufficient verification here.
+    logger.info("✅ XTTS model loaded - REAL voice cloning enabled!")
         
 except ImportError as e:
     XTTS_LOAD_ERROR = f"TTS library not installed: {e}"
@@ -111,8 +94,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-VOICES_DIR = Path(os.getenv("VOICES_DIR", "/app/cloned_voices"))
-VOICES_DIR.mkdir(parents=True, exist_ok=True)
+_default_local_voices_dir = Path(__file__).resolve().parent / "cloned_voices"
+VOICES_DIR = Path(os.getenv("VOICES_DIR", str(_default_local_voices_dir)))
+try:
+    VOICES_DIR.mkdir(parents=True, exist_ok=True)
+except OSError as e:
+    logger.warning(f"VOICES_DIR not writable at {VOICES_DIR}: {e}")
+    VOICES_DIR = _default_local_voices_dir
+    VOICES_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Using fallback writable VOICES_DIR: {VOICES_DIR}")
 
 EDGE_VOICES = {
     "default_english": "en-US-GuyNeural",
@@ -315,6 +305,106 @@ async def generate_speech(request: TTSRequest):
         return await generate_edge_speech(text, voice_id, speed, pitch, volume, effects)
 
 
+def split_text_for_xtts(text: str, max_chunk_chars: int = 240) -> List[str]:
+    """
+    Split long text into XTTS-friendly chunks while preserving sentence boundaries.
+    Falls back to word-based chunking for very long sentences.
+    """
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chunk_chars:
+        return [normalized]
+
+    chunks: List[str] = []
+    paragraphs = [p.strip() for p in re.split(r"\n+", normalized) if p.strip()]
+    if not paragraphs:
+        return [normalized]
+
+    def push_sentence(sentence: str, current_parts: List[str]) -> List[str]:
+        current = " ".join(current_parts).strip()
+        if current:
+            chunks.append(current)
+        return [sentence]
+
+    for paragraph in paragraphs:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", paragraph) if s.strip()]
+        if not sentences:
+            continue
+        current_parts: List[str] = []
+        for sentence in sentences:
+            if len(sentence) > max_chunk_chars:
+                if current_parts:
+                    chunks.append(" ".join(current_parts).strip())
+                    current_parts = []
+                words = sentence.split()
+                word_parts: List[str] = []
+                for word in words:
+                    candidate = " ".join([*word_parts, word]).strip()
+                    if len(candidate) <= max_chunk_chars:
+                        word_parts.append(word)
+                    else:
+                        if word_parts:
+                            chunks.append(" ".join(word_parts).strip())
+                        word_parts = [word]
+                if word_parts:
+                    chunks.append(" ".join(word_parts).strip())
+                continue
+
+            candidate = " ".join([*current_parts, sentence]).strip()
+            if not current_parts or len(candidate) <= max_chunk_chars:
+                current_parts.append(sentence)
+            else:
+                current_parts = push_sentence(sentence, current_parts)
+
+        if current_parts:
+            chunks.append(" ".join(current_parts).strip())
+
+    chunks = [c for c in chunks if c]
+    return chunks or [normalized]
+
+
+def concat_wav_files_to_bytes(wav_paths: List[str]) -> bytes:
+    """Concatenate WAV chunk files using ffmpeg concat demuxer and return bytes."""
+    if not wav_paths:
+        raise ValueError("No WAV files to concatenate")
+    if len(wav_paths) == 1:
+        with open(wav_paths[0], "rb") as f:
+            return f.read()
+
+    list_path = None
+    output_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as list_file:
+            list_path = list_file.name
+            for p in wav_paths:
+                escaped = p.replace("'", "'\\''")
+                list_file.write(f"file '{escaped}'\n")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
+            output_path = tmp_out.name
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            list_path,
+            "-c",
+            "copy",
+            output_path,
+        ]
+        subprocess.run(cmd, capture_output=True, check=True)
+        with open(output_path, "rb") as f:
+            return f.read()
+    finally:
+        if list_path and os.path.exists(list_path):
+            os.unlink(list_path)
+        if output_path and os.path.exists(output_path):
+            os.unlink(output_path)
+
+
 async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, volume: float, effects: dict, 
                                   temperature: float = 0.7, repetition_penalty: float = 2.0, top_k: int = 50, top_p: float = 0.85):
     """Generate speech using REAL voice cloning with XTTS - MUST use cloned voice or fail"""
@@ -413,9 +503,6 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
         logger.info(f"   Reference file size: {file_size} bytes ({file_size / 1024:.1f} KB)")
         logger.info(f"   Reference file path: {primary_reference}")
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-            output_path = tmp.name
-        
         # Map language codes
         lang_map = {
             'en': 'en', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it',
@@ -423,34 +510,34 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
             'cs': 'cs', 'ar': 'ar', 'zh': 'zh-cn', 'ja': 'ja', 'ko': 'ko', 'hu': 'hu'
         }
         xtts_lang = lang_map.get(language, 'en')
-        
-        # REAL voice cloning with XTTS - use speaker_wav parameter
-        # This is the critical parameter that makes XTTS clone the voice
-        logger.info(f"   Generating with XTTS (language: {xtts_lang})...")
-        
+        chunk_limit = int(os.getenv("XTTS_CLONE_CHUNK_CHARS", "240"))
+        text_chunks = split_text_for_xtts(text, max_chunk_chars=chunk_limit)
+        logger.info(f"   Generating with XTTS (language: {xtts_lang}, chunks: {len(text_chunks)})...")
+
+        chunk_paths: List[str] = []
         try:
-            # XTTS tts_to_file with speaker_wav - this clones the voice
-            tts_model.tts_to_file(
-                text=text,
-                file_path=output_path,
-                speaker_wav=primary_reference,  # CRITICAL: This parameter clones the voice
-                language=xtts_lang
-            )
-            
-            # CRITICAL: Verify output was generated and is valid
-            if not os.path.exists(output_path):
-                raise ValueError(f"XTTS output file was not created: {output_path}")
-            
-            output_size = os.path.getsize(output_path)
-            if output_size < 1000:
-                raise ValueError(f"XTTS generated invalid audio file (too small: {output_size} bytes)")
-            
-            logger.info(f"✅ XTTS successfully generated cloned voice audio")
-            logger.info(f"   Output file: {os.path.basename(output_path)}")
-            logger.info(f"   Output size: {output_size} bytes ({output_size / 1024:.1f} KB)")
-            logger.info(f"   Voice ID: {voice_id}")
-            logger.info(f"   Reference used: {os.path.basename(primary_reference)}")
-            
+            for idx, chunk in enumerate(text_chunks):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    chunk_path = tmp.name
+
+                logger.info(f"   Chunk {idx + 1}/{len(text_chunks)} ({len(chunk)} chars)")
+                tts_model.tts_to_file(
+                    text=chunk,
+                    file_path=chunk_path,
+                    speaker_wav=primary_reference,  # CRITICAL: this parameter clones the voice
+                    language=xtts_lang
+                )
+
+                if not os.path.exists(chunk_path):
+                    raise ValueError(f"XTTS output file was not created: {chunk_path}")
+
+                output_size = os.path.getsize(chunk_path)
+                if output_size < 1000:
+                    raise ValueError(f"XTTS generated invalid chunk (too small: {output_size} bytes)")
+
+                chunk_paths.append(chunk_path)
+
+            audio_data = concat_wav_files_to_bytes(chunk_paths)
         except Exception as inner_e:
             logger.error(f"❌ XTTS generation failed: {inner_e}")
             logger.error(f"   Reference file: {primary_reference}")
@@ -458,19 +545,22 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
             if os.path.exists(primary_reference):
                 logger.error(f"   Reference size: {os.path.getsize(primary_reference)} bytes")
             raise HTTPException(
-                status_code=500, 
+                status_code=500,
                 detail=f"XTTS voice cloning failed: {str(inner_e)}. Reference: {primary_reference}"
             )
-        
-        # Read generated audio
-        with open(output_path, 'rb') as f:
-            audio_data = f.read()
-        os.unlink(output_path)
-        
+        finally:
+            for p in chunk_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
         if len(audio_data) < 1000:
             raise ValueError("Generated audio is too small, XTTS may have failed")
-        
-        logger.info(f"✅ Generated {len(audio_data)} bytes of cloned voice audio")
+
+        logger.info(f"✅ XTTS successfully generated cloned voice audio")
+        logger.info(f"   Output size: {len(audio_data)} bytes ({len(audio_data) / 1024:.1f} KB)")
+        logger.info(f"   Voice ID: {voice_id}")
+        logger.info(f"   Reference used: {os.path.basename(primary_reference)}")
+        logger.info(f"   Chunks merged: {len(text_chunks)}")
         
         # Apply speed adjustment if needed
         if speed != 1.0:
@@ -491,7 +581,8 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
                 "X-Engine": "xtts",
                 "X-Samples": str(len(reference_audios)),
                 "X-Reference": os.path.basename(primary_reference),
-                "X-Voice-ID": voice_id
+                "X-Voice-ID": voice_id,
+                "X-Text-Chunks": str(len(text_chunks))
             }
         )
         
