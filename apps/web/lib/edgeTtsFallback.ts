@@ -64,10 +64,13 @@ export async function synthesizeEdgeTts(
   const pitchHz = Math.round(pitch * 10)
   const pitchStr = pitchHz >= 0 ? `+${pitchHz}Hz` : `${pitchHz}Hz`
 
+  // edge-tts-universal requires /^[+-]\d+%$/ (e.g. +94%, not 94%)
+  const volumeStr =
+    volume !== 1 ? `+${Math.round(volume * 100)}%` : undefined
   const tts = new EdgeTTS(text, edgeVoice, {
     rate: rateStr,
     pitch: pitchStr,
-    volume: volume !== 1 ? `${volume * 100}%` : undefined,
+    volume: volumeStr,
   })
   const result = await tts.synthesize()
 
