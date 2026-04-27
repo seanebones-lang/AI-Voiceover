@@ -1006,10 +1006,9 @@ export function Dashboard() {
                   <div className="mt-3">
                     <div className="flex items-center gap-1.5 mb-2">
                       <label className="text-sm font-medium">Clone delivery (XTTS v2)</label>
-                      <CircleHelp
-                        className="h-4 w-4 text-muted-foreground"
-                        title="Natural keeps identity tight, Stable is safest for long narration, Expressive adds style but can drift identity."
-                      />
+                      <span title="Natural keeps identity tight, Stable is safest for long narration, Expressive adds style but can drift identity.">
+                        <CircleHelp className="h-4 w-4 text-muted-foreground" />
+                      </span>
                     </div>
                     <select
                       value={cloneVoicePreset}
@@ -1131,10 +1130,9 @@ export function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <label className="text-sm font-medium">Auto expressive from punctuation</label>
-                    <CircleHelp
-                      className="h-4 w-4 text-muted-foreground"
-                      title="Uses ! ? ... and dashes to shape delivery automatically. Keep subtle for clone identity."
-                    />
+                    <span title="Uses ! ? ... and dashes to shape delivery automatically. Keep subtle for clone identity.">
+                      <CircleHelp className="h-4 w-4 text-muted-foreground" />
+                    </span>
                   </div>
                   <input
                     type="checkbox"
