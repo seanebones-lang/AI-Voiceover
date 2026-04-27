@@ -21,6 +21,7 @@ import datetime
 import hashlib
 import subprocess
 import re
+import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -57,34 +58,59 @@ HAS_XTTS = False
 tts_model = None
 DEVICE = "cpu"
 XTTS_LOAD_ERROR = None
+XTTS_MODEL_LOADING = False
+_XTTS_LOCK = threading.Lock()
+XTTS_PRELOAD_ON_STARTUP = os.getenv("XTTS_PRELOAD_ON_STARTUP", "1").lower() not in ("0", "false", "no")
 
 try:
     import torch
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"✅ PyTorch available, device: {DEVICE}")
-    
-    from TTS.api import TTS
-    logger.info("🔄 Loading XTTS model (this may take a minute)...")
-    logger.info("   This is REQUIRED for voice cloning to work!")
-    
-    tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
-    HAS_XTTS = True
-    
-    # XTTS v2 is multi-speaker; a startup synthesis test without speaker_wav
-    # is invalid and would incorrectly disable cloning. Loading the model is
-    # sufficient verification here.
-    logger.info("✅ XTTS model loaded - REAL voice cloning enabled!")
-    if DEVICE == "cuda":
-        logger.info(f"   🚀 GPU inference: {torch.cuda.get_device_name(0)} (CUDA {getattr(torch.version, 'cuda', '?')})")
-        
 except ImportError as e:
-    XTTS_LOAD_ERROR = f"TTS library not installed: {e}"
+    XTTS_LOAD_ERROR = f"PyTorch not available: {e}"
     logger.error(f"❌ XTTS not available: {e}")
-    logger.error("   Install with: pip install TTS")
-except Exception as e:
-    XTTS_LOAD_ERROR = f"XTTS failed to load: {e}"
-    logger.error(f"❌ XTTS failed to load: {e}")
     logger.error("   Voice cloning will NOT work without XTTS!")
+
+
+def _load_xtts_model_once() -> None:
+    """Load XTTS model exactly once, without blocking app startup."""
+    global HAS_XTTS, tts_model, XTTS_LOAD_ERROR, XTTS_MODEL_LOADING
+    with _XTTS_LOCK:
+        if HAS_XTTS and tts_model is not None:
+            return
+        if XTTS_MODEL_LOADING:
+            return
+        XTTS_MODEL_LOADING = True
+        XTTS_LOAD_ERROR = None
+    try:
+        from TTS.api import TTS
+        logger.info("🔄 Loading XTTS model (this may take a minute)...")
+        logger.info("   This is REQUIRED for voice cloning to work!")
+        model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
+        with _XTTS_LOCK:
+            tts_model = model
+            HAS_XTTS = True
+        logger.info("✅ XTTS model loaded - REAL voice cloning enabled!")
+        if DEVICE == "cuda":
+            logger.info(f"   🚀 GPU inference: {torch.cuda.get_device_name(0)} (CUDA {getattr(torch.version, 'cuda', '?')})")
+    except ImportError as e:
+        XTTS_LOAD_ERROR = f"TTS library not installed: {e}"
+        logger.error(f"❌ XTTS not available: {e}")
+        logger.error("   Install with: pip install TTS")
+    except Exception as e:
+        XTTS_LOAD_ERROR = f"XTTS failed to load: {e}"
+        logger.error(f"❌ XTTS failed to load: {e}")
+        logger.error("   Voice cloning will NOT work without XTTS!")
+    finally:
+        XTTS_MODEL_LOADING = False
+
+
+def ensure_xtts_loading() -> None:
+    """Start background XTTS loading if not already loaded/running."""
+    if HAS_XTTS or XTTS_MODEL_LOADING:
+        return
+    t = threading.Thread(target=_load_xtts_model_once, daemon=True, name="xtts-loader")
+    t.start()
 
 app = FastAPI(title="NextEleven Voice Service", version="3.2.0")
 
@@ -201,15 +227,25 @@ async def startup_event():
     logger.info("🚀 NextEleven Voice Service Starting...")
     logger.info("=" * 60)
     
+    if XTTS_PRELOAD_ON_STARTUP:
+        ensure_xtts_loading()
+        logger.info("🔄 XTTS background preload started")
+
     # Verify XTTS status
     logger.info(f"📊 Service Status:")
-    logger.info(f"   XTTS (real cloning): {'✅ YES - VOICE CLONING ENABLED' if HAS_XTTS else '❌ NO - VOICE CLONING DISABLED'}")
+    if HAS_XTTS:
+        xtts_status = "✅ YES - VOICE CLONING ENABLED"
+    elif XTTS_MODEL_LOADING:
+        xtts_status = "⏳ LOADING - voice cloning will enable when model load completes"
+    else:
+        xtts_status = "❌ NO - VOICE CLONING DISABLED"
+    logger.info(f"   XTTS (real cloning): {xtts_status}")
     logger.info(f"   edge-tts (standard): {'✅ YES' if HAS_EDGE_TTS else '❌ NO'}")
     logger.info(f"   Device: {DEVICE}")
     logger.info(f"   Voices directory: {VOICES_DIR}")
     logger.info(f"   Directory exists: {VOICES_DIR.exists()}")
     
-    if not HAS_XTTS:
+    if not HAS_XTTS and not XTTS_MODEL_LOADING:
         logger.error("=" * 60)
         logger.error("⚠️  CRITICAL WARNING: XTTS NOT LOADED!")
         logger.error("   Voice cloning will NOT work without XTTS.")
@@ -219,10 +255,15 @@ async def startup_event():
         logger.error("   REQUIRED: pip install TTS")
         logger.error("   Then restart the service.")
         logger.error("=" * 60)
-    else:
+    elif HAS_XTTS:
         logger.info("=" * 60)
         logger.info("✅ Voice cloning is READY and WORKING!")
         logger.info("   Cloned voices will use XTTS for real voice cloning.")
+        logger.info("=" * 60)
+    else:
+        logger.info("=" * 60)
+        logger.info("⏳ XTTS is loading in the background.")
+        logger.info("   Cloned voices will become available automatically.")
         logger.info("=" * 60)
     
     # Verify voices directory is writable
@@ -258,7 +299,9 @@ async def clone_guide():
 @app.get("/health")
 async def health_check():
     status = "healthy"
-    if not HAS_XTTS:
+    if XTTS_MODEL_LOADING:
+        status = "degraded"
+    elif not HAS_XTTS:
         status = "degraded"
     
     # Verify XTTS is actually functional
@@ -292,6 +335,7 @@ async def health_check():
         "xtts_loaded": HAS_XTTS,
         "xtts_functional": xtts_functional,
         "xtts_model_available": tts_model is not None,
+        "xtts_loading": XTTS_MODEL_LOADING,
         "cloned_voices": len(list(VOICES_DIR.glob("*.json"))),
         "device": DEVICE,
         "cuda_available": cuda_available,
@@ -313,7 +357,12 @@ async def health_check():
     }
     
     # Add warnings if XTTS not available
-    if not HAS_XTTS:
+    if XTTS_MODEL_LOADING:
+        health_data["warnings"] = [
+            "XTTS model is still loading",
+            "Voice cloning will be available when loading completes"
+        ]
+    elif not HAS_XTTS:
         health_data["warnings"] = [
             "XTTS not loaded - voice cloning will not work",
             "Cloned voices will fail with error messages",
@@ -384,6 +433,12 @@ async def generate_speech(request: TTSRequest):
     if voice_id.startswith("clone_"):
         logger.info(f"🎭 Cloned voice TTS requested: {voice_id}")
         if not HAS_XTTS:
+            ensure_xtts_loading()
+            if XTTS_MODEL_LOADING:
+                raise HTTPException(
+                    status_code=503,
+                    detail="XTTS model is loading. Please retry in 20-60 seconds."
+                )
             logger.error(f"❌ XTTS not available but cloned voice requested: {voice_id}")
             raise HTTPException(
                 status_code=503,
