@@ -12,7 +12,7 @@ const isPublicRoute = createRouteMatcher([
 const clerkEnabled =
   !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
-export default clerkEnabled
+export const proxy = clerkEnabled
   ? clerkMiddleware(async (auth, request) => {
       if (!isPublicRoute(request)) {
         await auth.protect()
