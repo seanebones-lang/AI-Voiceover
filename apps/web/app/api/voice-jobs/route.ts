@@ -8,8 +8,8 @@ import { getVoiceQueue } from "@/lib/queue"
 export const runtime = "nodejs"
 
 export async function POST(req: Request): Promise<Response> {
-  let userId: string | null = null
-  let clerkOrgId: string | null = null
+  let userId: string | null | undefined = null
+  let clerkOrgId: string | null | undefined = null
   try {
     const authState = await auth()
     userId = authState.userId
@@ -98,8 +98,8 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(): Promise<Response> {
-  let userId: string | null = null
-  let clerkOrgId: string | null = null
+  let userId: string | null | undefined = null
+  let clerkOrgId: string | null | undefined = null
   try {
     const authState = await auth()
     userId = authState.userId

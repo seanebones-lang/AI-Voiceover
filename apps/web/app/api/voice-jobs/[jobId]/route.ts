@@ -20,8 +20,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
-  let userId: string | null = null
-  let clerkOrgId: string | null = null
+  let userId: string | null | undefined = null
+  let clerkOrgId: string | null | undefined = null
   try {
     const authState = await auth()
     userId = authState.userId
@@ -73,8 +73,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
-  let userId: string | null = null
-  let clerkOrgId: string | null = null
+  let userId: string | null | undefined = null
+  let clerkOrgId: string | null | undefined = null
   try {
     const authState = await auth()
     userId = authState.userId
