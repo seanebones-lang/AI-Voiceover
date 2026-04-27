@@ -18,7 +18,7 @@ async function getOrgInternalId(clerkOrgId: string | null) {
 
 export async function GET(
   _req: Request,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
   const { userId, orgId: clerkOrgId } = await auth()
   if (!userId || !clerkOrgId) {
@@ -28,7 +28,7 @@ export async function GET(
   const orgId = await getOrgInternalId(clerkOrgId)
   if (!orgId) return NextResponse.json({ error: "Organization not provisioned" }, { status: 400 })
 
-  const { jobId } = params
+  const { jobId } = await params
   const db = getDb()
   const rows = await db
     .select({
@@ -59,7 +59,7 @@ export async function GET(
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
   const { userId, orgId: clerkOrgId } = await auth()
   if (!userId || !clerkOrgId) {
@@ -69,7 +69,7 @@ export async function DELETE(
   const orgId = await getOrgInternalId(clerkOrgId)
   if (!orgId) return NextResponse.json({ error: "Organization not provisioned" }, { status: 400 })
 
-  const { jobId } = params
+  const { jobId } = await params
   const db = getDb()
   const rows = await db
     .update(voiceJobs)
