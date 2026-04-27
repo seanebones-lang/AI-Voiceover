@@ -1,0 +1,10 @@
+node_modules
+.next
+apps/web/.next
+apps/workers/dist
+services/xtts/.venv
+services/xtts/cloned_voices
+services/xtts/__pycache__
+services/xtts/**/*.pyc
+.git
+.vercel

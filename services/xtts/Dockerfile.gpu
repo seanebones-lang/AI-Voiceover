@@ -1,0 +1,28 @@
+# XTTS with NVIDIA CUDA — use on GPU-capable hosts (RunPod, Lambda, vast.ai, self-hosted,
+# or any platform with nvidia-container-toolkit). Railway often has no GPU; keep Dockerfile (CPU) as default.
+#
+# Build: docker build -f Dockerfile.gpu -t xtts-gpu .
+# Run:  docker run --gpus all -p 8081:8081 -e PORT=8081 xtts-gpu
+#
+# Base image ships PyTorch + CUDA; we only add ffmpeg and Python deps (no CPU torch reinstall).
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NVIDIA_VISIBLE_DEVICES=all
+
+WORKDIR /app
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-common.txt .
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements-common.txt
+
+COPY main.py .
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

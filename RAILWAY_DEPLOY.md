@@ -41,3 +41,14 @@ To keep cloned voices across restarts, add a **volume** in Railway to the XTTS s
 
 - **Single service (Next.js only):** Deploy as-is. TTS and cloning will be unavailable unless you use xAI voices with `XAI_API_KEY`. Health returns 200 with `cloning: false`.
 - **With XTTS sidecar:** Add a second Railway service for `services/xtts` (Python/FastAPI), set `XTTS_URL` to its internal URL, and (recommended) attach a volume for `VOICES_DIR`. If XTTS is down, health still returns 200 with `status: 'degraded'`.
+
+## GPU inference (XTTS)
+
+Railway’s default builders are **CPU-only**. For faster XTTS (voice cloning and long synthesis), run the Python service on a **GPU host** and point the app at it with `XTTS_URL`.
+
+1. **Build** with `services/xtts/Dockerfile.gpu` (CUDA base image + `requirements-common.txt`). Your host must expose an NVIDIA GPU to Docker (`nvidia-container-toolkit` on Linux, or a cloud GPU VM).
+2. **Deploy** on a provider that offers GPU containers (e.g. RunPod, Lambda Labs, vast.ai, or self-hosted). Expose the same HTTP port as the CPU image (see the service’s `PORT` / Dockerfile `EXPOSE`).
+3. **Wire the app:** set `XTTS_URL` on Railway (or Vercel) to the public or private URL of that GPU service, e.g. `https://xtts-gpu.example.com`.
+4. **Verify:** open `GET {XTTS_URL}/health` — when CUDA is available you should see `cuda_available: true`, `cuda_device`, and `cuda_version` in the JSON. The Next.js app’s `/api/health` forwards XTTS fields when configured.
+
+CPU-only XTTS remains supported via the default `services/xtts/Dockerfile`; GPU is optional for throughput and latency, not a requirement for correctness.

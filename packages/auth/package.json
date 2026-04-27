@@ -1,0 +1,19 @@
+{
+  "name": "@ai-voiceover/auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-voiceover/contracts": "*",
+    "@clerk/backend": "^1.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
