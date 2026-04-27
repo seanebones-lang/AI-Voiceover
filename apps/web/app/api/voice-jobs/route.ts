@@ -58,9 +58,23 @@ export async function POST(req: Request): Promise<Response> {
         { rowId: row.id, type: parsed.data.type },
         { removeOnComplete: 100, removeOnFail: 500 }
       )
+    } else if (row) {
+      await db
+        .update(voiceJobs)
+        .set({
+          status: "failed",
+          errorMessage: "Queue unavailable (REDIS_URL not configured)",
+          updatedAt: new Date(),
+        })
+        .where(eq(voiceJobs.id, row.id))
     }
 
-    return NextResponse.json({ id: row?.id, status: "queued" })
+    return NextResponse.json({
+      id: row?.id,
+      status: q ? "queued" : "failed",
+      pollUrl: row?.id ? `/api/voice-jobs/${row.id}` : null,
+      message: q ? "Job queued" : "Queue unavailable",
+    })
   } catch (e) {
     console.error("[voice-jobs]", e)
     const message = e instanceof Error ? e.message : "Server error"
@@ -94,7 +108,10 @@ export async function GET(): Promise<Response> {
         id: voiceJobs.id,
         type: voiceJobs.type,
         status: voiceJobs.status,
+        errorMessage: voiceJobs.errorMessage,
+        result: voiceJobs.result,
         createdAt: voiceJobs.createdAt,
+        updatedAt: voiceJobs.updatedAt,
       })
       .from(voiceJobs)
       .where(eq(voiceJobs.orgId, orgRow[0].id))

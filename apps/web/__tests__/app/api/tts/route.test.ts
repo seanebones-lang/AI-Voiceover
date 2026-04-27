@@ -126,6 +126,8 @@ describe('POST /api/tts options matrix', () => {
         clone_preset: 'expressive',
         auto_expressive: true,
         expressive_intensity: 'balanced',
+        mastering_enabled: true,
+        mastering_profile: 'podcast',
         temperature: 0.72,
         repetition_penalty: 1.52,
         top_k: 60,
@@ -141,6 +143,8 @@ describe('POST /api/tts options matrix', () => {
     expect(requestBody.clone_preset).toBe('expressive')
     expect(requestBody.auto_expressive).toBe(true)
     expect(requestBody.expressive_intensity).toBe('balanced')
+    expect(requestBody.mastering_enabled).toBe(true)
+    expect(requestBody.mastering_profile).toBe('podcast')
     expect(requestBody.temperature).toBe(0.72)
     expect(requestBody.repetition_penalty).toBe(1.52)
     expect(requestBody.top_k).toBe(60)

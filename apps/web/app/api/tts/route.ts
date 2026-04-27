@@ -6,6 +6,7 @@ import { validateTTSRequest, extractClientIP, CLONED_TTS_MAX_CHARS } from '@/lib
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
 import { applyEmotionProsody, applyExpressiveCopyProsody } from '@/lib/tts/emotion-prosody'
+import { parseProsodyTags } from '@/lib/tts/prosody-tags'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
 import { Buffer } from 'node:buffer'
@@ -30,6 +31,8 @@ interface TTSRequest {
   special_effect?: string // 'none' | 'robot' | 'radio' | 'whisper' | 'deep' | 'chipmunk' | 'cave' | 'telephone'
   auto_expressive?: boolean
   expressive_intensity?: 'subtle' | 'balanced' | 'dramatic'
+  mastering_enabled?: boolean
+  mastering_profile?: 'none' | 'podcast' | 'broadcast' | 'cinematic'
 }
 
 function extractWavData(buffer: Buffer): { fmtChunk: Buffer; dataChunk: Buffer } | null {
@@ -186,17 +189,29 @@ export async function POST(request: NextRequest) {
       clone_preset,
       auto_expressive = false,
       expressive_intensity = 'subtle',
+      mastering_enabled = false,
+      mastering_profile = 'none',
       temperature: ttsTemperature,
       repetition_penalty: ttsRepetitionPenalty,
       top_k: ttsTopK,
       top_p: ttsTopP,
     } = validation.data
+    const tagged = parseProsodyTags(text)
+    const normalizedInputText = tagged.cleanText
 
     const prosody = applyEmotionProsody(
-      { speed, pitch, volume, reverb, echo, noise_reduction, special_effect },
+      {
+        speed: speed + tagged.adjustments.speedDelta,
+        pitch: pitch + tagged.adjustments.pitchDelta,
+        volume,
+        reverb: reverb + tagged.adjustments.reverbDelta,
+        echo,
+        noise_reduction,
+        special_effect,
+      },
       emotion
     )
-    const expressiveProsody = applyExpressiveCopyProsody(prosody, text, {
+    const expressiveProsody = applyExpressiveCopyProsody(prosody, normalizedInputText, {
       enabled: auto_expressive,
       intensity: expressive_intensity,
       isClonedVoice: voice_id.startsWith('clone_'),
@@ -222,7 +237,7 @@ export async function POST(request: NextRequest) {
     let finalSpecialEffect = expressiveProsody.special_effect
 
     const cacheKey = buildTtsCacheKey({
-      text: text.trim(),
+      text: normalizedInputText.trim(),
       voice_id,
       language,
       speed: finalSpeed,
@@ -233,7 +248,7 @@ export async function POST(request: NextRequest) {
       noise_reduction: finalNoiseReduction,
       special_effect: finalSpecialEffect,
       clone_tune: cloneTuneKey,
-      emotion: `${emotion}:${auto_expressive ? expressive_intensity : 'off'}`,
+      emotion: `${emotion}:${auto_expressive ? expressive_intensity : 'off'}:${mastering_enabled ? mastering_profile : 'dry'}`,
     })
     const cached = getCached(cacheKey)
     if (cached) {
@@ -264,7 +279,8 @@ export async function POST(request: NextRequest) {
       finalReverb > 0 ||
       finalEcho > 0 ||
       finalNoiseReduction ||
-      finalSpecialEffect !== 'none'
+      finalSpecialEffect !== 'none' ||
+      (mastering_enabled && mastering_profile !== 'none')
 
     // Route DEFAULT_VOICES (edge-tts source) to Edge TTS
     // Important: when effects are requested, route through XTTS sidecar so
@@ -275,7 +291,7 @@ export async function POST(request: NextRequest) {
       let edgeMethod = 'websocket'
 
       try {
-        mp3 = await synthesizeEdge({ text: text.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
+        mp3 = await synthesizeEdge({ text: normalizedInputText.trim(), voiceId: voice_id, speed: finalSpeed, pitch: finalPitch })
       } catch (wsErr) {
         logger.warn('Edge TTS WebSocket failed, trying edge-tts-universal fallback', { requestId, error: wsErr instanceof Error ? wsErr.message : String(wsErr) })
       }
@@ -283,7 +299,7 @@ export async function POST(request: NextRequest) {
       if (!mp3) {
         try {
           edgeMethod = 'universal'
-          mp3 = await synthesizeEdgeFallback(text.trim(), voice_id, { speed: finalSpeed, pitch: finalPitch, volume: finalVolume })
+          mp3 = await synthesizeEdgeFallback(normalizedInputText.trim(), voice_id, { speed: finalSpeed, pitch: finalPitch, volume: finalVolume })
         } catch (fallbackErr) {
           const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
           logger.error('Edge TTS fallback also failed', fallbackErr, { requestId })
@@ -313,7 +329,7 @@ export async function POST(request: NextRequest) {
         recordCloneMetric('clone_tts_requested')
       }
 
-      const normalizedText = text.trim()
+      const normalizedText = normalizedInputText.trim()
       const textLen = normalizedText.length
       const hasEffects =
         finalReverb > 0 ||
@@ -388,6 +404,8 @@ export async function POST(request: NextRequest) {
                 special_effect: finalSpecialEffect,
                 auto_expressive,
                 expressive_intensity,
+                mastering_enabled,
+                mastering_profile,
                 ...(isClonedVoice
                   ? {
                       ...(clone_preset ? { clone_preset } : {}),
@@ -449,7 +467,7 @@ export async function POST(request: NextRequest) {
       logger.info('TTS generated successfully', {
         requestId,
         voiceId: voice_id,
-        textLength: text.length,
+        textLength: normalizedInputText.length,
         audioSize: audioBuffer.byteLength,
         latency,
       })

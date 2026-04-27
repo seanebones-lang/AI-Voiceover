@@ -159,6 +159,8 @@ class TTSRequest(BaseModel):
     echo: float = 0
     noise_reduction: bool = False
     special_effect: str = "none"
+    mastering_enabled: bool = False
+    mastering_profile: str = "none"  # none | podcast | broadcast | cinematic
     # Optional preset for cloned voices (maps to sampling params below)
     clone_preset: Optional[str] = None  # natural | expressive | stable
     # Advanced XTTS parameters for fine-tuning
@@ -249,6 +251,13 @@ CLONE_GUIDE = {
             "expressive": "Slightly more variation in delivery — good for character reads.",
             "stable": "Tighter, more uniform output — good for long narration.",
         }
+    },
+    "quality_gate": {
+        "enabled": True,
+        "strict_reject_mode": os.getenv("XTTS_CLONE_STRICT_GATE", "0").lower() in ("1", "true", "yes"),
+        "minimum_duration_seconds": 4,
+        "minimum_sample_rate_hz": 16000,
+        "minimum_quality_score": 55,
     },
 }
 
@@ -384,6 +393,7 @@ async def health_check():
             "multi_sample_cloning": True,
             "audio_preprocessing": True,
             "quality_validation": True,
+            "quality_gate": CLONE_GUIDE["quality_gate"],
             "real_voice_cloning": HAS_XTTS and xtts_functional,
             "clone_guide_endpoint": "/clone-guide",
             "clone_presets": ["natural", "expressive", "stable"],
@@ -461,7 +471,9 @@ async def generate_speech(request: TTSRequest):
         "reverb": request.reverb,
         "echo": request.echo,
         "noise_reduction": request.noise_reduction,
-        "special_effect": request.special_effect
+        "special_effect": request.special_effect,
+        "mastering_enabled": request.mastering_enabled,
+        "mastering_profile": request.mastering_profile,
     }
     
     # Use cloned voice with XTTS - CRITICAL: Must use XTTS for cloned voices
@@ -972,6 +984,33 @@ def apply_effects_wav(audio_data: bytes, volume: float, effects: dict) -> bytes:
         if effects.get("noise_reduction"):
             filters.extend(['highpass=f=80', 'lowpass=f=12000'])
         
+        mastering_enabled = bool(effects.get("mastering_enabled", False))
+        mastering_profile = (effects.get("mastering_profile") or "none").strip().lower()
+        if mastering_enabled and mastering_profile != "none":
+            if mastering_profile == "podcast":
+                filters.extend([
+                    "highpass=f=70",
+                    "lowpass=f=14000",
+                    "compand=attacks=0.02:decays=0.25:points=-80/-80|-20/-14|0/-1",
+                    "loudnorm=I=-16:TP=-1.5:LRA=9",
+                    "alimiter=limit=0.95",
+                ])
+            elif mastering_profile == "broadcast":
+                filters.extend([
+                    "highpass=f=80",
+                    "compand=attacks=0.01:decays=0.2:points=-90/-90|-24/-16|0/-1",
+                    "loudnorm=I=-14:TP=-1.0:LRA=7",
+                    "alimiter=limit=0.95",
+                ])
+            elif mastering_profile == "cinematic":
+                filters.extend([
+                    "highpass=f=55",
+                    "lowpass=f=13500",
+                    "compand=attacks=0.03:decays=0.35:points=-80/-80|-22/-15|0/-2",
+                    "loudnorm=I=-18:TP=-2:LRA=11",
+                    "alimiter=limit=0.96",
+                ])
+
         if volume != 1.0:
             filters.append(f'volume={volume}')
         
@@ -1033,6 +1072,33 @@ def apply_effects_mp3(audio_data: bytes, volume: float, effects: dict) -> bytes:
         if effects.get("noise_reduction"):
             filters.extend(['highpass=f=80', 'lowpass=f=12000'])
         
+        mastering_enabled = bool(effects.get("mastering_enabled", False))
+        mastering_profile = (effects.get("mastering_profile") or "none").strip().lower()
+        if mastering_enabled and mastering_profile != "none":
+            if mastering_profile == "podcast":
+                filters.extend([
+                    "highpass=f=70",
+                    "lowpass=f=14000",
+                    "compand=attacks=0.02:decays=0.25:points=-80/-80|-20/-14|0/-1",
+                    "loudnorm=I=-16:TP=-1.5:LRA=9",
+                    "alimiter=limit=0.95",
+                ])
+            elif mastering_profile == "broadcast":
+                filters.extend([
+                    "highpass=f=80",
+                    "compand=attacks=0.01:decays=0.2:points=-90/-90|-24/-16|0/-1",
+                    "loudnorm=I=-14:TP=-1.0:LRA=7",
+                    "alimiter=limit=0.95",
+                ])
+            elif mastering_profile == "cinematic":
+                filters.extend([
+                    "highpass=f=55",
+                    "lowpass=f=13500",
+                    "compand=attacks=0.03:decays=0.35:points=-80/-80|-22/-15|0/-2",
+                    "loudnorm=I=-18:TP=-2:LRA=11",
+                    "alimiter=limit=0.96",
+                ])
+
         if volume != 1.0:
             filters.append(f'volume={volume}')
         
@@ -1081,6 +1147,7 @@ async def clone_voice(
     voice_dir = VOICES_DIR / voice_id
     voice_dir.mkdir(parents=True, exist_ok=True)
     
+    strict_gate_mode = bool(CLONE_GUIDE["quality_gate"]["strict_reject_mode"])
     saved_files = []
     quality_reports = []
     total_duration = 0
@@ -1107,6 +1174,13 @@ async def clone_voice(
 
             quality_reports.append(quality)
             total_duration += quality.get('duration', 0)
+            if strict_gate_mode and not quality.get("gate_passed", True):
+                reasons = quality.get("gate_fail_reasons", [])[:2]
+                reason_text = "; ".join(reasons) or "Audio quality gate failed"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Audio quality gate failed for {file.filename}: {reason_text}"
+                )
             
             # Convert to WAV for XTTS compatibility
             wav_path = convert_to_wav(str(file_path))
@@ -1137,6 +1211,10 @@ async def clone_voice(
         all_warnings = list(set(all_warnings))
         all_recommendations = list(set(all_recommendations))
         
+        avg_quality_score = (
+            sum(float(r.get("quality_score", 0.0)) for r in quality_reports) / max(1, len(quality_reports))
+        )
+        gate_failed_count = sum(1 for r in quality_reports if not r.get("gate_passed", True))
         quality_tier = (
             "excellent" if total_duration >= 60
             else "good" if total_duration >= 30
@@ -1152,7 +1230,9 @@ async def clone_voice(
             "real_clone": HAS_XTTS,
             "total_duration": total_duration,
             "quality_tier": quality_tier,
+            "quality_score": round(avg_quality_score, 1),
             "quality_warnings": all_warnings,
+            "quality_gate_failed_samples": gate_failed_count,
             "preprocessed": any("_preprocessed.wav" in f for f in saved_files)
         }
         
@@ -1187,11 +1267,18 @@ async def clone_voice(
             "samples_count": len(saved_files),
             "total_duration": total_duration,
             "quality_tier": quality_tier,
+            "quality_score": round(avg_quality_score, 1),
             "real_clone": HAS_XTTS,
             "xtts_available": HAS_XTTS,
             "preprocessed": True,
             "quality_warnings": all_warnings[:3],
             "recommendations": all_recommendations[:3],
+            "quality_gate": {
+                "enabled": True,
+                "strict_reject_mode": strict_gate_mode,
+                "failed_samples": gate_failed_count,
+                "passed": gate_failed_count == 0,
+            },
             "clone_tips": CLONE_GUIDE["reference_audio"]["tips"][:5],
             "clone_presets": list(CLONE_GUIDE["generation"]["presets"].keys()),
             "sample_files_count": len(saved_files),
@@ -1307,6 +1394,49 @@ def _volume_detect_hints(file_path: str) -> List[str]:
     return hints
 
 
+def _analyze_audio_signal(file_path: str, duration: float) -> dict:
+    """Derive basic signal metrics for quality scoring + optional hard gates."""
+    out = {
+        "max_db": None,
+        "mean_db": None,
+        "silence_ratio": 0.0,
+        "near_clipping": False,
+    }
+    try:
+        cmd = [
+            "ffmpeg", "-nostats", "-i", file_path,
+            "-af", "volumedetect", "-f", "null", "-",
+        ]
+        r = subprocess.run(cmd, capture_output=True, timeout=25)
+        err = r.stderr.decode(errors="ignore")
+        mv = re.search(r"max_volume:\s*([-\d.]+)\s*dB", err)
+        mean_m = re.search(r"mean_volume:\s*([-\d.]+)\s*dB", err)
+        if mv:
+            out["max_db"] = float(mv.group(1))
+            out["near_clipping"] = out["max_db"] >= -0.5
+        if mean_m:
+            out["mean_db"] = float(mean_m.group(1))
+    except Exception:
+        pass
+
+    try:
+        # Estimate silence ratio (long silence hurts speaker identity capture).
+        cmd = [
+            "ffmpeg", "-nostats", "-i", file_path,
+            "-af", "silencedetect=noise=-45dB:d=0.25",
+            "-f", "null", "-",
+        ]
+        r = subprocess.run(cmd, capture_output=True, timeout=30)
+        err = r.stderr.decode(errors="ignore")
+        durations = [float(m.group(1)) for m in re.finditer(r"silence_duration:\s*([0-9.]+)", err)]
+        silence_total = sum(durations)
+        if duration > 0:
+            out["silence_ratio"] = min(1.0, max(0.0, silence_total / duration))
+    except Exception:
+        pass
+    return out
+
+
 def validate_audio_quality(file_path: str) -> dict:
     """
     Validate audio quality for voice cloning.
@@ -1316,6 +1446,15 @@ def validate_audio_quality(file_path: str) -> dict:
         "valid": True,
         "duration": 0,
         "sample_rate": 0,
+        "quality_score": 100.0,
+        "quality_breakdown": {
+            "duration": 100.0,
+            "sample_rate": 100.0,
+            "signal_level": 100.0,
+            "silence": 100.0,
+        },
+        "gate_passed": True,
+        "gate_fail_reasons": [],
         "warnings": [],
         "recommendations": []
     }
@@ -1359,6 +1498,52 @@ def validate_audio_quality(file_path: str) -> dict:
 
             for h in _volume_detect_hints(file_path):
                 result['warnings'].append(h)
+
+            signal = _analyze_audio_signal(file_path, duration)
+            max_db = signal.get("max_db")
+            mean_db = signal.get("mean_db")
+            silence_ratio = float(signal.get("silence_ratio", 0.0))
+
+            duration_score = min(100.0, (duration / 30.0) * 100.0)
+            sr_score = 100.0 if result["sample_rate"] >= 24000 else (85.0 if result["sample_rate"] >= 16000 else 60.0)
+            level_score = 100.0
+            if max_db is not None and max_db >= -0.5:
+                level_score -= 25.0
+                result["warnings"].append("Reference is close to clipping; cleaner gain improves clone identity.")
+            if mean_db is not None and mean_db < -34:
+                level_score -= 20.0
+                result["warnings"].append("Reference level is very quiet; voice texture may be under-captured.")
+            level_score = max(40.0, level_score)
+            silence_score = max(50.0, 100.0 - (silence_ratio * 130.0))
+            if silence_ratio > 0.35:
+                result["warnings"].append("Large silence portions detected; trim dead air for better clone consistency.")
+
+            quality_score = (
+                (duration_score * 0.35) +
+                (sr_score * 0.2) +
+                (level_score * 0.3) +
+                (silence_score * 0.15)
+            )
+            result["quality_score"] = round(quality_score, 1)
+            result["quality_breakdown"] = {
+                "duration": round(duration_score, 1),
+                "sample_rate": round(sr_score, 1),
+                "signal_level": round(level_score, 1),
+                "silence": round(silence_score, 1),
+            }
+
+            min_duration = float(CLONE_GUIDE["quality_gate"]["minimum_duration_seconds"])
+            min_sr = int(CLONE_GUIDE["quality_gate"]["minimum_sample_rate_hz"])
+            min_quality = float(CLONE_GUIDE["quality_gate"]["minimum_quality_score"])
+            gate_reasons: List[str] = []
+            if duration < min_duration:
+                gate_reasons.append(f"Duration below minimum quality gate ({duration:.1f}s < {min_duration:.1f}s)")
+            if result["sample_rate"] < min_sr:
+                gate_reasons.append(f"Sample rate below minimum quality gate ({result['sample_rate']} < {min_sr})")
+            if result["quality_score"] < min_quality:
+                gate_reasons.append(f"Quality score below minimum gate ({result['quality_score']} < {min_quality})")
+            result["gate_fail_reasons"] = gate_reasons
+            result["gate_passed"] = len(gate_reasons) == 0
         else:
             result['valid'] = False
             result['error'] = probe.stderr.decode(errors="ignore")[:300] or "Audio format not recognized"

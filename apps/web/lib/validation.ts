@@ -110,6 +110,9 @@ export const ttsRequestSchema = z
     /** Optional punctuation-driven expressive reading mode. */
     auto_expressive: z.boolean().optional().default(false),
     expressive_intensity: z.enum(['subtle', 'balanced', 'dramatic']).optional().default('subtle'),
+    /** Optional mastering pass for polished output consistency. */
+    mastering_enabled: z.boolean().optional().default(false),
+    mastering_profile: z.enum(['none', 'podcast', 'broadcast', 'cinematic']).optional().default('none'),
     /** Advanced XTTS sampling (optional; omit to use service defaults). */
     temperature: z.number().min(0.35).max(1.15).optional(),
     repetition_penalty: z.number().min(1.0).max(2.5).optional(),

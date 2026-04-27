@@ -92,6 +92,8 @@ export function Dashboard() {
   const [specialEffect, setSpecialEffect] = useState<string>('none')
   /** Server-side prosody preset (merged with speed/pitch sliders). */
   const [ttsEmotion, setTtsEmotion] = useState<string>('neutral')
+  const [masteringEnabled, setMasteringEnabled] = useState(false)
+  const [masteringProfile, setMasteringProfile] = useState<'none' | 'podcast' | 'broadcast' | 'cinematic'>('none')
   
   // Advanced Settings
   const [outputFormat, setOutputFormat] = useState<'mp3' | 'wav'>('mp3')
@@ -226,6 +228,8 @@ export function Dashboard() {
   const [cloneTips, setCloneTips] = useState<string[]>([])
   const [calibrationCopied, setCalibrationCopied] = useState(false)
   const [cloneQualityTier, setCloneQualityTier] = useState<string | null>(null)
+  const [cloneQualityScore, setCloneQualityScore] = useState<number | null>(null)
+  const [cloneGateSummary, setCloneGateSummary] = useState<{ passed: boolean; failed_samples: number } | null>(null)
   /** Coqui XTTS v2 clone output character (cloned voices only). */
   const [cloneVoicePreset, setCloneVoicePreset] = useState<'natural' | 'expressive' | 'stable'>('natural')
   const [showCloneAdvanced, setShowCloneAdvanced] = useState(false)
@@ -263,6 +267,13 @@ export function Dashboard() {
       top_p: cloneTopP[0],
       auto_expressive: autoExpressive,
       expressive_intensity: expressiveIntensity,
+    }
+  }
+
+  function getMasteringPayload() {
+    return {
+      mastering_enabled: masteringEnabled,
+      mastering_profile: masteringEnabled ? masteringProfile : 'none',
     }
   }
 
@@ -326,6 +337,7 @@ export function Dashboard() {
           speed: 1.0,
           pitch: 0,
           volume: 1.0,
+          ...getMasteringPayload(),
           ...getCloneTuningPayload(voiceId),
         }),
       })
@@ -412,6 +424,7 @@ export function Dashboard() {
           echo: echo[0],
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
+          ...getMasteringPayload(),
           ...getCloneTuningPayload(selectedVoice),
         }),
       })
@@ -554,6 +567,7 @@ export function Dashboard() {
             echo: echo[0],
             noise_reduction: noiseReduction,
             special_effect: specialEffect,
+            ...getMasteringPayload(),
             ...getCloneTuningPayload(selectedVoice),
           }),
         })
@@ -666,6 +680,8 @@ export function Dashboard() {
     setCloneSuccess(null)
     setCloneTips([])
     setCloneQualityTier(null)
+    setCloneQualityScore(null)
+    setCloneGateSummary(null)
     setCloneQualityWarnings([])
     setCloneRecommendations([])
 
@@ -691,6 +707,15 @@ export function Dashboard() {
       setCloneRecommendations(data.recommendations || [])
       setCloneTips(Array.isArray(data.clone_tips) ? data.clone_tips : [])
       setCloneQualityTier(typeof data.quality_tier === 'string' ? data.quality_tier : null)
+      setCloneQualityScore(typeof data.quality_score === 'number' ? data.quality_score : null)
+      setCloneGateSummary(
+        data?.quality_gate && typeof data.quality_gate === 'object'
+          ? {
+              passed: !!data.quality_gate.passed,
+              failed_samples: Number(data.quality_gate.failed_samples || 0),
+            }
+          : null
+      )
       setCloneName('')
       setCloneDescription('')
       setCloneFiles([])
@@ -747,6 +772,7 @@ export function Dashboard() {
             voice_id: msg.voiceId,
             language,
             emotion: ttsEmotion,
+            ...getMasteringPayload(),
             ...getCloneTuningPayload(msg.voiceId),
           }),
         })
@@ -787,6 +813,7 @@ export function Dashboard() {
           text: compareText.trim(),
           voice_id: voiceId,
           emotion: ttsEmotion,
+          ...getMasteringPayload(),
           ...getCloneTuningPayload(voiceId),
         }),
       })
@@ -1202,6 +1229,9 @@ export function Dashboard() {
                     Cloned voices: up to {CLONED_TTS_MAX_CHARS} characters per generation (one XTTS run). For longer scripts, enable batch mode and keep each paragraph under that limit.
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground mb-2">
+                  Deterministic prosody tags: <code>[emph]...[/emph]</code>, <code>[strong]...[/strong]</code>, <code>[question]...[/question]</code>, <code>[pause]</code>, <code>[pause:long]</code>.
+                </p>
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -1369,6 +1399,39 @@ export function Dashboard() {
                               </button>
                             ))}
                           </div>
+                        </div>
+
+                        <div className="pt-4 border-t space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium">Professional Mastering</label>
+                            <input
+                              type="checkbox"
+                              checked={masteringEnabled}
+                              onChange={(e) => setMasteringEnabled(e.target.checked)}
+                              className="w-4 h-4 rounded border-input bg-background"
+                            />
+                          </div>
+                          {masteringEnabled && (
+                            <div>
+                              <label className="text-xs font-medium mb-2 block">Mastering profile</label>
+                              <select
+                                value={masteringProfile}
+                                onChange={(e) =>
+                                  setMasteringProfile(
+                                    e.target.value as 'none' | 'podcast' | 'broadcast' | 'cinematic'
+                                  )
+                                }
+                                className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
+                              >
+                                <option value="podcast">Podcast - clear spoken voice, consistent loudness</option>
+                                <option value="broadcast">Broadcast - tighter dynamics and louder delivery</option>
+                                <option value="cinematic">Cinematic - wider dynamics, richer tone</option>
+                              </select>
+                            </div>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            Mastering applies final loudness + dynamics polish for more professional, consistent output.
+                          </p>
                         </div>
                       </div>
                     )}
@@ -1714,6 +1777,22 @@ export function Dashboard() {
                         {cloneQualityTier === 'minimal' || cloneQualityTier === 'basic'
                           ? ' — add more clear audio for richer clones.'
                           : null}
+                      </p>
+                    )}
+                    {cloneQualityScore !== null && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Quality score: <span className="text-foreground font-medium">{cloneQualityScore.toFixed(1)} / 100</span>
+                      </p>
+                    )}
+                    {cloneGateSummary && (
+                      <p className="text-xs mt-1">
+                        {cloneGateSummary.passed ? (
+                          <span className="text-green-600 dark:text-green-400">Quality gate passed.</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400">
+                            Quality gate warnings on {cloneGateSummary.failed_samples} sample(s).
+                          </span>
+                        )}
                       </p>
                     )}
                     {cloneTips.length > 0 && (

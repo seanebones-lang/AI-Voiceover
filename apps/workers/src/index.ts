@@ -36,11 +36,14 @@ const worker = new Worker(
 
     try {
       // Stub: replace with real TTS / clone pipeline (ffmpeg, xtts, etc.)
+      await job.updateProgress(15)
       await new Promise((r) => setTimeout(r, 50))
+      await job.updateProgress(70)
       const result =
         type === "clone"
           ? { ok: true, outputUrl: null as string | null, note: "clone_stub" }
           : { ok: true, audioBase64: null as string | null, note: "tts_stub" }
+      await job.updateProgress(100)
 
       await db
         .update(voiceJobs)
