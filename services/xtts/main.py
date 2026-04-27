@@ -599,9 +599,11 @@ def split_text_for_xtts(text: str, max_chunk_chars: int = 200) -> List[str]:
 
 def apply_pronunciation_overrides(text: str, overrides: Optional[dict]) -> str:
     """Apply deterministic word/phrase substitutions before synthesis."""
-    if not text or not overrides or not isinstance(overrides, dict):
+    if not text:
         return text
-    updated = text
+    updated = re.sub(r"\[ipa:([^|\]]+)\|([^\]]+)\]", lambda m: m.group(2).strip(), text, flags=re.IGNORECASE)
+    if not overrides or not isinstance(overrides, dict):
+        return updated
     pairs = sorted(
         [(str(k), str(v)) for k, v in overrides.items() if str(k).strip() and str(v).strip()],
         key=lambda kv: len(kv[0]),
@@ -1287,6 +1289,11 @@ async def clone_voice(
             if isinstance(r, dict) and r.get("source_file")
         }
 
+        calibration_profile = {
+            "recommended_mode": "identity_safe" if default_tuning["clone_preset"] == "stable" else "balanced",
+            "sample_coverage": "broad" if total_duration >= 30 and len(files) >= 2 else "limited",
+            "confidence": round(min(0.98, max(0.4, avg_quality_score / 100)), 2),
+        }
         metadata = {
             "voice_id": voice_id,
             "name": name,
@@ -1294,6 +1301,7 @@ async def clone_voice(
             "sample_files": saved_files,
             "sample_quality": sample_quality,
             "default_tuning": default_tuning,
+            "calibration_profile": calibration_profile,
             "created_at": datetime.datetime.now().isoformat(),
             "real_clone": HAS_XTTS,
             "total_duration": total_duration,
@@ -1337,6 +1345,7 @@ async def clone_voice(
             "quality_tier": quality_tier,
             "quality_score": round(avg_quality_score, 1),
             "default_tuning": default_tuning,
+            "calibration_profile": calibration_profile,
             "real_clone": HAS_XTTS,
             "xtts_available": HAS_XTTS,
             "preprocessed": True,

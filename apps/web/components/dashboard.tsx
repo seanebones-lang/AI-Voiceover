@@ -311,6 +311,7 @@ export function Dashboard() {
   const [compareAudio2, setCompareAudio2] = useState<string | null>(null)
   const [compareLoading1, setCompareLoading1] = useState(false)
   const [compareLoading2, setCompareLoading2] = useState(false)
+  const [abLoading, setAbLoading] = useState(false)
   
   // Voice preview
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -814,7 +815,7 @@ export function Dashboard() {
   }
 
   // ============ Compare Functions ============
-  async function generateCompare(voiceNum: 1 | 2) {
+  async function generateCompare(voiceNum: 1 | 2, payloadOverrides?: Record<string, unknown>) {
     const voiceId = voiceNum === 1 ? compareVoice1 : compareVoice2
     if (!compareText.trim() || !voiceId) {
       setError('Please enter text and select a voice')
@@ -835,6 +836,7 @@ export function Dashboard() {
           ...getMasteringPayload(),
           ...getPronunciationOverridesPayload(),
           ...getCloneTuningPayload(voiceId),
+          ...(payloadOverrides || {}),
         }),
       })
 
@@ -852,6 +854,38 @@ export function Dashboard() {
     } finally {
       if (voiceNum === 1) setCompareLoading1(false)
       else setCompareLoading2(false)
+    }
+  }
+
+  async function generateCloneStyleAB() {
+    if (!selectedVoice.startsWith('clone_') || !text.trim()) {
+      setError('Select a cloned voice and enter text first')
+      return
+    }
+    setAbLoading(true)
+    setCompareText(text.trim())
+    setCompareVoice1(selectedVoice)
+    setCompareVoice2(selectedVoice)
+    try {
+      await Promise.all([
+        generateCompare(1, {
+          clone_preset: 'stable',
+          auto_expressive: true,
+          expressive_intensity: 'subtle',
+          mastering_enabled: true,
+          mastering_profile: 'podcast',
+        }),
+        generateCompare(2, {
+          clone_preset: 'expressive',
+          auto_expressive: true,
+          expressive_intensity: 'balanced',
+          mastering_enabled: true,
+          mastering_profile: 'broadcast',
+        }),
+      ])
+      setActiveTab('compare')
+    } finally {
+      setAbLoading(false)
     }
   }
 
@@ -1258,7 +1292,7 @@ export function Dashboard() {
                   <textarea
                     value={pronunciationOverridesText}
                     onChange={(e) => setPronunciationOverridesText(e.target.value)}
-                    placeholder={'Write one per line: term=how to say it\nExample: Nexteleven=Next Eleven\nExample: SQL=sequel'}
+                    placeholder={'Write one per line: term=how to say it\nExample: Nexteleven=Next Eleven\nExample: SQL=sequel\nOr inline: [ipa:route|ruːt]'}
                     className="w-full min-h-[72px] px-3 py-2 rounded-lg border bg-background text-xs resize-y"
                   />
                 </div>
@@ -1329,6 +1363,18 @@ export function Dashboard() {
                   </>
                 )}
               </Button>
+              {selectedVoice.startsWith('clone_') && (
+                <Button
+                  onClick={generateCloneStyleAB}
+                  variant="outline"
+                  className="w-full"
+                  disabled={loading || abLoading || !text.trim()}
+                >
+                  {(abLoading || compareLoading1 || compareLoading2)
+                    ? 'Generating A/B...'
+                    : 'Generate A/B (Identity-safe vs Expressive)'}
+                </Button>
+              )}
             </CardContent>
           </Card>
 

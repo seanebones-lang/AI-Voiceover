@@ -37,8 +37,10 @@ interface TTSRequest {
 }
 
 function applyPronunciationOverrides(text: string, overrides?: Record<string, string>): string {
-  if (!overrides) return text
   let out = text
+  // SSML-lite phoneme escape: [ipa:word|fəˈniːm] -> fəˈniːm
+  out = out.replace(/\[ipa:([^|\]]+)\|([^\]]+)\]/gi, (_, _word, phoneme) => String(phoneme).trim())
+  if (!overrides) return out
   const entries = Object.entries(overrides).sort((a, b) => b[0].length - a[0].length)
   for (const [rawSource, rawTarget] of entries) {
     const source = rawSource.trim()
@@ -252,6 +254,13 @@ export async function POST(request: NextRequest) {
     let finalEcho = expressiveProsody.echo
     let finalNoiseReduction = expressiveProsody.noise_reduction
     let finalSpecialEffect = expressiveProsody.special_effect
+    // Long-form anti-drift: progressively damp expressive variance for cloned voices.
+    if (voice_id.startsWith('clone_') && normalizedInputText.length > 600) {
+      const driftScale = Math.min(0.45, (normalizedInputText.length - 600) / 4000)
+      finalSpeed = finalSpeed + (1.0 - finalSpeed) * driftScale
+      finalPitch = finalPitch * (1.0 - driftScale)
+      finalReverb = finalReverb * (1.0 - driftScale * 0.6)
+    }
 
     const cacheKey = buildTtsCacheKey({
       text: normalizedInputText.trim(),
