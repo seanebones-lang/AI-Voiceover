@@ -6,8 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import {
   Wand2, Volume2, Download, Mic, Upload, Trash2, Plus, Play, Square,
-  MessageCircle, Layers, AlertCircle, Check, X,
+  MessageCircle, Layers, AlertCircle, Check, X, Copy,
 } from 'lucide-react'
+import { VOICE_CLONE_CALIBRATION_SCRIPT } from '@/lib/clone-calibration'
+import { CLONED_TTS_MAX_CHARS, STANDARD_TTS_MAX_CHARS } from '@/lib/validation'
+import { EMOTIONS } from '@/lib/constants/emotions'
 
 interface Voice {
   voice_id: string
@@ -82,6 +85,8 @@ export function Dashboard() {
   
   // Special Effects
   const [specialEffect, setSpecialEffect] = useState<string>('none')
+  /** Server-side prosody preset (merged with speed/pitch sliders). */
+  const [ttsEmotion, setTtsEmotion] = useState<string>('neutral')
   
   // Advanced Settings
   const [outputFormat, setOutputFormat] = useState<'mp3' | 'wav'>('mp3')
@@ -213,6 +218,11 @@ export function Dashboard() {
   const [cloneSuccess, setCloneSuccess] = useState<string | null>(null)
   const [cloneQualityWarnings, setCloneQualityWarnings] = useState<string[]>([])
   const [cloneRecommendations, setCloneRecommendations] = useState<string[]>([])
+  const [cloneTips, setCloneTips] = useState<string[]>([])
+  const [calibrationCopied, setCalibrationCopied] = useState(false)
+  const [cloneQualityTier, setCloneQualityTier] = useState<string | null>(null)
+  /** Coqui XTTS v2 clone output character (cloned voices only). */
+  const [cloneVoicePreset, setCloneVoicePreset] = useState<'natural' | 'expressive' | 'stable'>('natural')
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [recordedBlobUrl, setRecordedBlobUrl] = useState<string | null>(null)
@@ -285,9 +295,11 @@ export function Dashboard() {
         body: JSON.stringify({
           text: 'Hello! This is a preview of how this voice sounds.',
           voice_id: voiceId,
+          emotion: ttsEmotion,
           speed: 1.0,
           pitch: 0,
           volume: 1.0,
+          ...(voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
         }),
       })
       
@@ -365,6 +377,7 @@ export function Dashboard() {
           text: text.trim(),
           voice_id: selectedVoice,
           language,
+          emotion: ttsEmotion,
           speed: speed[0],
           pitch: pitch[0],
           volume: volume[0],
@@ -372,6 +385,7 @@ export function Dashboard() {
           echo: echo[0],
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
+          ...(selectedVoice.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
         }),
       })
 
@@ -505,6 +519,7 @@ export function Dashboard() {
             text: paragraphs[i].trim(),
             voice_id: selectedVoice,
             language,
+            emotion: ttsEmotion,
             speed: speed[0],
             pitch: pitch[0],
             volume: volume[0],
@@ -512,6 +527,7 @@ export function Dashboard() {
             echo: echo[0],
             noise_reduction: noiseReduction,
             special_effect: specialEffect,
+            ...(selectedVoice.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
           }),
         })
         
@@ -597,6 +613,17 @@ export function Dashboard() {
     }
   }
 
+  async function copyCalibrationScript() {
+    try {
+      await navigator.clipboard.writeText(VOICE_CLONE_CALIBRATION_SCRIPT)
+      setCloneError(null)
+      setCalibrationCopied(true)
+      window.setTimeout(() => setCalibrationCopied(false), 2000)
+    } catch {
+      setCloneError('Could not copy — select the text manually or allow clipboard access.')
+    }
+  }
+
   async function cloneVoice() {
     if (!cloneName.trim()) {
       setCloneError('Please enter a voice name')
@@ -610,6 +637,10 @@ export function Dashboard() {
     setCloneLoading(true)
     setCloneError(null)
     setCloneSuccess(null)
+    setCloneTips([])
+    setCloneQualityTier(null)
+    setCloneQualityWarnings([])
+    setCloneRecommendations([])
 
     try {
       const formData = new FormData()
@@ -631,6 +662,8 @@ export function Dashboard() {
       setCloneSuccess(data.message || `Voice "${cloneName}" cloned successfully!`)
       setCloneQualityWarnings(data.quality_warnings || [])
       setCloneRecommendations(data.recommendations || [])
+      setCloneTips(Array.isArray(data.clone_tips) ? data.clone_tips : [])
+      setCloneQualityTier(typeof data.quality_tier === 'string' ? data.quality_tier : null)
       setCloneName('')
       setCloneDescription('')
       setCloneFiles([])
@@ -685,6 +718,9 @@ export function Dashboard() {
           body: JSON.stringify({
             text: msg.text.trim(),
             voice_id: msg.voiceId,
+            language,
+            emotion: ttsEmotion,
+            ...(msg.voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
           }),
         })
 
@@ -720,7 +756,12 @@ export function Dashboard() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: compareText.trim(), voice_id: voiceId }),
+        body: JSON.stringify({
+          text: compareText.trim(),
+          voice_id: voiceId,
+          emotion: ttsEmotion,
+          ...(voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+        }),
       })
 
       if (!response.ok) throw new Error('Generation failed')
@@ -934,6 +975,25 @@ export function Dashboard() {
                     )}
                   </Button>
                 </div>
+                {selectedVoice.startsWith('clone_') && (
+                  <div className="mt-3">
+                    <label className="text-sm font-medium mb-2 block">Clone delivery (XTTS v2)</label>
+                    <select
+                      value={cloneVoicePreset}
+                      onChange={(e) =>
+                        setCloneVoicePreset(e.target.value as 'natural' | 'expressive' | 'stable')
+                      }
+                      className="w-full px-4 py-3 rounded-lg border bg-background"
+                    >
+                      <option value="natural">Natural — balanced warmth and consistency</option>
+                      <option value="expressive">Expressive — more variation (character reads)</option>
+                      <option value="stable">Stable — tighter, uniform narration</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tuned sampling for your cloned voice. Try Natural first; switch if the read feels too flat or too wild.
+                    </p>
+                  </div>
+                )}
               </div>
               
               {/* Language Selector */}
@@ -966,6 +1026,32 @@ export function Dashboard() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-sm font-medium mb-2 block">Emotion</label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Shapes delivery on the server (speed, pitch, light reverb/levels). Works with cloned and standard voices.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {EMOTIONS.map((emo) => (
+                    <button
+                      key={emo.id}
+                      type="button"
+                      onClick={() => setTtsEmotion(emo.id)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                        ttsEmotion === emo.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary hover:bg-secondary/80'
+                      }`}
+                    >
+                      <span className="mr-1" aria-hidden>
+                        {emo.emoji}
+                      </span>
+                      {emo.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Text Input */}
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -980,9 +1066,25 @@ export function Dashboard() {
                       />
                       <span className="text-muted-foreground">Batch mode</span>
                   </label>
-                    <span className="text-xs text-muted-foreground">{charCount} chars • {wordCount} words</span>
+                    <span
+                      className={`text-xs ${
+                        selectedVoice.startsWith('clone_') && charCount > CLONED_TTS_MAX_CHARS
+                          ? 'text-destructive font-medium'
+                          : selectedVoice.startsWith('clone_') && charCount > CLONED_TTS_MAX_CHARS * 0.85
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-muted-foreground'
+                      }`}
+                    >
+                      {charCount}
+                      {selectedVoice.startsWith('clone_') ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} chars • {wordCount} words
+                    </span>
                   </div>
                 </div>
+                {selectedVoice.startsWith('clone_') && (
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Cloned voices: up to {CLONED_TTS_MAX_CHARS} characters per generation (one XTTS run). For longer scripts, enable batch mode and keep each paragraph under that limit.
+                  </p>
+                )}
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -991,11 +1093,14 @@ export function Dashboard() {
                     : "Type or paste your text here..."
                   }
                   className="w-full min-h-[200px] px-4 py-3 rounded-lg border bg-background resize-none"
-                  maxLength={5000}
+                  maxLength={selectedVoice.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS}
                 />
                 {batchMode && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Batch mode: {text.split(/\n\n+/).filter(p => p.trim()).length} paragraphs detected
+                    {selectedVoice.startsWith('clone_')
+                      ? ' — each paragraph must stay within the clone character limit.'
+                      : ''}
                   </p>
                 )}
               </div>
@@ -1394,13 +1499,36 @@ export function Dashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Mic className="h-5 w-5" />
-                  Clone Your Voice
+                  Voice Clone Studio
                 </CardTitle>
               <CardDescription>
-                  Upload 1-5 audio samples (30+ seconds total) of clear speech for best results
+                Studio-grade cloning with Coqui XTTS v2: quiet room, one speaker, 30–120 seconds of clear speech beats long noisy recordings.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground space-y-2">
+                  <p className="font-medium text-foreground">Pro tips</p>
+                  <ul className="list-disc list-inside text-xs space-y-1">
+                    <li>Use WAV or lossless source when possible; avoid heavy compression.</li>
+                    <li>Read varied sentences (questions, numbers) so the model captures your range.</li>
+                    <li>After cloning, use <strong className="text-foreground">Natural / Expressive / Stable</strong> on the TTS tab to tune delivery.</li>
+                  </ul>
+                </div>
+                <div className="rounded-lg border bg-card p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">Calibration script</p>
+                    <Button type="button" variant="outline" size="sm" onClick={copyCalibrationScript} className="gap-1.5">
+                      <Copy className="h-3.5 w-3.5" />
+                      {calibrationCopied ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Read this aloud in one take (teleprompter style): steady pace, normal volume, minimal room noise. Paste into notes or another window if you prefer a larger font.
+                  </p>
+                  <p className="text-sm leading-relaxed text-foreground/90 whitespace-normal border-l-2 border-primary/40 pl-3">
+                    {VOICE_CLONE_CALIBRATION_SCRIPT}
+                  </p>
+                </div>
                 {/* Success/Error Messages */}
                 {cloneSuccess && (
                   <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 text-primary space-y-2">
@@ -1421,6 +1549,22 @@ export function Dashboard() {
                         <p className="font-medium">Tips for better results:</p>
                         <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
                           {cloneRecommendations.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {cloneQualityTier && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Reference quality tier: <span className="text-foreground font-medium">{cloneQualityTier}</span>
+                        {cloneQualityTier === 'minimal' || cloneQualityTier === 'basic'
+                          ? ' — add more clear audio for richer clones.'
+                          : null}
+                      </p>
+                    )}
+                    {cloneTips.length > 0 && (
+                      <div className="text-sm text-muted-foreground mt-2">
+                        <p className="font-medium">NextEleven clone guide:</p>
+                        <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
+                          {cloneTips.map((t, i) => <li key={i}>{t}</li>)}
                         </ul>
                       </div>
                     )}

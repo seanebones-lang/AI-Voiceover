@@ -3,13 +3,18 @@ import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
 import { ttsRateLimiter } from '@/lib/rate-limit'
 import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
-import { validateTTSRequest, extractClientIP } from '@/lib/validation'
+import { validateTTSRequest, extractClientIP, CLONED_TTS_MAX_CHARS } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
+import { applyEmotionProsody } from '@/lib/tts/emotion-prosody'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
+import { Buffer } from 'node:buffer'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+// Allow long-running cloned-voice XTTS synthesis on Vercel.
+export const maxDuration = 300
 
 // Initialize RAG integration for TTS enhancement
 const ragIntegration = new VoiceCloningRAGIntegration(
@@ -31,6 +36,65 @@ interface TTSRequest {
   special_effect?: string // 'none' | 'robot' | 'radio' | 'whisper' | 'deep' | 'chipmunk' | 'cave' | 'telephone'
   // User tracking
   user_id?: string
+}
+
+function extractWavData(buffer: Buffer): { fmtChunk: Buffer; dataChunk: Buffer } | null {
+  if (buffer.length < 44) return null
+  if (buffer.toString('ascii', 0, 4) !== 'RIFF') return null
+  if (buffer.toString('ascii', 8, 12) !== 'WAVE') return null
+
+  let offset = 12
+  let fmtChunk: Buffer | null = null
+  let dataChunk: Buffer | null = null
+
+  while (offset + 8 <= buffer.length) {
+    const chunkId = buffer.toString('ascii', offset, offset + 4)
+    const chunkSize = buffer.readUInt32LE(offset + 4)
+    const chunkStart = offset + 8
+    const chunkEnd = chunkStart + chunkSize
+
+    if (chunkEnd > buffer.length) break
+
+    if (chunkId === 'fmt ') {
+      fmtChunk = buffer.subarray(chunkStart, chunkEnd)
+    } else if (chunkId === 'data') {
+      dataChunk = buffer.subarray(chunkStart, chunkEnd)
+    }
+
+    offset = chunkEnd + (chunkSize % 2)
+  }
+
+  if (!fmtChunk || !dataChunk) return null
+  return { fmtChunk, dataChunk }
+}
+
+function mergeWavBuffers(buffers: ArrayBuffer[]): ArrayBuffer | null {
+  if (!buffers.length) return null
+  if (buffers.length === 1) return buffers[0]
+
+  const parsed = buffers.map((ab) => extractWavData(Buffer.from(ab)))
+  if (parsed.some((p) => !p)) return null
+
+  const fmtChunk = parsed[0]!.fmtChunk
+  const dataPayload = Buffer.concat(parsed.map((p) => p!.dataChunk))
+  const riffSize = 4 + (8 + fmtChunk.length) + (8 + dataPayload.length)
+  const output = Buffer.alloc(12 + (8 + fmtChunk.length) + (8 + dataPayload.length))
+
+  output.write('RIFF', 0, 4, 'ascii')
+  output.writeUInt32LE(riffSize, 4)
+  output.write('WAVE', 8, 4, 'ascii')
+
+  let offset = 12
+  output.write('fmt ', offset, 4, 'ascii')
+  output.writeUInt32LE(fmtChunk.length, offset + 4)
+  fmtChunk.copy(output, offset + 8)
+  offset += 8 + fmtChunk.length
+
+  output.write('data', offset, 4, 'ascii')
+  output.writeUInt32LE(dataPayload.length, offset + 4)
+  dataPayload.copy(output, offset + 8)
+
+  return output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength)
 }
 
 export async function POST(request: NextRequest) {
@@ -94,8 +158,27 @@ export async function POST(request: NextRequest) {
 
     const validation = validateTTSRequest(body)
     if (!validation.success || !validation.data) {
+      const requestedVoiceId =
+        body && typeof body === 'object' && 'voice_id' in body && typeof (body as Record<string, unknown>).voice_id === 'string'
+          ? String((body as Record<string, unknown>).voice_id)
+          : undefined
+      const rawValidationError = validation.error || 'Validation failed'
+      const clonedTextLimitExceeded =
+        requestedVoiceId?.startsWith('clone_') &&
+        (rawValidationError.includes('Cloned voice text must') ||
+          rawValidationError.includes(String(CLONED_TTS_MAX_CHARS)))
       return NextResponse.json(
-        { error: validation.error || 'Validation failed' },
+        {
+          error: clonedTextLimitExceeded
+            ? 'Cloned voice input is too long for one request'
+            : rawValidationError,
+          ...(clonedTextLimitExceeded
+            ? {
+                hint: `Keep each cloned-voice request under ${CLONED_TTS_MAX_CHARS} characters for reliable synthesis (one XTTS job). Use batch mode or split the script.`,
+                maxCharsPerRequest: CLONED_TTS_MAX_CHARS,
+              }
+            : {}),
+        },
         { status: 400 }
       )
     }
@@ -105,8 +188,30 @@ export async function POST(request: NextRequest) {
       speed = 1.0, pitch = 0, volume = 1.0,
       reverb = 0, echo = 0, noise_reduction = false,
       special_effect = 'none',
-      user_id
+      emotion = 'neutral',
+      user_id,
+      clone_preset,
+      temperature: ttsTemperature,
+      repetition_penalty: ttsRepetitionPenalty,
+      top_k: ttsTopK,
+      top_p: ttsTopP,
     } = validation.data
+
+    const prosody = applyEmotionProsody(
+      { speed, pitch, volume, reverb, echo, noise_reduction, special_effect },
+      emotion
+    )
+
+    const cloneTuneKey =
+      voice_id.startsWith('clone_')
+        ? [
+            clone_preset ?? 'natural',
+            ttsTemperature !== undefined ? String(ttsTemperature) : '_',
+            ttsRepetitionPenalty !== undefined ? String(ttsRepetitionPenalty) : '_',
+            ttsTopK !== undefined ? String(ttsTopK) : '_',
+            ttsTopP !== undefined ? String(ttsTopP) : '_',
+          ].join(':')
+        : ''
 
     // 🎯 RAG ENHANCEMENT: Analyze text and optimize TTS parameters
     const ttsEnhancement = await ragIntegration.enhanceTTSGeneration(
@@ -116,14 +221,14 @@ export async function POST(request: NextRequest) {
       user_id
     ).catch(() => ({ rag_enhanced: false, tts_parameters: null }))
 
-    // Apply RAG-enhanced parameters if available
-    let finalSpeed = speed
-    let finalPitch = pitch
-    let finalVolume = volume
-    let finalReverb = reverb
-    let finalEcho = echo
-    let finalNoiseReduction = noise_reduction
-    let finalSpecialEffect = special_effect
+    // Apply RAG-enhanced parameters if available (starts from emotion-adjusted prosody)
+    let finalSpeed = prosody.speed
+    let finalPitch = prosody.pitch
+    let finalVolume = prosody.volume
+    let finalReverb = prosody.reverb
+    let finalEcho = prosody.echo
+    let finalNoiseReduction = prosody.noise_reduction
+    let finalSpecialEffect = prosody.special_effect
 
     if (ttsEnhancement.rag_enhanced && ttsEnhancement.tts_parameters) {
       const params = ttsEnhancement.tts_parameters
@@ -154,6 +259,8 @@ export async function POST(request: NextRequest) {
       echo: finalEcho,
       noise_reduction: finalNoiseReduction,
       special_effect: finalSpecialEffect,
+      clone_tune: cloneTuneKey,
+      emotion,
     })
     const cached = getCached(cacheKey)
     if (cached) {
@@ -233,76 +340,126 @@ export async function POST(request: NextRequest) {
         recordCloneMetric('clone_tts_requested')
       }
 
-      const textLen = text.trim().length
+      const normalizedText = text.trim()
+      const textLen = normalizedText.length
       const hasEffects =
         finalReverb > 0 ||
         finalEcho > 0 ||
         finalNoiseReduction ||
         finalSpecialEffect !== 'none' ||
         finalVolume !== 1.0
+      // One request per generation: XTTS splits internally (sentence-aware) and merges once.
+      // Double-chunking here caused extra HTTP hops and rougher seams without improving timeouts.
+      const chunkedTexts = [normalizedText]
+
+      if (isClonedVoice && textLen > CLONED_TTS_MAX_CHARS) {
+        return NextResponse.json(
+          {
+            error: 'Cloned voice text too long for synchronous generation',
+            requestId,
+            maxChars: CLONED_TTS_MAX_CHARS,
+            receivedChars: textLen,
+            hint: 'Split into shorter sections (or use batch mode). For very long content, use a GPU XTTS host or multiple requests.',
+          },
+          {
+            status: 413,
+            headers: {
+              'X-Request-Id': requestId,
+            },
+          }
+        )
+      }
+
       const dynamicTimeoutMs = (() => {
         let timeout = xttsService.timeout
         // Cloned voice inference on CPU can exceed 30s for multi-sentence text.
         if (isClonedVoice) {
-          timeout = Math.max(timeout, 90_000)
-          timeout += Math.min(90_000, Math.floor(textLen / 80) * 4_000)
+          // Give CPU-based XTTS enough time for long-form synthesis in one attempt.
+          timeout = Math.max(timeout, 150_000)
+          timeout += Math.min(120_000, Math.floor(textLen / 80) * 6_000)
         }
         if (hasEffects) timeout += 10_000
-        return Math.min(timeout, 240_000)
+        // Keep fetch timeout below function maxDuration (300s) for cleanup/response.
+        return Math.min(timeout, 270_000)
       })()
 
-      const retryCount = isClonedVoice ? 1 : xttsService.retries
+      // Retrying cloned-voice synthesis can duplicate multi-minute XTTS work and
+      // push total request time past gateway limits. Keep it single-attempt.
+      const retryCount = isClonedVoice ? 0 : xttsService.retries
 
-      const xttsResponse = await withRetry(async () => {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), dynamicTimeoutMs)
-        
-        try {
-          const response = await fetch(`${xttsService.url}/tts`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Request-Id': requestId,
-            },
-            body: JSON.stringify({
-              text: text.trim(),
-              voice_id,
-              language,
-              speed: finalSpeed,
-              pitch: finalPitch,
-              volume: finalVolume,
-              reverb: finalReverb,
-              echo: finalEcho,
-              noise_reduction: finalNoiseReduction,
-              special_effect: finalSpecialEffect,
-              rag_enhancement: ttsEnhancement.rag_enhanced ? ttsEnhancement : undefined,
-            }),
-            signal: controller.signal,
-          })
+      const chunkBuffers: ArrayBuffer[] = []
+      let contentType = 'audio/wav'
+
+      for (let chunkIndex = 0; chunkIndex < chunkedTexts.length; chunkIndex++) {
+        const xttsResponse = await withRetry(async () => {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), dynamicTimeoutMs)
           
-          clearTimeout(timeout)
-          return response
-        } catch (error) {
-          clearTimeout(timeout)
-          throw error
-        }
-      }, retryCount, 1000, 2)
+          try {
+            const response = await fetch(`${xttsService.url}/tts`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Request-Id': `${requestId}-c${chunkIndex + 1}`,
+              },
+              body: JSON.stringify({
+                text: chunkedTexts[chunkIndex],
+                voice_id,
+                language,
+                speed: finalSpeed,
+                pitch: finalPitch,
+                volume: finalVolume,
+                reverb: finalReverb,
+                echo: finalEcho,
+                noise_reduction: finalNoiseReduction,
+                special_effect: finalSpecialEffect,
+                rag_enhancement: ttsEnhancement.rag_enhanced ? ttsEnhancement : undefined,
+                ...(isClonedVoice
+                  ? {
+                      ...(clone_preset ? { clone_preset } : {}),
+                      ...(ttsTemperature !== undefined ? { temperature: ttsTemperature } : {}),
+                      ...(ttsRepetitionPenalty !== undefined ? { repetition_penalty: ttsRepetitionPenalty } : {}),
+                      ...(ttsTopK !== undefined ? { top_k: ttsTopK } : {}),
+                      ...(ttsTopP !== undefined ? { top_p: ttsTopP } : {}),
+                    }
+                  : {}),
+              }),
+              signal: controller.signal,
+            })
+            
+            clearTimeout(timeout)
+            return response
+          } catch (error) {
+            clearTimeout(timeout)
+            throw error
+          }
+        }, retryCount, 1000, 2)
 
-      if (!xttsResponse.ok) {
-        if (voice_id.startsWith('clone_')) {
-          recordCloneMetric('clone_tts_error')
+        if (!xttsResponse.ok) {
+          if (voice_id.startsWith('clone_')) {
+            recordCloneMetric('clone_tts_error')
+          }
+          const error = await xttsResponse.json().catch(() => ({ detail: 'TTS failed' }))
+          throw new Error(error.detail || `TTS sidecar returned ${xttsResponse.status}`)
         }
-        const error = await xttsResponse.json().catch(() => ({ detail: 'TTS failed' }))
-        throw new Error(error.detail || `TTS sidecar returned ${xttsResponse.status}`)
+
+        contentType = xttsResponse.headers.get('content-type') || contentType
+        chunkBuffers.push(await xttsResponse.arrayBuffer())
       }
 
       if (voice_id.startsWith('clone_')) {
         recordCloneMetric('clone_tts_success')
       }
 
-      const audioBuffer = await xttsResponse.arrayBuffer()
+      const mergedAudioBuffer = chunkBuffers.length > 1
+        ? mergeWavBuffers(chunkBuffers)
+        : chunkBuffers[0]
+      if (!mergedAudioBuffer) {
+        throw new Error('Failed to merge chunked cloned-voice audio')
+      }
+
+      const audioBuffer = mergedAudioBuffer
       const latency = Date.now() - startTime
-      const contentType = xttsResponse.headers.get('content-type') || 'audio/mpeg'
       setCached(cacheKey, audioBuffer, contentType)
 
       recordMetric({
@@ -367,7 +524,7 @@ export async function POST(request: NextRequest) {
             ? {
                 hint: voice_id.startsWith('clone_')
                   ? 'Cloning requires XTTS. Deploy the XTTS service and set XTTS_URL, or check GET /api/health for capabilities.'
-                  : 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL.',
+                  : 'XTTS voice service is not reachable. Add and deploy the XTTS service (services/xtts) as a second Railway service, or set XTTS_URL to its internal URL. See RAILWAY_DEPLOY.md.',
               }
             : {}),
         },

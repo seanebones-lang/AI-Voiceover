@@ -5,11 +5,14 @@ import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
 import { config, withRetry } from '@/lib/config'
 import { ttsRateLimiter } from '@/lib/rate-limit'
-import { extractClientIP, validateTTSRequest } from '@/lib/validation'
+import { extractClientIP, validateTTSRequest, CLONED_TTS_MAX_CHARS } from '@/lib/validation'
 import { generateRequestId } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
+import { applyEmotionProsody } from '@/lib/tts/emotion-prosody'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
   const denied = denyUnlessMutableApiAuthorized(request)
@@ -53,20 +56,51 @@ export async function POST(request: NextRequest) {
     echo = 0,
     noise_reduction = false,
     special_effect = 'none',
-    // emotion and effect are accepted but not yet applied at the sidecar level
+    emotion = 'neutral',
+    clone_preset,
+    temperature: ttsTemperature,
+    repetition_penalty: ttsRepetitionPenalty,
+    top_k: ttsTopK,
+    top_p: ttsTopP,
   } = validation.data
+
+  const {
+    speed: ttsSpeed,
+    pitch: ttsPitch,
+    volume: ttsVolume,
+    reverb: ttsReverb,
+    echo: ttsEcho,
+    noise_reduction: ttsNoiseReduction,
+    special_effect: ttsSpecialEffect,
+  } = applyEmotionProsody(
+    { speed, pitch, volume, reverb, echo, noise_reduction, special_effect },
+    emotion
+  )
+
+  const isClonedVoice = voice_id.startsWith('clone_')
+  const cloneTuneKey = isClonedVoice
+    ? [
+        clone_preset ?? 'natural',
+        ttsTemperature !== undefined ? String(ttsTemperature) : '_',
+        ttsRepetitionPenalty !== undefined ? String(ttsRepetitionPenalty) : '_',
+        ttsTopK !== undefined ? String(ttsTopK) : '_',
+        ttsTopP !== undefined ? String(ttsTopP) : '_',
+      ].join(':')
+    : ''
 
   const cacheKey = buildTtsCacheKey({
     text: text.trim(),
     voice_id,
     language,
-    speed,
-    pitch,
-    volume,
-    reverb,
-    echo,
-    noise_reduction,
-    special_effect,
+    speed: ttsSpeed,
+    pitch: ttsPitch,
+    volume: ttsVolume,
+    reverb: ttsReverb,
+    echo: ttsEcho,
+    noise_reduction: ttsNoiseReduction,
+    special_effect: ttsSpecialEffect,
+    clone_tune: cloneTuneKey,
+    emotion,
   })
   const cached = getCached(cacheKey)
   if (cached) {
@@ -87,7 +121,7 @@ export async function POST(request: NextRequest) {
     let edgeMethod = 'websocket'
 
     try {
-      mp3 = await synthesizeEdge({ text: text.trim(), voiceId: resolvedVoice, speed, pitch })
+      mp3 = await synthesizeEdge({ text: text.trim(), voiceId: resolvedVoice, speed: ttsSpeed, pitch: ttsPitch })
     } catch {
       // WebSocket method failed, try fallback
     }
@@ -95,7 +129,11 @@ export async function POST(request: NextRequest) {
     if (!mp3) {
       try {
         edgeMethod = 'universal'
-        mp3 = await synthesizeEdgeFallback(text.trim(), resolvedVoice, { speed, pitch })
+        mp3 = await synthesizeEdgeFallback(text.trim(), resolvedVoice, {
+          speed: ttsSpeed,
+          pitch: ttsPitch,
+          volume: ttsVolume,
+        })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         return jsonApiError(503, 'Edge TTS failed', {
@@ -118,17 +156,70 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Cloned voices → XTTS sidecar
+  // Cloned voices → XTTS sidecar (match /api/tts budgets and tuning)
   try {
     const xttsService = config.services.xtts
+    const textLen = text.trim().length
+    const hasEffects =
+      ttsReverb > 0 ||
+      ttsEcho > 0 ||
+      ttsNoiseReduction ||
+      ttsSpecialEffect !== 'none' ||
+      ttsVolume !== 1.0
+
+    if (isClonedVoice && textLen > CLONED_TTS_MAX_CHARS) {
+      return NextResponse.json(
+        {
+          error: 'Cloned voice text too long for synchronous generation',
+          code: 'CLONE_TEXT_TOO_LONG',
+          maxChars: CLONED_TTS_MAX_CHARS,
+          receivedChars: textLen,
+          requestId,
+        },
+        { status: 413, headers: { 'X-Request-Id': requestId } }
+      )
+    }
+
+    const dynamicTimeoutMs = (() => {
+      let timeout = xttsService.timeout
+      if (isClonedVoice) {
+        timeout = Math.max(timeout, 150_000)
+        timeout += Math.min(120_000, Math.floor(textLen / 80) * 6_000)
+      }
+      if (hasEffects) timeout += 10_000
+      return Math.min(timeout, 270_000)
+    })()
+
+    const retryCount = isClonedVoice ? 0 : xttsService.retries
+
     const xttsResponse = await withRetry(async () => {
       const controller = new AbortController()
-      const t = setTimeout(() => controller.abort(), xttsService.timeout)
+      const t = setTimeout(() => controller.abort(), dynamicTimeoutMs)
       try {
         const res = await fetch(`${xttsService.url}/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-          body: JSON.stringify({ text: text.trim(), voice_id, language, speed, pitch, volume, reverb, echo, noise_reduction, special_effect }),
+          body: JSON.stringify({
+            text: text.trim(),
+            voice_id,
+            language,
+            speed: ttsSpeed,
+            pitch: ttsPitch,
+            volume: ttsVolume,
+            reverb: ttsReverb,
+            echo: ttsEcho,
+            noise_reduction: ttsNoiseReduction,
+            special_effect: ttsSpecialEffect,
+            ...(isClonedVoice
+              ? {
+                  ...(clone_preset ? { clone_preset } : {}),
+                  ...(ttsTemperature !== undefined ? { temperature: ttsTemperature } : {}),
+                  ...(ttsRepetitionPenalty !== undefined ? { repetition_penalty: ttsRepetitionPenalty } : {}),
+                  ...(ttsTopK !== undefined ? { top_k: ttsTopK } : {}),
+                  ...(ttsTopP !== undefined ? { top_p: ttsTopP } : {}),
+                }
+              : {}),
+          }),
           signal: controller.signal,
         })
         clearTimeout(t)
@@ -137,11 +228,11 @@ export async function POST(request: NextRequest) {
         clearTimeout(t)
         throw e
       }
-    }, xttsService.retries, 1000, 2)
+    }, retryCount, 1000, 2)
 
     if (!xttsResponse.ok) {
       const err = await xttsResponse.json().catch(() => ({ detail: 'TTS failed' }))
-      throw new Error(err.detail || `XTTS returned ${xttsResponse.status}`)
+      throw new Error((err as { detail?: string }).detail || `XTTS returned ${xttsResponse.status}`)
     }
 
     const audioBuffer = await xttsResponse.arrayBuffer()

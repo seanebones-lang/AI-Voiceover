@@ -5,24 +5,36 @@
  */
 
 import { z } from 'zod'
+import { ttsEmotionIds } from '@/lib/tts/emotion-prosody'
 
-// Text validation schema
-export const textSchema = z.string()
+/** Max chars for one synchronous cloned-voice request (XTTS + gateway budgets). */
+export const CLONED_TTS_MAX_CHARS = 2200
+
+/** Max chars for standard / edge voices in one request. */
+export const STANDARD_TTS_MAX_CHARS = 5000
+
+function textSecurityRefine(text: string): boolean {
+  const suspiciousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /on\w+\s*=/i,
+    /data:text\/html/i,
+  ]
+  return !suspiciousPatterns.some((pattern) => pattern.test(text))
+}
+
+/** Base text: min length + XSS-style patterns (no max — limit enforced per voice type below). */
+const ttsTextBaseSchema = z
+  .string()
   .min(1, 'Text cannot be empty')
-  .max(5000, 'Text must be 5,000 characters or less')
-  .refine(
-    (text) => {
-      // Check for potentially malicious patterns
-      const suspiciousPatterns = [
-        /<script/i,
-        /javascript:/i,
-        /on\w+\s*=/i, // Event handlers
-        /data:text\/html/i,
-      ]
-      return !suspiciousPatterns.some(pattern => pattern.test(text))
-    },
-    'Text contains potentially unsafe content'
-  )
+  .refine(textSecurityRefine, 'Text contains potentially unsafe content')
+
+// Generic schema (e.g. tests, non-TTS): standard cap only (must stay ZodString — refine-only schemas have no .max)
+export const textSchema = z
+  .string()
+  .min(1, 'Text cannot be empty')
+  .max(STANDARD_TTS_MAX_CHARS, `Text must be ${STANDARD_TTS_MAX_CHARS} characters or less`)
+  .refine(textSecurityRefine, 'Text contains potentially unsafe content')
 
 // Voice ID validation
 export const voiceIdSchema = z.string()
@@ -71,19 +83,48 @@ export const specialEffectSchema = z.enum([
 ])
 
 // TTS Request validation schema
-export const ttsRequestSchema = z.object({
-  text: textSchema,
-  voice_id: voiceIdSchema,
-  language: languageSchema.optional().default('en'),
-  speed: speedSchema.optional().default(1.0),
-  pitch: pitchSchema.optional().default(0),
-  volume: volumeSchema.optional().default(1.0),
-  reverb: reverbSchema.optional().default(0),
-  echo: echoSchema.optional().default(0),
-  noise_reduction: z.boolean().optional().default(false),
-  special_effect: specialEffectSchema.optional().default('none'),
-  user_id: z.string().max(100).optional(),
-})
+export const clonePresetSchema = z.enum(['natural', 'expressive', 'stable'])
+
+export const emotionSchema = z
+  .enum(ttsEmotionIds as unknown as [string, ...string[]])
+  .optional()
+  .default('neutral')
+
+export const ttsRequestSchema = z
+  .object({
+    text: ttsTextBaseSchema,
+    voice_id: voiceIdSchema,
+    language: languageSchema.optional().default('en'),
+    speed: speedSchema.optional().default(1.0),
+    pitch: pitchSchema.optional().default(0),
+    volume: volumeSchema.optional().default(1.0),
+    reverb: reverbSchema.optional().default(0),
+    echo: echoSchema.optional().default(0),
+    noise_reduction: z.boolean().optional().default(false),
+    special_effect: specialEffectSchema.optional().default('none'),
+    /** Prosody preset; merged server-side via applyEmotionProsody. */
+    emotion: emotionSchema,
+    user_id: z.string().max(100).optional(),
+    /** XTTS clone presets (cloned voices only; forwarded to sidecar). */
+    clone_preset: clonePresetSchema.optional(),
+    /** Advanced XTTS sampling (optional; omit to use service defaults). */
+    temperature: z.number().min(0.35).max(1.15).optional(),
+    repetition_penalty: z.number().min(1.0).max(2.5).optional(),
+    top_k: z.number().int().min(10).max(100).optional(),
+    top_p: z.number().min(0.65).max(0.99).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const max = data.voice_id.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
+    if (data.text.length > max) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['text'],
+        message: data.voice_id.startsWith('clone_')
+          ? `Cloned voice text must be ${max} characters or less for reliable synthesis. Use batch mode or split your script into sections.`
+          : `Text must be ${STANDARD_TTS_MAX_CHARS} characters or less`,
+      })
+    }
+  })
 
 // Voice cloning request validation
 export const cloneRequestSchema = z.object({

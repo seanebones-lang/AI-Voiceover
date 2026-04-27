@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
     // 2. Fetch /voices (cloned + default)
     let clonedCount = 0
     try {
-      const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : request.nextUrl.origin
+      const base = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXTAUTH_URL || 'http://localhost:3000'
       const res = await fetch(`${base}/api/voices`, { cache: 'no-store' })
       if (res.ok) {
         const data = await res.json()

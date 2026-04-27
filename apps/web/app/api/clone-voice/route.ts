@@ -127,6 +127,10 @@ export async function POST(request: NextRequest) {
     }
     
     const xttsService = config.services.xtts
+    const cloneTimeoutMs = Math.min(
+      240_000,
+      Math.max(xttsService.timeout * 4, 120_000)
+    )
 
     // Update formData with sanitized name
     formData.set('name', sanitizedName)
@@ -134,7 +138,7 @@ export async function POST(request: NextRequest) {
     // Forward to XTTS sidecar with retry logic
     const response = await withRetry(async () => {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), xttsService.timeout)
+      const timeout = setTimeout(() => controller.abort(), cloneTimeoutMs)
       
       try {
         const res = await fetch(`${xttsService.url}/clone`, {

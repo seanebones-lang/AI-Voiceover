@@ -65,12 +65,22 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
 venv/
 env/
 ENV/
 **/.venv/
 
 # local XTTS artifacts
+services/xtts/cloned_voices/
+
+# workers build output
+apps/workers/dist/
+
+# local Vercel env (use Vercel dashboard / pull)
+apps/web/.env.vercel
+
+# runtime XTTS voice clone storage
 services/xtts/cloned_voices/
 
 # IDE

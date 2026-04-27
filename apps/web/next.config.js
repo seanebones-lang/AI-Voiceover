@@ -2,11 +2,12 @@ const path = require('path')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  output: 'standalone',
+  // Monorepo: use repo root so Turbopack resolves workspace packages consistently.
   turbopack: {
     root: path.join(__dirname, '../..'),
   },
+  reactStrictMode: true,
+  output: 'standalone',
   transpilePackages: [
     '@ai-voiceover/contracts',
     '@ai-voiceover/db',

@@ -135,7 +135,7 @@ export const FileUploadZone = React.memo(function FileUploadZone({
           Drag & drop audio files here
         </p>
         <p className="text-xs text-slate-500">
-          WAV, MP3, OGG, FLAC • 3-30 seconds • Max {maxFiles} files
+          WAV, MP3, OGG, FLAC • aim for 30–120s total, quiet room • Max {maxFiles} files
         </p>
         <input
           id="audio-upload-input"

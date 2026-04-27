@@ -1,10 +1,38 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { SkipLink } from '@/components/skip-link'
 import { EMOTIONS } from '@/lib/constants/emotions'
 import { VOICE_EFFECTS } from '@/lib/constants/effects'
-import type { Voice } from '@/lib/types/voice'
+import { CLONED_TTS_MAX_CHARS, STANDARD_TTS_MAX_CHARS } from '@/lib/validation'
+
+type PlaygroundVoice = {
+  voice_id: string
+  name: string
+  language?: string
+  source: string
+}
+
+const API_SPECIAL_EFFECTS = new Set<string>([
+  'none',
+  'robot',
+  'radio',
+  'whisper',
+  'deep',
+  'chipmunk',
+  'cave',
+  'telephone',
+  'underwater',
+  'megaphone',
+])
+
+/** Map playground UI effects to XTTS / Edge supported `special_effect` values. */
+function playgroundEffectToApi(effectId: string): string {
+  if (API_SPECIAL_EFFECTS.has(effectId)) return effectId
+  if (effectId === 'broadcast') return 'radio'
+  if (effectId === 'stadium') return 'cave'
+  return 'none'
+}
 import { 
   Wand2, Play, Pause, Download, Volume2, Mic, 
   Settings, Sparkles, Radio, Users, FileText,
@@ -28,7 +56,8 @@ export default function PlaygroundPage() {
   const [selectedEmotion, setSelectedEmotion] = useState('neutral')
   const [selectedEffect, setSelectedEffect] = useState('none')
   const [selectedVoice, setSelectedVoice] = useState('')
-  const [voices, setVoices] = useState<Voice[]>([])
+  const [cloneVoicePreset, setCloneVoicePreset] = useState<'natural' | 'expressive' | 'stable'>('natural')
+  const [voices, setVoices] = useState<PlaygroundVoice[]>([])
   const [loading, setLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -45,7 +74,7 @@ export default function PlaygroundPage() {
   const loadVoices = useCallback(async () => {
     try {
       // Check cache first (5 minute TTL)
-      const cacheKey = 'voices_v2_cache'
+      const cacheKey = 'voices_playground_cache_v2'
       const cached = sessionStorage.getItem(cacheKey)
       if (cached) {
         try {
@@ -63,7 +92,7 @@ export default function PlaygroundPage() {
         }
       }
 
-      const res = await fetch('/api/voices-v2')
+      const res = await fetch('/api/voices')
       const data = await res.json()
       setVoices(data.voices || [])
       
@@ -104,16 +133,23 @@ export default function PlaygroundPage() {
     const startTime = Date.now()
     
     try {
+      const voiceId = selectedVoice || 'default_english'
       const res = await fetch('/api/tts-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: text.trim(),
-          voice_id: selectedVoice || undefined,
+          voice_id: voiceId,
+          language: 'en',
           emotion: selectedEmotion,
           speed,
           pitch,
-          effect: selectedEffect !== 'none' ? selectedEffect : undefined,
+          volume: 1.0,
+          reverb: 0,
+          echo: 0,
+          noise_reduction: false,
+          special_effect: playgroundEffectToApi(selectedEffect),
+          ...(voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
         }),
       })
       
@@ -139,7 +175,7 @@ export default function PlaygroundPage() {
     } finally {
       setLoading(false)
     }
-  }, [text, selectedVoice, selectedEmotion, selectedEffect, speed, pitch])
+  }, [text, selectedVoice, selectedEmotion, selectedEffect, speed, pitch, cloneVoicePreset])
   
   const togglePlayPause = useCallback(() => {
     if (!audioRef.current || !audioUrl) return
@@ -218,7 +254,8 @@ export default function PlaygroundPage() {
                   </label>
                   <span className="text-xs text-white/70" aria-live="polite" aria-atomic="true">
                     <span className="sr-only">Character count: </span>
-                    {text.length} characters
+                    {text.length}
+                    {selectedVoice.startsWith('clone_') ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} characters
                   </span>
                 </div>
                 
@@ -230,13 +267,19 @@ export default function PlaygroundPage() {
                   aria-label="Text input for speech generation"
                   aria-describedby="text-input-help text-input-stats"
                   aria-required="true"
+                  maxLength={
+                    selectedVoice.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
+                  }
                   className="w-full h-32 sm:h-40 md:h-48 px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl bg-black/30 border border-white/10 
                            text-white placeholder-white/50 resize-none text-sm sm:text-base
                            focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black focus:border-purple-500/50
                            transition-all duration-200"
                 />
                 <div id="text-input-help" className="sr-only">
-                  Enter the text you want to convert to speech. Maximum 10,000 characters.
+                  Enter the text you want to convert to speech.
+                  {selectedVoice.startsWith('clone_')
+                    ? ` Cloned voices allow up to ${CLONED_TTS_MAX_CHARS} characters per request.`
+                    : ` Standard voices allow up to ${STANDARD_TTS_MAX_CHARS} characters.`}
                 </div>
                 <div id="text-input-stats" className="sr-only" aria-live="polite" aria-atomic="true">
                   {text.length} characters, {text.trim().split(/\s+/).filter(w => w.length > 0).length} words
@@ -267,6 +310,9 @@ export default function PlaygroundPage() {
                   <Sparkles className="h-4 w-4" aria-hidden="true" />
                   Emotion
                 </label>
+                <p className="text-xs text-white/60 mb-3">
+                  Applied on the server with your speed and pitch sliders — changes pacing, tone, and light processing.
+                </p>
               
               <div className="grid grid-cols-4 gap-2" role="group" aria-label="Select emotion">
                 {EMOTIONS.map((emotion) => (
@@ -427,6 +473,27 @@ export default function PlaygroundPage() {
                   <RefreshCw className="h-3 w-3" aria-hidden="true" />
                   Refresh voices
                 </button>
+
+                {selectedVoice.startsWith('clone_') && (
+                  <div className="mt-4">
+                    <label htmlFor="playground-clone-preset" className="text-xs text-white/80 block mb-2">
+                      Clone delivery (XTTS)
+                    </label>
+                    <select
+                      id="playground-clone-preset"
+                      value={cloneVoicePreset}
+                      onChange={(e) =>
+                        setCloneVoicePreset(e.target.value as 'natural' | 'expressive' | 'stable')
+                      }
+                      className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm
+                               focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black"
+                    >
+                      <option value="natural">Natural</option>
+                      <option value="expressive">Expressive</option>
+                      <option value="stable">Stable</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </section>
             

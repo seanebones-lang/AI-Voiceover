@@ -33,6 +33,10 @@ export function buildTtsCacheKey(params: {
   echo: number
   noise_reduction: boolean
   special_effect: string
+  /** Clone tuning segment so preset / sampling changes bust cache correctly. */
+  clone_tune?: string
+  /** Emotion preset (server merges into prosody; included for cache correctness). */
+  emotion?: string
 }): string {
   const payload = [
     params.text.trim(),
@@ -45,6 +49,8 @@ export function buildTtsCacheKey(params: {
     params.echo,
     params.noise_reduction ? '1' : '0',
     params.special_effect,
+    params.clone_tune ?? '',
+    params.emotion ?? 'neutral',
   ].join('\0')
   return hash(payload)
 }
