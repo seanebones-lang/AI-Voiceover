@@ -6,9 +6,14 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import {
   Wand2, Volume2, Download, Mic, Upload, Trash2, Plus, Play, Square,
-  MessageCircle, Layers, AlertCircle, Check, X, Copy,
+  MessageCircle, Layers, AlertCircle, Check, X, Copy, CircleHelp,
 } from 'lucide-react'
-import { VOICE_CLONE_CALIBRATION_SCRIPT } from '@/lib/clone-calibration'
+import {
+  VOICE_CLONE_CALIBRATION_SCRIPT,
+  CLONE_RECORDING_CHECKLIST,
+  CLONE_MULTI_SAMPLE_RECOMMENDATION,
+  CLONE_SUGGESTED_PARAGRAPHS,
+} from '@/lib/clone-calibration'
 import { CLONED_TTS_MAX_CHARS, STANDARD_TTS_MAX_CHARS } from '@/lib/validation'
 import { EMOTIONS } from '@/lib/constants/emotions'
 
@@ -228,6 +233,10 @@ export function Dashboard() {
   const [cloneRepetitionPenalty, setCloneRepetitionPenalty] = useState([1.68])
   const [cloneTopK, setCloneTopK] = useState([50])
   const [cloneTopP, setCloneTopP] = useState([0.9])
+  const [autoExpressive, setAutoExpressive] = useState(true)
+  const [expressiveIntensity, setExpressiveIntensity] = useState<'subtle' | 'balanced' | 'dramatic'>('subtle')
+  const [showCloneCoach, setShowCloneCoach] = useState(true)
+  const [cloneScriptId, setCloneScriptId] = useState<string>(CLONE_SUGGESTED_PARAGRAPHS[0]?.id ?? 'neutral_narration')
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [recordedBlobUrl, setRecordedBlobUrl] = useState<string | null>(null)
@@ -243,6 +252,19 @@ export function Dashboard() {
     setRecordedBlobUrl(url)
     return () => revokeObjectUrl(url)
   }, [recordedBlob])
+
+  function getCloneTuningPayload(voiceId: string) {
+    if (!voiceId.startsWith('clone_')) return {}
+    return {
+      clone_preset: cloneVoicePreset,
+      temperature: cloneTemperature[0],
+      repetition_penalty: cloneRepetitionPenalty[0],
+      top_k: cloneTopK[0],
+      top_p: cloneTopP[0],
+      auto_expressive: autoExpressive,
+      expressive_intensity: expressiveIntensity,
+    }
+  }
 
   // Conversation State
   const [conversationMessages, setConversationMessages] = useState<Array<{
@@ -304,15 +326,7 @@ export function Dashboard() {
           speed: 1.0,
           pitch: 0,
           volume: 1.0,
-          ...(voiceId.startsWith('clone_')
-            ? {
-                clone_preset: cloneVoicePreset,
-                temperature: cloneTemperature[0],
-                repetition_penalty: cloneRepetitionPenalty[0],
-                top_k: cloneTopK[0],
-                top_p: cloneTopP[0],
-              }
-            : {}),
+          ...getCloneTuningPayload(voiceId),
         }),
       })
       
@@ -398,15 +412,7 @@ export function Dashboard() {
           echo: echo[0],
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
-          ...(selectedVoice.startsWith('clone_')
-            ? {
-                clone_preset: cloneVoicePreset,
-                temperature: cloneTemperature[0],
-                repetition_penalty: cloneRepetitionPenalty[0],
-                top_k: cloneTopK[0],
-                top_p: cloneTopP[0],
-              }
-            : {}),
+          ...getCloneTuningPayload(selectedVoice),
         }),
       })
 
@@ -548,15 +554,7 @@ export function Dashboard() {
             echo: echo[0],
             noise_reduction: noiseReduction,
             special_effect: specialEffect,
-            ...(selectedVoice.startsWith('clone_')
-              ? {
-                  clone_preset: cloneVoicePreset,
-                  temperature: cloneTemperature[0],
-                  repetition_penalty: cloneRepetitionPenalty[0],
-                  top_k: cloneTopK[0],
-                  top_p: cloneTopP[0],
-                }
-              : {}),
+            ...getCloneTuningPayload(selectedVoice),
           }),
         })
         
@@ -642,14 +640,14 @@ export function Dashboard() {
     }
   }
 
-  async function copyCalibrationScript() {
+  async function copyCloneScript(textToCopy: string) {
     try {
-      await navigator.clipboard.writeText(VOICE_CLONE_CALIBRATION_SCRIPT)
+      await navigator.clipboard.writeText(textToCopy)
       setCloneError(null)
       setCalibrationCopied(true)
       window.setTimeout(() => setCalibrationCopied(false), 2000)
     } catch {
-      setCloneError('Could not copy — select the text manually or allow clipboard access.')
+      setCloneError('Could not copy script — select the text manually or allow clipboard access.')
     }
   }
 
@@ -749,15 +747,7 @@ export function Dashboard() {
             voice_id: msg.voiceId,
             language,
             emotion: ttsEmotion,
-            ...(msg.voiceId.startsWith('clone_')
-              ? {
-                  clone_preset: cloneVoicePreset,
-                  temperature: cloneTemperature[0],
-                  repetition_penalty: cloneRepetitionPenalty[0],
-                  top_k: cloneTopK[0],
-                  top_p: cloneTopP[0],
-                }
-              : {}),
+            ...getCloneTuningPayload(msg.voiceId),
           }),
         })
 
@@ -797,15 +787,7 @@ export function Dashboard() {
           text: compareText.trim(),
           voice_id: voiceId,
           emotion: ttsEmotion,
-          ...(voiceId.startsWith('clone_')
-            ? {
-                clone_preset: cloneVoicePreset,
-                temperature: cloneTemperature[0],
-                repetition_penalty: cloneRepetitionPenalty[0],
-                top_k: cloneTopK[0],
-                top_p: cloneTopP[0],
-              }
-            : {}),
+          ...getCloneTuningPayload(voiceId),
         }),
       })
 
@@ -1022,7 +1004,13 @@ export function Dashboard() {
                 </div>
                 {selectedVoice.startsWith('clone_') && (
                   <div className="mt-3">
-                    <label className="text-sm font-medium mb-2 block">Clone delivery (XTTS v2)</label>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <label className="text-sm font-medium">Clone delivery (XTTS v2)</label>
+                      <CircleHelp
+                        className="h-4 w-4 text-muted-foreground"
+                        title="Natural keeps identity tight, Stable is safest for long narration, Expressive adds style but can drift identity."
+                      />
+                    </div>
                     <select
                       value={cloneVoicePreset}
                       onChange={(e) =>
@@ -1036,6 +1024,9 @@ export function Dashboard() {
                     </select>
                     <p className="text-xs text-muted-foreground mt-1">
                       Tuned sampling for your cloned voice. Try Natural first; switch if the read feels too flat or too wild.
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      Identity-first workflow: Natural or Stable + subtle expressive mode.
                     </p>
                     <button
                       type="button"
@@ -1134,6 +1125,50 @@ export function Dashboard() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="rounded-lg border p-3 bg-card/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Auto expressive from punctuation</label>
+                    <CircleHelp
+                      className="h-4 w-4 text-muted-foreground"
+                      title="Uses ! ? ... and dashes to shape delivery automatically. Keep subtle for clone identity."
+                    />
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={autoExpressive}
+                    onChange={(e) => setAutoExpressive(e.target.checked)}
+                    className="w-4 h-4 rounded border-input bg-background"
+                  />
+                </div>
+                {autoExpressive && (
+                  <div>
+                    <label className="text-xs font-medium mb-2 block">Expressive intensity</label>
+                    <div className="flex gap-2">
+                      {(['subtle', 'balanced', 'dramatic'] as const).map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setExpressiveIntensity(level)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs capitalize ${
+                            expressiveIntensity === level
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-secondary hover:bg-secondary/80'
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedVoice.startsWith('clone_') && expressiveIntensity === 'dramatic' && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                        Dramatic mode can reduce clone identity match. Prefer subtle for person-like realism.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Text Input */}
@@ -1590,27 +1625,66 @@ export function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground space-y-2">
-                  <p className="font-medium text-foreground">Pro tips</p>
-                  <ul className="list-disc list-inside text-xs space-y-1">
-                    <li>Use WAV or lossless source when possible; avoid heavy compression.</li>
-                    <li>Read varied sentences (questions, numbers) so the model captures your range.</li>
-                    <li>After cloning, use <strong className="text-foreground">Natural / Expressive / Stable</strong> on the TTS tab to tune delivery.</li>
-                  </ul>
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-foreground">Clone quality coach</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCloneCoach(!showCloneCoach)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      {showCloneCoach ? 'Hide details' : 'Show details'}
+                    </button>
+                  </div>
+                  <p className="text-xs">
+                    {CLONE_MULTI_SAMPLE_RECOMMENDATION.bestRange} {CLONE_MULTI_SAMPLE_RECOMMENDATION.why}
+                  </p>
+                  {showCloneCoach && (
+                    <>
+                      <ul className="list-disc list-inside text-xs space-y-1">
+                        {CLONE_RECORDING_CHECKLIST.map((tip) => (
+                          <li key={tip}>{tip}</li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-muted-foreground">
+                        {CLONE_MULTI_SAMPLE_RECOMMENDATION.perSample}
+                      </p>
+                    </>
+                  )}
                 </div>
                 <div className="rounded-lg border bg-card p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">Calibration script</p>
-                    <Button type="button" variant="outline" size="sm" onClick={copyCalibrationScript} className="gap-1.5">
+                    <p className="text-sm font-medium text-foreground">Suggested scripts</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const selected = CLONE_SUGGESTED_PARAGRAPHS.find((s) => s.id === cloneScriptId)
+                        copyCloneScript(selected?.text ?? VOICE_CLONE_CALIBRATION_SCRIPT)
+                      }}
+                      className="gap-1.5"
+                    >
                       <Copy className="h-3.5 w-3.5" />
                       {calibrationCopied ? 'Copied' : 'Copy'}
                     </Button>
                   </div>
+                  <select
+                    value={cloneScriptId}
+                    onChange={(e) => setCloneScriptId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
+                  >
+                    {CLONE_SUGGESTED_PARAGRAPHS.map((script) => (
+                      <option key={script.id} value={script.id}>
+                        {script.label}
+                      </option>
+                    ))}
+                  </select>
                   <p className="text-xs text-muted-foreground">
-                    Read this aloud in one take (teleprompter style): steady pace, normal volume, minimal room noise. Paste into notes or another window if you prefer a larger font.
+                    Read one script per take. For best identity lock, record 2-4 takes with slightly different pacing and emphasis.
                   </p>
                   <p className="text-sm leading-relaxed text-foreground/90 whitespace-normal border-l-2 border-primary/40 pl-3">
-                    {VOICE_CLONE_CALIBRATION_SCRIPT}
+                    {CLONE_SUGGESTED_PARAGRAPHS.find((script) => script.id === cloneScriptId)?.text || VOICE_CLONE_CALIBRATION_SCRIPT}
                   </p>
                 </div>
                 {/* Success/Error Messages */}
@@ -1657,6 +1731,11 @@ export function Dashboard() {
                 {cloneError && (
                   <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive">
                     {cloneError}
+                  </div>
+                )}
+                {cloneFiles.length === 1 && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300">
+                    One sample uploaded. Quality is usually better with 2-4 clean samples covering neutral, expressive, and question cadence.
                   </div>
                 )}
 

@@ -5,7 +5,7 @@ import { config, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP, CLONED_TTS_MAX_CHARS } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
-import { applyEmotionProsody } from '@/lib/tts/emotion-prosody'
+import { applyEmotionProsody, applyExpressiveCopyProsody } from '@/lib/tts/emotion-prosody'
 import { synthesizeEdge, isEdgeVoice } from '@/lib/edgeTtsService'
 import { synthesizeEdgeTts as synthesizeEdgeFallback } from '@/lib/edgeTtsFallback'
 import { Buffer } from 'node:buffer'
@@ -28,6 +28,8 @@ interface TTSRequest {
   noise_reduction?: boolean
   // Special effects
   special_effect?: string // 'none' | 'robot' | 'radio' | 'whisper' | 'deep' | 'chipmunk' | 'cave' | 'telephone'
+  auto_expressive?: boolean
+  expressive_intensity?: 'subtle' | 'balanced' | 'dramatic'
 }
 
 function extractWavData(buffer: Buffer): { fmtChunk: Buffer; dataChunk: Buffer } | null {
@@ -182,6 +184,8 @@ export async function POST(request: NextRequest) {
       special_effect = 'none',
       emotion = 'neutral',
       clone_preset,
+      auto_expressive = false,
+      expressive_intensity = 'subtle',
       temperature: ttsTemperature,
       repetition_penalty: ttsRepetitionPenalty,
       top_k: ttsTopK,
@@ -192,6 +196,11 @@ export async function POST(request: NextRequest) {
       { speed, pitch, volume, reverb, echo, noise_reduction, special_effect },
       emotion
     )
+    const expressiveProsody = applyExpressiveCopyProsody(prosody, text, {
+      enabled: auto_expressive,
+      intensity: expressive_intensity,
+      isClonedVoice: voice_id.startsWith('clone_'),
+    })
 
     const cloneTuneKey =
       voice_id.startsWith('clone_')
@@ -204,13 +213,13 @@ export async function POST(request: NextRequest) {
           ].join(':')
         : ''
 
-    let finalSpeed = prosody.speed
-    let finalPitch = prosody.pitch
-    let finalVolume = prosody.volume
-    let finalReverb = prosody.reverb
-    let finalEcho = prosody.echo
-    let finalNoiseReduction = prosody.noise_reduction
-    let finalSpecialEffect = prosody.special_effect
+    let finalSpeed = expressiveProsody.speed
+    let finalPitch = expressiveProsody.pitch
+    let finalVolume = expressiveProsody.volume
+    let finalReverb = expressiveProsody.reverb
+    let finalEcho = expressiveProsody.echo
+    let finalNoiseReduction = expressiveProsody.noise_reduction
+    let finalSpecialEffect = expressiveProsody.special_effect
 
     const cacheKey = buildTtsCacheKey({
       text: text.trim(),
@@ -224,7 +233,7 @@ export async function POST(request: NextRequest) {
       noise_reduction: finalNoiseReduction,
       special_effect: finalSpecialEffect,
       clone_tune: cloneTuneKey,
-      emotion,
+      emotion: `${emotion}:${auto_expressive ? expressive_intensity : 'off'}`,
     })
     const cached = getCached(cacheKey)
     if (cached) {
@@ -377,6 +386,8 @@ export async function POST(request: NextRequest) {
                 echo: finalEcho,
                 noise_reduction: finalNoiseReduction,
                 special_effect: finalSpecialEffect,
+                auto_expressive,
+                expressive_intensity,
                 ...(isClonedVoice
                   ? {
                       ...(clone_preset ? { clone_preset } : {}),

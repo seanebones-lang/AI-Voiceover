@@ -197,19 +197,50 @@ VOICE_CLONE_CALIBRATION_SCRIPT = (
     "Thanks for listening."
 )
 
+VOICE_CLONE_ALT_SCRIPTS = [
+    {
+        "id": "neutral_narration",
+        "label": "Neutral narration",
+        "text": (
+            "Good morning. Today we are reviewing the quarterly update with a calm, steady delivery. "
+            "Please listen for clear consonants, natural pauses, and consistent pacing throughout the message."
+        ),
+    },
+    {
+        "id": "expressive_contrast",
+        "label": "Expressive contrast",
+        "text": (
+            "I thought the launch would be simple — but it was not! We had one setback, then two fast wins. "
+            "Can we adapt quickly, stay focused, and still sound confident under pressure?"
+        ),
+    },
+    {
+        "id": "numbers_questions_names",
+        "label": "Numbers, names, and questions",
+        "text": (
+            "On March twenty-third, Ava transferred ninety-four files to Jordan in under twelve minutes. "
+            "Did Liam confirm ticket four-zero-seven before the noon deadline? If not, who should escalate first?"
+        ),
+    },
+]
+
 CLONE_GUIDE = {
     "engine": "coqui_xtts_v2",
     "calibration_script": VOICE_CLONE_CALIBRATION_SCRIPT,
+    "alternate_scripts": VOICE_CLONE_ALT_SCRIPTS,
     "reference_audio": {
         "ideal_total_seconds": "30–120",
         "minimum_seconds": 6,
+        "recommended_sample_count": "2-4",
+        "recommended_seconds_per_sample": "15-45",
         "quality_over_duration": True,
         "tips": [
             "Record in a quiet room with one speaker only — background noise hurts cloning most.",
             "Use a consistent mic distance; avoid clipping (keep peaks below red on your meter).",
             "WAV or lossless source is best; we convert to 24 kHz mono for XTTS.",
             "Read varied sentences (statements, questions, numbers) so the model hears your range.",
-            "For a warmer clone, upload 2–3 short takes with natural pauses rather than one compressed file.",
+            "For stronger identity lock, upload 2-4 short clean takes rather than one long compressed file.",
+            "Avoid music beds, hard noise gates, and heavy podcast compression on reference audio.",
         ],
     },
     "generation": {

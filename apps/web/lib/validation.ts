@@ -107,6 +107,9 @@ export const ttsRequestSchema = z
     user_id: z.string().max(100).optional(),
     /** XTTS clone presets (cloned voices only; forwarded to sidecar). */
     clone_preset: clonePresetSchema.optional(),
+    /** Optional punctuation-driven expressive reading mode. */
+    auto_expressive: z.boolean().optional().default(false),
+    expressive_intensity: z.enum(['subtle', 'balanced', 'dramatic']).optional().default('subtle'),
     /** Advanced XTTS sampling (optional; omit to use service defaults). */
     temperature: z.number().min(0.35).max(1.15).optional(),
     repetition_penalty: z.number().min(1.0).max(2.5).optional(),

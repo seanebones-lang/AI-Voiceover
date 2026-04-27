@@ -54,6 +54,7 @@ jest.mock('@/lib/tts-cache', () => ({
 
 jest.mock('@/lib/tts/emotion-prosody', () => ({
   applyEmotionProsody: jest.fn((base: Record<string, unknown>) => base),
+  applyExpressiveCopyProsody: jest.fn((base: Record<string, unknown>) => base),
 }))
 
 jest.mock('@/lib/edgeTtsService', () => ({
@@ -123,6 +124,8 @@ describe('POST /api/tts options matrix', () => {
         special_effect: 'none',
         emotion: 'neutral',
         clone_preset: 'expressive',
+        auto_expressive: true,
+        expressive_intensity: 'balanced',
         temperature: 0.72,
         repetition_penalty: 1.52,
         top_k: 60,
@@ -136,6 +139,8 @@ describe('POST /api/tts options matrix', () => {
     const requestBody = JSON.parse(init.body as string)
     expect(requestBody.pitch).toBe(4)
     expect(requestBody.clone_preset).toBe('expressive')
+    expect(requestBody.auto_expressive).toBe(true)
+    expect(requestBody.expressive_intensity).toBe('balanced')
     expect(requestBody.temperature).toBe(0.72)
     expect(requestBody.repetition_penalty).toBe(1.52)
     expect(requestBody.top_k).toBe(60)

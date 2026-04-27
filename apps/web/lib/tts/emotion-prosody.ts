@@ -26,12 +26,88 @@ export type EmotionProsodyInput = {
   special_effect: string
 }
 
+export type ExpressiveIntensity = 'subtle' | 'balanced' | 'dramatic'
+
+type ExpressiveProsodyOptions = {
+  enabled?: boolean
+  intensity?: ExpressiveIntensity
+  isClonedVoice?: boolean
+}
+
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
 }
 
 function isKnownEmotion(e: string): e is TtsEmotionId {
   return (ttsEmotionIds as readonly string[]).includes(e)
+}
+
+function sanitizeForExpressiveScan(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function clampPunctuationRun(n: number): number {
+  return clamp(n, 0, 3)
+}
+
+/**
+ * Add punctuation-aware expressive deltas to existing prosody.
+ * Conservative by default (identity-safe), especially for cloned voices.
+ */
+export function applyExpressiveCopyProsody(
+  base: EmotionProsodyInput,
+  text: string,
+  options: ExpressiveProsodyOptions = {}
+): EmotionProsodyInput {
+  if (!options.enabled) return { ...base }
+
+  const normalized = sanitizeForExpressiveScan(text)
+  if (!normalized) return { ...base }
+
+  const intensity = options.intensity ?? 'subtle'
+  const isCloned = !!options.isClonedVoice
+  const styleScale = intensity === 'dramatic' ? 1.0 : intensity === 'balanced' ? 0.7 : 0.45
+  const identityScale = isCloned ? 0.7 : 1.0
+  const scale = styleScale * identityScale
+
+  const exclamations = clampPunctuationRun((normalized.match(/!/g) || []).length)
+  const questions = clampPunctuationRun((normalized.match(/\?/g) || []).length)
+  const ellipses = clampPunctuationRun((normalized.match(/\.{3}/g) || []).length)
+  const dashes = clampPunctuationRun((normalized.match(/[—–-]/g) || []).length)
+  const capsWords = clampPunctuationRun((normalized.match(/\b[A-Z]{3,}\b/g) || []).length)
+
+  const totalSignals = exclamations + questions + ellipses + dashes + capsWords
+  if (totalSignals === 0) return { ...base }
+
+  let speed = base.speed
+  let pitch = base.pitch
+  let volume = base.volume
+  let reverb = base.reverb
+
+  speed += (exclamations * 0.025 + capsWords * 0.02 - ellipses * 0.018 - dashes * 0.012) * scale
+  pitch += (exclamations * 0.9 + questions * 0.7 + capsWords * 0.6 - ellipses * 0.4) * scale
+  volume += (exclamations * 0.015 + capsWords * 0.012 - ellipses * 0.01) * scale
+  reverb += (dashes + ellipses > 0 ? 0.04 : 0) * scale
+
+  if (/[!?]\s*$/.test(normalized)) {
+    if (normalized.endsWith('?')) pitch += 0.4 * scale
+    if (normalized.endsWith('!')) speed += 0.02 * scale
+  }
+
+  return {
+    speed: clamp(speed, 0.5, 2.0),
+    pitch: clamp(pitch, -20, 20),
+    volume: clamp(volume, 0, 1),
+    reverb: clamp(reverb, 0, 1),
+    echo: clamp(base.echo, 0, 1),
+    noise_reduction: base.noise_reduction,
+    special_effect: base.special_effect,
+  }
 }
 
 /**
