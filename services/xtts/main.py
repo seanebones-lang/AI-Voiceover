@@ -127,6 +127,7 @@ app.add_middleware(
 
 _default_local_voices_dir = Path(__file__).resolve().parent / "cloned_voices"
 VOICES_DIR = Path(os.getenv("VOICES_DIR", str(_default_local_voices_dir)))
+RAILWAY_VOLUME_MOUNT_PATH = os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
 try:
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
 except OSError as e:
@@ -343,7 +344,10 @@ async def health_check():
         "cuda_version": cuda_version,
         "voices_directory": str(VOICES_DIR),
         "voices_directory_writable": os.access(VOICES_DIR, os.W_OK),
-        "voices_directory_persistent": str(VOICES_DIR) != str(_default_local_voices_dir),
+        "voices_directory_persistent": bool(
+            (RAILWAY_VOLUME_MOUNT_PATH and str(VOICES_DIR) == RAILWAY_VOLUME_MOUNT_PATH)
+            or os.getenv("VOICES_DIR")
+        ),
         "cors_origins": _cors_origins_list,
         "features": {
             "multi_sample_cloning": True,
