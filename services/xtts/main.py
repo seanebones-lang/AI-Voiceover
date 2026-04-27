@@ -299,6 +299,8 @@ async def health_check():
         "cuda_version": cuda_version,
         "voices_directory": str(VOICES_DIR),
         "voices_directory_writable": os.access(VOICES_DIR, os.W_OK),
+        "voices_directory_persistent": str(VOICES_DIR) != str(_default_local_voices_dir),
+        "cors_origins": _cors_origins_list,
         "features": {
             "multi_sample_cloning": True,
             "audio_preprocessing": True,
@@ -388,7 +390,7 @@ async def generate_speech(request: TTSRequest):
                 detail="Voice cloning requires XTTS model to be loaded. Please check service configuration."
             )
         return await generate_cloned_speech(
-            text, voice_id, language, speed, volume, effects,
+            text, voice_id, language, speed, pitch, volume, effects,
             temperature=temperature,
             repetition_penalty=repetition_penalty,
             top_k=top_k,
@@ -515,7 +517,7 @@ def concat_wav_files_to_bytes(wav_paths: List[str]) -> bytes:
             os.unlink(output_path)
 
 
-async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, volume: float, effects: dict, 
+async def generate_cloned_speech(text: str, voice_id: str, language: str, speed: float, pitch: float, volume: float, effects: dict, 
                                   temperature: float = 0.65, repetition_penalty: float = 1.6, top_k: int = 50, top_p: float = 0.9):
     """Generate speech using REAL voice cloning with XTTS - MUST use cloned voice or fail"""
     
@@ -705,6 +707,11 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
         # Apply speed adjustment if needed
         if speed != 1.0:
             audio_data = adjust_speed(audio_data, speed)
+
+        # Apply pitch shift for cloned voices.
+        # XTTS itself does not expose a direct pitch parameter in this path.
+        if pitch != 0:
+            audio_data = adjust_pitch(audio_data, pitch)
         
         # Apply effects
         if any([effects.get("reverb", 0) > 0, effects.get("echo", 0) > 0, 
@@ -797,6 +804,39 @@ def adjust_speed(audio_data: bytes, speed: float) -> bytes:
         os.unlink(output_path)
         return result
     except:
+        return audio_data
+
+
+def adjust_pitch(audio_data: bytes, semitones: float) -> bytes:
+    """Adjust pitch in semitones while preserving clip length."""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_in:
+            tmp_in.write(audio_data)
+            input_path = tmp_in.name
+
+        output_path = input_path.replace('.wav', '_pitch.wav')
+        pitch_factor = 2 ** (semitones / 12.0)
+        atempo_factor = 1.0 / pitch_factor
+
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-i',
+            input_path,
+            '-af',
+            f'asetrate=24000*{pitch_factor:.6f},aresample=24000,atempo={atempo_factor:.6f}',
+            output_path,
+        ]
+        subprocess.run(cmd, capture_output=True, check=True)
+
+        with open(output_path, 'rb') as f:
+            result = f.read()
+
+        os.unlink(input_path)
+        os.unlink(output_path)
+        return result
+    except Exception as e:
+        logger.warning(f"Pitch adjustment failed: {e}")
         return audio_data
 
 

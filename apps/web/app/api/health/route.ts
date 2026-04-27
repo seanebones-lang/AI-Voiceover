@@ -33,6 +33,15 @@ export async function GET(_request?: Request) {
         environment: string
       }
       capabilities: { tts_default: boolean; tts_xai: boolean; cloning: boolean; tts_v2: boolean; rag: boolean }
+      deployment: {
+        xttsUrlConfigured: boolean
+        xttsUrl: string
+        xttsRuntimeDevice?: string
+        xttsCudaAvailable?: boolean
+        xttsVoicesDir?: string
+        xttsVoicesDirPersistent?: boolean
+        xttsCorsOrigins?: string[]
+      }
       latency: number
     } = {
       status: 'ok',
@@ -53,6 +62,10 @@ export async function GET(_request?: Request) {
         cloning: false,
         tts_v2: false,
         rag: false
+      },
+      deployment: {
+        xttsUrlConfigured: config.xttsConfigured,
+        xttsUrl: config.services.xtts.url,
       },
       latency: 0
     }
@@ -77,6 +90,12 @@ export async function GET(_request?: Request) {
             url: config.services.xtts.url,
             ...data
           }
+          health.deployment.xttsRuntimeDevice = typeof data.device === 'string' ? data.device : undefined
+          health.deployment.xttsCudaAvailable = typeof data.cuda_available === 'boolean' ? data.cuda_available : undefined
+          health.deployment.xttsVoicesDir = typeof data.voices_directory === 'string' ? data.voices_directory : undefined
+          health.deployment.xttsVoicesDirPersistent =
+            typeof data.voices_directory_persistent === 'boolean' ? data.voices_directory_persistent : undefined
+          health.deployment.xttsCorsOrigins = Array.isArray(data.cors_origins) ? data.cors_origins : undefined
         } else {
           throw new Error(`Health check returned ${response.status}`)
         }

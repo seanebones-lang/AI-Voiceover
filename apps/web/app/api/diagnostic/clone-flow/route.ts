@@ -18,12 +18,35 @@ export async function GET(request: NextRequest) {
   }
   const steps: { name: string; status: 'ok' | 'degraded' | 'fail'; detail?: string }[] = []
   let overall: 'ok' | 'degraded' | 'fail' = 'ok'
+  const deploymentChecklist: {
+    xttsUrlConfigured: boolean
+    xttsUrl: string
+    gpuRecommendedForLongForm: boolean
+    voicesDirPersistent?: boolean
+    corsOrigins?: string[]
+  } = {
+    xttsUrlConfigured: config.xttsConfigured,
+    xttsUrl: config.services.xtts.url,
+    gpuRecommendedForLongForm: true,
+  }
 
   try {
     // 1. XTTS service health
     const xttsHealth = await checkServiceHealth(config.services.xtts)
     if (xttsHealth.healthy) {
       steps.push({ name: 'xtts_health', status: 'ok', detail: `latency ${xttsHealth.latency}ms` })
+      try {
+        const xttsMetaRes = await fetch(`${config.services.xtts.url}/health`, { cache: 'no-store' })
+        const xttsMeta = await xttsMetaRes.json().catch(() => ({}))
+        if (typeof xttsMeta.voices_directory_persistent === 'boolean') {
+          deploymentChecklist.voicesDirPersistent = xttsMeta.voices_directory_persistent
+        }
+        if (Array.isArray(xttsMeta.cors_origins)) {
+          deploymentChecklist.corsOrigins = xttsMeta.cors_origins
+        }
+      } catch {
+        // keep checklist best-effort only
+      }
     } else {
       steps.push({ name: 'xtts_health', status: 'fail', detail: xttsHealth.error })
       overall = 'fail'
@@ -69,6 +92,7 @@ export async function GET(request: NextRequest) {
       status: overall,
       timestamp: new Date().toISOString(),
       steps,
+      deployment_checklist: deploymentChecklist,
       clone_telemetry: telemetry,
       hint:
         overall !== 'ok'

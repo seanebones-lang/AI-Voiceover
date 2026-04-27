@@ -223,6 +223,11 @@ export function Dashboard() {
   const [cloneQualityTier, setCloneQualityTier] = useState<string | null>(null)
   /** Coqui XTTS v2 clone output character (cloned voices only). */
   const [cloneVoicePreset, setCloneVoicePreset] = useState<'natural' | 'expressive' | 'stable'>('natural')
+  const [showCloneAdvanced, setShowCloneAdvanced] = useState(false)
+  const [cloneTemperature, setCloneTemperature] = useState([0.63])
+  const [cloneRepetitionPenalty, setCloneRepetitionPenalty] = useState([1.68])
+  const [cloneTopK, setCloneTopK] = useState([50])
+  const [cloneTopP, setCloneTopP] = useState([0.9])
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [recordedBlobUrl, setRecordedBlobUrl] = useState<string | null>(null)
@@ -299,7 +304,15 @@ export function Dashboard() {
           speed: 1.0,
           pitch: 0,
           volume: 1.0,
-          ...(voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+          ...(voiceId.startsWith('clone_')
+            ? {
+                clone_preset: cloneVoicePreset,
+                temperature: cloneTemperature[0],
+                repetition_penalty: cloneRepetitionPenalty[0],
+                top_k: cloneTopK[0],
+                top_p: cloneTopP[0],
+              }
+            : {}),
         }),
       })
       
@@ -385,7 +398,15 @@ export function Dashboard() {
           echo: echo[0],
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
-          ...(selectedVoice.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+          ...(selectedVoice.startsWith('clone_')
+            ? {
+                clone_preset: cloneVoicePreset,
+                temperature: cloneTemperature[0],
+                repetition_penalty: cloneRepetitionPenalty[0],
+                top_k: cloneTopK[0],
+                top_p: cloneTopP[0],
+              }
+            : {}),
         }),
       })
 
@@ -527,7 +548,15 @@ export function Dashboard() {
             echo: echo[0],
             noise_reduction: noiseReduction,
             special_effect: specialEffect,
-            ...(selectedVoice.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+            ...(selectedVoice.startsWith('clone_')
+              ? {
+                  clone_preset: cloneVoicePreset,
+                  temperature: cloneTemperature[0],
+                  repetition_penalty: cloneRepetitionPenalty[0],
+                  top_k: cloneTopK[0],
+                  top_p: cloneTopP[0],
+                }
+              : {}),
           }),
         })
         
@@ -720,7 +749,15 @@ export function Dashboard() {
             voice_id: msg.voiceId,
             language,
             emotion: ttsEmotion,
-            ...(msg.voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+            ...(msg.voiceId.startsWith('clone_')
+              ? {
+                  clone_preset: cloneVoicePreset,
+                  temperature: cloneTemperature[0],
+                  repetition_penalty: cloneRepetitionPenalty[0],
+                  top_k: cloneTopK[0],
+                  top_p: cloneTopP[0],
+                }
+              : {}),
           }),
         })
 
@@ -760,7 +797,15 @@ export function Dashboard() {
           text: compareText.trim(),
           voice_id: voiceId,
           emotion: ttsEmotion,
-          ...(voiceId.startsWith('clone_') ? { clone_preset: cloneVoicePreset } : {}),
+          ...(voiceId.startsWith('clone_')
+            ? {
+                clone_preset: cloneVoicePreset,
+                temperature: cloneTemperature[0],
+                repetition_penalty: cloneRepetitionPenalty[0],
+                top_k: cloneTopK[0],
+                top_p: cloneTopP[0],
+              }
+            : {}),
         }),
       })
 
@@ -992,6 +1037,45 @@ export function Dashboard() {
                     <p className="text-xs text-muted-foreground mt-1">
                       Tuned sampling for your cloned voice. Try Natural first; switch if the read feels too flat or too wild.
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCloneAdvanced(!showCloneAdvanced)}
+                      className="text-xs text-primary hover:underline mt-2"
+                    >
+                      {showCloneAdvanced ? 'Hide advanced clone controls' : 'Show advanced clone controls'}
+                    </button>
+                    {showCloneAdvanced && (
+                      <div className="mt-3 space-y-3 rounded-lg border p-3 bg-card">
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-medium">Temperature</label>
+                            <span className="text-xs text-muted-foreground">{cloneTemperature[0].toFixed(2)}</span>
+                          </div>
+                          <Slider value={cloneTemperature} onValueChange={setCloneTemperature} min={0.35} max={1.15} step={0.01} />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-medium">Repetition Penalty</label>
+                            <span className="text-xs text-muted-foreground">{cloneRepetitionPenalty[0].toFixed(2)}</span>
+                          </div>
+                          <Slider value={cloneRepetitionPenalty} onValueChange={setCloneRepetitionPenalty} min={1.0} max={2.5} step={0.01} />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-medium">Top-K</label>
+                            <span className="text-xs text-muted-foreground">{Math.round(cloneTopK[0])}</span>
+                          </div>
+                          <Slider value={cloneTopK} onValueChange={setCloneTopK} min={10} max={100} step={1} />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-medium">Top-P</label>
+                            <span className="text-xs text-muted-foreground">{cloneTopP[0].toFixed(2)}</span>
+                          </div>
+                          <Slider value={cloneTopP} onValueChange={setCloneTopP} min={0.65} max={0.99} step={0.01} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

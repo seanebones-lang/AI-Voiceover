@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
 import { ttsRateLimiter } from '@/lib/rate-limit'
-import { VoiceCloningRAGIntegration } from '@/lib/rag/voice-cloning-rag'
-import { config, getServiceUrl, withRetry } from '@/lib/config'
+import { config, withRetry } from '@/lib/config'
 import { validateTTSRequest, extractClientIP, CLONED_TTS_MAX_CHARS } from '@/lib/validation'
 import { logger, generateRequestId, recordMetric, recordCloneMetric } from '@/lib/monitoring'
 import { buildTtsCacheKey, getCached, setCached } from '@/lib/tts-cache'
@@ -15,11 +14,6 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 // Allow long-running cloned-voice XTTS synthesis on Vercel.
 export const maxDuration = 300
-
-// Initialize RAG integration for TTS enhancement
-const ragIntegration = new VoiceCloningRAGIntegration(
-  getServiceUrl('rag')
-)
 
 interface TTSRequest {
   text: string
@@ -34,8 +28,6 @@ interface TTSRequest {
   noise_reduction?: boolean
   // Special effects
   special_effect?: string // 'none' | 'robot' | 'radio' | 'whisper' | 'deep' | 'chipmunk' | 'cave' | 'telephone'
-  // User tracking
-  user_id?: string
 }
 
 function extractWavData(buffer: Buffer): { fmtChunk: Buffer; dataChunk: Buffer } | null {
@@ -189,7 +181,6 @@ export async function POST(request: NextRequest) {
       reverb = 0, echo = 0, noise_reduction = false,
       special_effect = 'none',
       emotion = 'neutral',
-      user_id,
       clone_preset,
       temperature: ttsTemperature,
       repetition_penalty: ttsRepetitionPenalty,
@@ -213,15 +204,6 @@ export async function POST(request: NextRequest) {
           ].join(':')
         : ''
 
-    // 🎯 RAG ENHANCEMENT: Analyze text and optimize TTS parameters
-    const ttsEnhancement = await ragIntegration.enhanceTTSGeneration(
-      text.trim(),
-      voice_id,
-      undefined, // context
-      user_id
-    ).catch(() => ({ rag_enhanced: false, tts_parameters: null }))
-
-    // Apply RAG-enhanced parameters if available (starts from emotion-adjusted prosody)
     let finalSpeed = prosody.speed
     let finalPitch = prosody.pitch
     let finalVolume = prosody.volume
@@ -229,24 +211,6 @@ export async function POST(request: NextRequest) {
     let finalEcho = prosody.echo
     let finalNoiseReduction = prosody.noise_reduction
     let finalSpecialEffect = prosody.special_effect
-
-    if (ttsEnhancement.rag_enhanced && ttsEnhancement.tts_parameters) {
-      const params = ttsEnhancement.tts_parameters
-      finalSpeed = params.speed
-      finalPitch = params.pitch ?? pitch
-      finalVolume = params.volume ?? volume
-
-      // Apply emotion-based effects
-      if (params.emotion_enhancement === 'excited') {
-        finalSpecialEffect = 'none' // Keep natural but enhanced
-        finalVolume = Math.max(finalVolume, 1.1)
-      } else if (params.emotion_enhancement === 'calm') {
-        finalNoiseReduction = true
-        finalReverb = Math.min(finalReverb + 0.1, 0.3)
-      }
-
-      console.log(`✅ RAG Enhanced TTS: speed=${finalSpeed}, emotion=${params.emotion_enhancement}`)
-    }
 
     const cacheKey = buildTtsCacheKey({
       text: text.trim(),
@@ -413,7 +377,6 @@ export async function POST(request: NextRequest) {
                 echo: finalEcho,
                 noise_reduction: finalNoiseReduction,
                 special_effect: finalSpecialEffect,
-                rag_enhancement: ttsEnhancement.rag_enhanced ? ttsEnhancement : undefined,
                 ...(isClonedVoice
                   ? {
                       ...(clone_preset ? { clone_preset } : {}),
