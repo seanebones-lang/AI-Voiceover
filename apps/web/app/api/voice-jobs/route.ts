@@ -8,7 +8,19 @@ import { getVoiceQueue } from "@/lib/queue"
 export const runtime = "nodejs"
 
 export async function POST(req: Request): Promise<Response> {
-  const { userId, orgId: clerkOrgId } = await auth()
+  let userId: string | null = null
+  let clerkOrgId: string | null = null
+  try {
+    const authState = await auth()
+    userId = authState.userId
+    clerkOrgId = authState.orgId
+  } catch (e) {
+    console.error("[voice-jobs auth POST]", e)
+    return NextResponse.json(
+      { error: "Auth service unavailable", details: e instanceof Error ? e.message : "Unknown auth error" },
+      { status: 503 }
+    )
+  }
   if (!userId || !clerkOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -86,7 +98,19 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(): Promise<Response> {
-  const { userId, orgId: clerkOrgId } = await auth()
+  let userId: string | null = null
+  let clerkOrgId: string | null = null
+  try {
+    const authState = await auth()
+    userId = authState.userId
+    clerkOrgId = authState.orgId
+  } catch (e) {
+    console.error("[voice-jobs auth GET]", e)
+    return NextResponse.json(
+      { error: "Auth service unavailable", details: e instanceof Error ? e.message : "Unknown auth error" },
+      { status: 503 }
+    )
+  }
   if (!userId || !clerkOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -121,6 +145,9 @@ export async function GET(): Promise<Response> {
     return NextResponse.json({ jobs: rows })
   } catch (e) {
     console.error("[voice-jobs GET]", e)
-    return NextResponse.json({ jobs: [] })
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Server error", jobs: [] },
+      { status: 500 }
+    )
   }
 }

@@ -20,7 +20,19 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
-  const { userId, orgId: clerkOrgId } = await auth()
+  let userId: string | null = null
+  let clerkOrgId: string | null = null
+  try {
+    const authState = await auth()
+    userId = authState.userId
+    clerkOrgId = authState.orgId
+  } catch (e) {
+    console.error("[voice-jobs/:id auth GET]", e)
+    return NextResponse.json(
+      { error: "Auth service unavailable", details: e instanceof Error ? e.message : "Unknown auth error" },
+      { status: 503 }
+    )
+  }
   if (!userId || !clerkOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -61,7 +73,19 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
-  const { userId, orgId: clerkOrgId } = await auth()
+  let userId: string | null = null
+  let clerkOrgId: string | null = null
+  try {
+    const authState = await auth()
+    userId = authState.userId
+    clerkOrgId = authState.orgId
+  } catch (e) {
+    console.error("[voice-jobs/:id auth DELETE]", e)
+    return NextResponse.json(
+      { error: "Auth service unavailable", details: e instanceof Error ? e.message : "Unknown auth error" },
+      { status: 503 }
+    )
+  }
   if (!userId || !clerkOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
