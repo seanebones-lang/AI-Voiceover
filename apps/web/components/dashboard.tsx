@@ -26,6 +26,15 @@ interface Voice {
 
 type TabType = 'tts' | 'clone' | 'conversation' | 'compare'
 
+type CloneDefaultProfile = {
+  cloneVoicePreset: 'auto' | 'natural' | 'expressive' | 'stable'
+  autoExpressive: boolean
+  expressiveIntensity: 'subtle' | 'balanced' | 'dramatic'
+  masteringEnabled: boolean
+  masteringProfile: 'none' | 'podcast' | 'broadcast' | 'cinematic'
+  pronunciationOverridesText: string
+}
+
 // Helper function for time formatting
 function formatTimeAgo(date: Date): string {
   const now = new Date()
@@ -312,6 +321,7 @@ export function Dashboard() {
   const [compareLoading1, setCompareLoading1] = useState(false)
   const [compareLoading2, setCompareLoading2] = useState(false)
   const [abLoading, setAbLoading] = useState(false)
+  const [savedCloneDefaults, setSavedCloneDefaults] = useState<Record<string, CloneDefaultProfile>>({})
   
   // Voice preview
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -321,6 +331,42 @@ export function Dashboard() {
   useEffect(() => {
     loadVoices()
   }, [])
+
+  useEffect(() => {
+    const raw = localStorage.getItem('nexteleven_clone_defaults')
+    const parsed = safeJsonParse<Record<string, CloneDefaultProfile>>(raw)
+    if (parsed && typeof parsed === 'object') {
+      setSavedCloneDefaults(parsed)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedVoice.startsWith('clone_')) return
+    const profile = savedCloneDefaults[selectedVoice]
+    if (!profile) return
+    setCloneVoicePreset(profile.cloneVoicePreset)
+    setAutoExpressive(profile.autoExpressive)
+    setExpressiveIntensity(profile.expressiveIntensity)
+    setMasteringEnabled(profile.masteringEnabled)
+    setMasteringProfile(profile.masteringProfile)
+    setPronunciationOverridesText(profile.pronunciationOverridesText)
+  }, [selectedVoice, savedCloneDefaults])
+
+  function saveCloneDefaultsForSelectedVoice() {
+    if (!selectedVoice.startsWith('clone_')) return
+    const profile: CloneDefaultProfile = {
+      cloneVoicePreset,
+      autoExpressive,
+      expressiveIntensity,
+      masteringEnabled,
+      masteringProfile,
+      pronunciationOverridesText,
+    }
+    const next = { ...savedCloneDefaults, [selectedVoice]: profile }
+    setSavedCloneDefaults(next)
+    localStorage.setItem('nexteleven_clone_defaults', JSON.stringify(next))
+    setCloneSuccess('Default profile saved for this clone voice.')
+  }
 
   /** After async TTS, <audio autoPlay> often fails in production (CSP / autoplay policy). media-src blob: + programmatic play fixes playback. */
   useLayoutEffect(() => {
@@ -1115,6 +1161,13 @@ export function Dashboard() {
                       className="text-xs text-primary hover:underline mt-2"
                     >
                       {showCloneAdvanced ? 'Hide advanced clone controls' : 'Show advanced clone controls'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveCloneDefaultsForSelectedVoice}
+                      className="text-xs text-primary hover:underline mt-2 ml-3"
+                    >
+                      Lock as default for this voice
                     </button>
                     {showCloneAdvanced && (
                       <div className="mt-3 space-y-3 rounded-lg border p-3 bg-card">
