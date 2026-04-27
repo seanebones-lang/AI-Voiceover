@@ -6,8 +6,16 @@ import { getDb, voiceJobs, organizations } from "@ai-voiceover/db"
 import { getVoiceQueue } from "@/lib/queue"
 
 export const runtime = "nodejs"
+const clerkConfigured =
+  !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
 export async function POST(req: Request): Promise<Response> {
+  if (!clerkConfigured) {
+    return NextResponse.json(
+      { error: "Auth not configured", details: "Set Clerk environment variables to enable voice jobs." },
+      { status: 503 }
+    )
+  }
   let userId: string | null | undefined = null
   let clerkOrgId: string | null | undefined = null
   try {
@@ -98,6 +106,12 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(): Promise<Response> {
+  if (!clerkConfigured) {
+    return NextResponse.json(
+      { error: "Auth not configured", details: "Set Clerk environment variables to enable voice jobs." },
+      { status: 503 }
+    )
+  }
   let userId: string | null | undefined = null
   let clerkOrgId: string | null | undefined = null
   try {

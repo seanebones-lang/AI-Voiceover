@@ -4,6 +4,8 @@ import { and, eq } from "drizzle-orm"
 import { getDb, organizations, voiceJobs } from "@ai-voiceover/db"
 
 export const runtime = "nodejs"
+const clerkConfigured =
+  !!process.env.CLERK_SECRET_KEY && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
 async function getOrgInternalId(clerkOrgId: string | null) {
   if (!clerkOrgId) return null
@@ -20,6 +22,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
+  if (!clerkConfigured) {
+    return NextResponse.json(
+      { error: "Auth not configured", details: "Set Clerk environment variables to enable voice jobs." },
+      { status: 503 }
+    )
+  }
   let userId: string | null | undefined = null
   let clerkOrgId: string | null | undefined = null
   try {
@@ -73,6 +81,12 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<Response> {
+  if (!clerkConfigured) {
+    return NextResponse.json(
+      { error: "Auth not configured", details: "Set Clerk environment variables to enable voice jobs." },
+      { status: 503 }
+    )
+  }
   let userId: string | null | undefined = null
   let clerkOrgId: string | null | undefined = null
   try {

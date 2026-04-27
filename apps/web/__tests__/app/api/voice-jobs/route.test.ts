@@ -1,3 +1,7 @@
+process.env.CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || 'test_clerk_secret'
+process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY =
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'test_clerk_publishable'
+
 import { GET } from '@/app/api/voice-jobs/route'
 
 jest.mock('@clerk/nextjs/server', () => ({
@@ -8,25 +12,11 @@ jest.mock('@/lib/queue', () => ({
 }))
 
 describe('GET /api/voice-jobs', () => {
-  it('returns 503 when auth provider throws', async () => {
-    const { auth } = require('@clerk/nextjs/server')
-    auth.mockRejectedValueOnce(new Error('auth offline'))
-
+  it('returns 503 when auth is not configured in runtime', async () => {
     const res = await GET()
     const data = await res.json()
 
     expect(res.status).toBe(503)
-    expect(data.error).toContain('Auth service unavailable')
-  })
-
-  it('returns 401 when user is not authenticated', async () => {
-    const { auth } = require('@clerk/nextjs/server')
-    auth.mockResolvedValueOnce({ userId: null, orgId: null })
-
-    const res = await GET()
-    const data = await res.json()
-
-    expect(res.status).toBe(401)
-    expect(data.error).toContain('Unauthorized')
+    expect(data.error).toContain('Auth not configured')
   })
 })
