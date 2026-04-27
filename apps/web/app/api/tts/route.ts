@@ -33,6 +33,21 @@ interface TTSRequest {
   expressive_intensity?: 'subtle' | 'balanced' | 'dramatic'
   mastering_enabled?: boolean
   mastering_profile?: 'none' | 'podcast' | 'broadcast' | 'cinematic'
+  pronunciation_overrides?: Record<string, string>
+}
+
+function applyPronunciationOverrides(text: string, overrides?: Record<string, string>): string {
+  if (!overrides) return text
+  let out = text
+  const entries = Object.entries(overrides).sort((a, b) => b[0].length - a[0].length)
+  for (const [rawSource, rawTarget] of entries) {
+    const source = rawSource.trim()
+    const target = rawTarget.trim()
+    if (!source || !target) continue
+    const pattern = new RegExp(`\\b${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
+    out = out.replace(pattern, target)
+  }
+  return out
 }
 
 function extractWavData(buffer: Buffer): { fmtChunk: Buffer; dataChunk: Buffer } | null {
@@ -191,12 +206,14 @@ export async function POST(request: NextRequest) {
       expressive_intensity = 'subtle',
       mastering_enabled = false,
       mastering_profile = 'none',
+      pronunciation_overrides,
       temperature: ttsTemperature,
       repetition_penalty: ttsRepetitionPenalty,
       top_k: ttsTopK,
       top_p: ttsTopP,
     } = validation.data
-    const tagged = parseProsodyTags(text)
+    const normalizedWithLexicon = applyPronunciationOverrides(text, pronunciation_overrides)
+    const tagged = parseProsodyTags(normalizedWithLexicon)
     const normalizedInputText = tagged.cleanText
 
     const prosody = applyEmotionProsody(
@@ -220,7 +237,7 @@ export async function POST(request: NextRequest) {
     const cloneTuneKey =
       voice_id.startsWith('clone_')
         ? [
-            clone_preset ?? 'natural',
+            clone_preset && clone_preset !== 'auto' ? clone_preset : 'auto',
             ttsTemperature !== undefined ? String(ttsTemperature) : '_',
             ttsRepetitionPenalty !== undefined ? String(ttsRepetitionPenalty) : '_',
             ttsTopK !== undefined ? String(ttsTopK) : '_',
@@ -408,7 +425,8 @@ export async function POST(request: NextRequest) {
                 mastering_profile,
                 ...(isClonedVoice
                   ? {
-                      ...(clone_preset ? { clone_preset } : {}),
+                      ...(clone_preset && clone_preset !== 'auto' ? { clone_preset } : {}),
+                      ...(pronunciation_overrides ? { pronunciation_overrides } : {}),
                       ...(ttsTemperature !== undefined ? { temperature: ttsTemperature } : {}),
                       ...(ttsRepetitionPenalty !== undefined ? { repetition_penalty: ttsRepetitionPenalty } : {}),
                       ...(ttsTopK !== undefined ? { top_k: ttsTopK } : {}),

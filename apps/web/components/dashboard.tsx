@@ -94,6 +94,7 @@ export function Dashboard() {
   const [ttsEmotion, setTtsEmotion] = useState<string>('neutral')
   const [masteringEnabled, setMasteringEnabled] = useState(false)
   const [masteringProfile, setMasteringProfile] = useState<'none' | 'podcast' | 'broadcast' | 'cinematic'>('none')
+  const [pronunciationOverridesText, setPronunciationOverridesText] = useState('')
   
   // Advanced Settings
   const [outputFormat, setOutputFormat] = useState<'mp3' | 'wav'>('mp3')
@@ -231,7 +232,7 @@ export function Dashboard() {
   const [cloneQualityScore, setCloneQualityScore] = useState<number | null>(null)
   const [cloneGateSummary, setCloneGateSummary] = useState<{ passed: boolean; failed_samples: number } | null>(null)
   /** Coqui XTTS v2 clone output character (cloned voices only). */
-  const [cloneVoicePreset, setCloneVoicePreset] = useState<'natural' | 'expressive' | 'stable'>('natural')
+  const [cloneVoicePreset, setCloneVoicePreset] = useState<'auto' | 'natural' | 'expressive' | 'stable'>('auto')
   const [showCloneAdvanced, setShowCloneAdvanced] = useState(false)
   const [cloneTemperature, setCloneTemperature] = useState([0.63])
   const [cloneRepetitionPenalty, setCloneRepetitionPenalty] = useState([1.68])
@@ -259,8 +260,7 @@ export function Dashboard() {
 
   function getCloneTuningPayload(voiceId: string) {
     if (!voiceId.startsWith('clone_')) return {}
-    return {
-      clone_preset: cloneVoicePreset,
+    const payload: Record<string, unknown> = {
       temperature: cloneTemperature[0],
       repetition_penalty: cloneRepetitionPenalty[0],
       top_k: cloneTopK[0],
@@ -268,6 +268,8 @@ export function Dashboard() {
       auto_expressive: autoExpressive,
       expressive_intensity: expressiveIntensity,
     }
+    if (cloneVoicePreset !== 'auto') payload.clone_preset = cloneVoicePreset
+    return payload
   }
 
   function getMasteringPayload() {
@@ -275,6 +277,19 @@ export function Dashboard() {
       mastering_enabled: masteringEnabled,
       mastering_profile: masteringEnabled ? masteringProfile : 'none',
     }
+  }
+
+  function getPronunciationOverridesPayload() {
+    const overrides: Record<string, string> = {}
+    for (const line of pronunciationOverridesText.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || !trimmed.includes('=')) continue
+      const [rawKey, ...rawValueParts] = trimmed.split('=')
+      const key = rawKey.trim()
+      const value = rawValueParts.join('=').trim()
+      if (key && value) overrides[key] = value
+    }
+    return Object.keys(overrides).length ? { pronunciation_overrides: overrides } : {}
   }
 
   // Conversation State
@@ -338,6 +353,7 @@ export function Dashboard() {
           pitch: 0,
           volume: 1.0,
           ...getMasteringPayload(),
+          ...getPronunciationOverridesPayload(),
           ...getCloneTuningPayload(voiceId),
         }),
       })
@@ -425,6 +441,7 @@ export function Dashboard() {
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
           ...getMasteringPayload(),
+          ...getPronunciationOverridesPayload(),
           ...getCloneTuningPayload(selectedVoice),
         }),
       })
@@ -568,6 +585,7 @@ export function Dashboard() {
             noise_reduction: noiseReduction,
             special_effect: specialEffect,
             ...getMasteringPayload(),
+            ...getPronunciationOverridesPayload(),
             ...getCloneTuningPayload(selectedVoice),
           }),
         })
@@ -773,6 +791,7 @@ export function Dashboard() {
             language,
             emotion: ttsEmotion,
             ...getMasteringPayload(),
+            ...getPronunciationOverridesPayload(),
             ...getCloneTuningPayload(msg.voiceId),
           }),
         })
@@ -814,6 +833,7 @@ export function Dashboard() {
           voice_id: voiceId,
           emotion: ttsEmotion,
           ...getMasteringPayload(),
+          ...getPronunciationOverridesPayload(),
           ...getCloneTuningPayload(voiceId),
         }),
       })
@@ -1040,10 +1060,11 @@ export function Dashboard() {
                     <select
                       value={cloneVoicePreset}
                       onChange={(e) =>
-                        setCloneVoicePreset(e.target.value as 'natural' | 'expressive' | 'stable')
+                        setCloneVoicePreset(e.target.value as 'auto' | 'natural' | 'expressive' | 'stable')
                       }
                       className="w-full px-4 py-3 rounded-lg border bg-background"
                     >
+                      <option value="auto">Auto (recommended) — uses clone-specific defaults</option>
                       <option value="natural">Natural — balanced warmth and consistency</option>
                       <option value="expressive">Expressive — more variation (character reads)</option>
                       <option value="stable">Stable — tighter, uniform narration</option>
@@ -1232,6 +1253,15 @@ export function Dashboard() {
                 <p className="text-xs text-muted-foreground mb-2">
                   Deterministic prosody tags: <code>[emph]...[/emph]</code>, <code>[strong]...[/strong]</code>, <code>[question]...[/question]</code>, <code>[pause]</code>, <code>[pause:long]</code>.
                 </p>
+                <div className="mb-2">
+                  <label className="text-xs font-medium block mb-1">Pronunciation dictionary (optional)</label>
+                  <textarea
+                    value={pronunciationOverridesText}
+                    onChange={(e) => setPronunciationOverridesText(e.target.value)}
+                    placeholder={'Write one per line: term=how to say it\nExample: Nexteleven=Next Eleven\nExample: SQL=sequel'}
+                    className="w-full min-h-[72px] px-3 py-2 rounded-lg border bg-background text-xs resize-y"
+                  />
+                </div>
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}

@@ -128,6 +128,7 @@ describe('POST /api/tts options matrix', () => {
         expressive_intensity: 'balanced',
         mastering_enabled: true,
         mastering_profile: 'podcast',
+        pronunciation_overrides: { Nexteleven: 'Next Eleven' },
         temperature: 0.72,
         repetition_penalty: 1.52,
         top_k: 60,
@@ -145,6 +146,7 @@ describe('POST /api/tts options matrix', () => {
     expect(requestBody.expressive_intensity).toBe('balanced')
     expect(requestBody.mastering_enabled).toBe(true)
     expect(requestBody.mastering_profile).toBe('podcast')
+    expect(requestBody.pronunciation_overrides).toEqual({ Nexteleven: 'Next Eleven' })
     expect(requestBody.temperature).toBe(0.72)
     expect(requestBody.repetition_penalty).toBe(1.52)
     expect(requestBody.top_k).toBe(60)

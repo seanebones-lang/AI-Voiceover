@@ -161,6 +161,7 @@ class TTSRequest(BaseModel):
     special_effect: str = "none"
     mastering_enabled: bool = False
     mastering_profile: str = "none"  # none | podcast | broadcast | cinematic
+    pronunciation_overrides: Optional[dict] = None
     # Optional preset for cloned voices (maps to sampling params below)
     clone_preset: Optional[str] = None  # natural | expressive | stable
     # Advanced XTTS parameters for fine-tuning
@@ -254,7 +255,7 @@ CLONE_GUIDE = {
     },
     "quality_gate": {
         "enabled": True,
-        "strict_reject_mode": os.getenv("XTTS_CLONE_STRICT_GATE", "0").lower() in ("1", "true", "yes"),
+        "strict_reject_mode": os.getenv("XTTS_CLONE_STRICT_GATE", "1").lower() in ("1", "true", "yes"),
         "minimum_duration_seconds": 4,
         "minimum_sample_rate_hz": 16000,
         "minimum_quality_score": 55,
@@ -447,19 +448,39 @@ async def list_cloned_voices():
 
 @app.post("/tts")
 async def generate_speech(request: TTSRequest):
-    text = request.text.strip()
+    text = apply_pronunciation_overrides(request.text, request.pronunciation_overrides).strip()
     voice_id = request.voice_id
     language = request.language
     speed = max(0.5, min(2.0, request.speed))
     pitch = max(-20, min(20, request.pitch))
     volume = max(0.0, min(1.0, request.volume))
 
+    effective_temperature = request.temperature
+    effective_repetition_penalty = request.repetition_penalty
+    effective_top_k = request.top_k
+    effective_top_p = request.top_p
+    effective_clone_preset = request.clone_preset if voice_id.startswith("clone_") else None
+    if voice_id.startswith("clone_") and not request.clone_preset:
+        try:
+            voice_meta_path = VOICES_DIR / f"{voice_id}.json"
+            if voice_meta_path.exists():
+                with open(voice_meta_path) as f:
+                    meta = json.load(f)
+                defaults = meta.get("default_tuning", {}) if isinstance(meta.get("default_tuning"), dict) else {}
+                effective_clone_preset = defaults.get("clone_preset")
+                effective_temperature = float(defaults.get("temperature", effective_temperature))
+                effective_repetition_penalty = float(defaults.get("repetition_penalty", effective_repetition_penalty))
+                effective_top_k = int(defaults.get("top_k", effective_top_k))
+                effective_top_p = float(defaults.get("top_p", effective_top_p))
+        except Exception as e:
+            logger.warning(f"Could not load default_tuning for {voice_id}: {e}")
+
     temperature, repetition_penalty, top_k, top_p = resolve_clone_sampling_params(
-        request.clone_preset if voice_id.startswith("clone_") else None,
-        request.temperature,
-        request.repetition_penalty,
-        request.top_k,
-        request.top_p,
+        effective_clone_preset,
+        effective_temperature,
+        effective_repetition_penalty,
+        effective_top_k,
+        effective_top_p,
     )
     
     if not text:
@@ -574,6 +595,22 @@ def split_text_for_xtts(text: str, max_chunk_chars: int = 200) -> List[str]:
 
     chunks = [c for c in chunks if c]
     return chunks or [normalized]
+
+
+def apply_pronunciation_overrides(text: str, overrides: Optional[dict]) -> str:
+    """Apply deterministic word/phrase substitutions before synthesis."""
+    if not text or not overrides or not isinstance(overrides, dict):
+        return text
+    updated = text
+    pairs = sorted(
+        [(str(k), str(v)) for k, v in overrides.items() if str(k).strip() and str(v).strip()],
+        key=lambda kv: len(kv[0]),
+        reverse=True,
+    )
+    for source, target in pairs:
+        pattern = re.compile(rf"\b{re.escape(source)}\b", re.IGNORECASE)
+        updated = pattern.sub(target, updated)
+    return updated
 
 
 def concat_wav_files_to_bytes(wav_paths: List[str]) -> bytes:
@@ -692,11 +729,20 @@ async def generate_cloned_speech(text: str, voice_id: str, language: str, speed:
             pass
         return 0.0
 
+    sample_quality = voice_data.get("sample_quality", {}) if isinstance(voice_data.get("sample_quality"), dict) else {}
+
+    def _sample_quality_score(path: str) -> float:
+        meta = sample_quality.get(os.path.basename(path), {})
+        if isinstance(meta, dict):
+            return float(meta.get("quality_score", 0.0) or 0.0)
+        return 0.0
+
     def _ref_sort_key(path: str) -> tuple:
-        """Longer refs first; tie-break toward lightly processed (non-_preprocessed) WAVs."""
+        """Higher quality first, then longer refs; tie-break toward lightly processed WAVs."""
+        q = _sample_quality_score(path)
         dur = _ref_duration_seconds(path)
         pre = 1 if "_preprocessed.wav" in path else 0
-        return (-dur, pre)
+        return (-q, -dur, pre)
 
     candidates = [*natural_wavs, *preprocessed_wavs, *other_audio]
     candidates = sorted(candidates, key=_ref_sort_key)
@@ -1172,7 +1218,10 @@ async def clone_voice(
                 error = quality.get("error") or "Audio file could not be decoded"
                 raise HTTPException(status_code=400, detail=f"Invalid audio file {file.filename}: {error}")
 
-            quality_reports.append(quality)
+            quality_reports.append({
+                "source_file": file_path.name,
+                **quality,
+            })
             total_duration += quality.get('duration', 0)
             if strict_gate_mode and not quality.get("gate_passed", True):
                 reasons = quality.get("gate_fail_reasons", [])[:2]
@@ -1221,11 +1270,30 @@ async def clone_voice(
             else "basic" if total_duration >= 10
             else "minimal"
         )
+        default_tuning = {
+            "clone_preset": "stable" if gate_failed_count > 0 or avg_quality_score < 70 else "natural",
+            "temperature": 0.58 if avg_quality_score < 70 else 0.63,
+            "repetition_penalty": 1.82 if avg_quality_score < 70 else 1.68,
+            "top_k": 50,
+            "top_p": 0.87 if avg_quality_score < 70 else 0.9,
+        }
+        sample_quality = {
+            r.get("source_file"): {
+                "quality_score": r.get("quality_score", 0.0),
+                "gate_passed": r.get("gate_passed", True),
+                "duration": r.get("duration", 0.0),
+            }
+            for r in quality_reports
+            if isinstance(r, dict) and r.get("source_file")
+        }
+
         metadata = {
             "voice_id": voice_id,
             "name": name,
             "description": description,
             "sample_files": saved_files,
+            "sample_quality": sample_quality,
+            "default_tuning": default_tuning,
             "created_at": datetime.datetime.now().isoformat(),
             "real_clone": HAS_XTTS,
             "total_duration": total_duration,
@@ -1268,6 +1336,7 @@ async def clone_voice(
             "total_duration": total_duration,
             "quality_tier": quality_tier,
             "quality_score": round(avg_quality_score, 1),
+            "default_tuning": default_tuning,
             "real_clone": HAS_XTTS,
             "xtts_available": HAS_XTTS,
             "preprocessed": True,

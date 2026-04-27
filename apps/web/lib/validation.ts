@@ -83,7 +83,7 @@ export const specialEffectSchema = z.enum([
 ])
 
 // TTS Request validation schema
-export const clonePresetSchema = z.enum(['natural', 'expressive', 'stable'])
+export const clonePresetSchema = z.enum(['auto', 'natural', 'expressive', 'stable'])
 
 export const emotionSchema = z
   .enum(ttsEmotionIds as unknown as [string, ...string[]])
@@ -113,6 +113,8 @@ export const ttsRequestSchema = z
     /** Optional mastering pass for polished output consistency. */
     mastering_enabled: z.boolean().optional().default(false),
     mastering_profile: z.enum(['none', 'podcast', 'broadcast', 'cinematic']).optional().default('none'),
+    /** Deterministic pronunciation overrides map: { "word": "replacement" } */
+    pronunciation_overrides: z.record(z.string().min(1).max(60), z.string().min(1).max(120)).optional(),
     /** Advanced XTTS sampling (optional; omit to use service defaults). */
     temperature: z.number().min(0.35).max(1.15).optional(),
     repetition_penalty: z.number().min(1.0).max(2.5).optional(),
@@ -120,6 +122,13 @@ export const ttsRequestSchema = z
     top_p: z.number().min(0.65).max(0.99).optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.pronunciation_overrides && Object.keys(data.pronunciation_overrides).length > 30) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pronunciation_overrides'],
+        message: 'Pronunciation overrides cannot exceed 30 entries',
+      })
+    }
     const max = data.voice_id.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
     if (data.text.length > max) {
       ctx.addIssue({
