@@ -368,6 +368,22 @@ export function Dashboard() {
     setCloneSuccess('Default profile saved for this clone voice.')
   }
 
+  function resetCloneDefaultsForSelectedVoice() {
+    if (!selectedVoice.startsWith('clone_')) return
+    if (!savedCloneDefaults[selectedVoice]) return
+    const next = { ...savedCloneDefaults }
+    delete next[selectedVoice]
+    setSavedCloneDefaults(next)
+    localStorage.setItem('nexteleven_clone_defaults', JSON.stringify(next))
+    setCloneVoicePreset('auto')
+    setAutoExpressive(true)
+    setExpressiveIntensity('subtle')
+    setMasteringEnabled(false)
+    setMasteringProfile('none')
+    setPronunciationOverridesText('')
+    setCloneSuccess('Saved default profile cleared for this clone voice.')
+  }
+
   /** After async TTS, <audio autoPlay> often fails in production (CSP / autoplay policy). media-src blob: + programmatic play fixes playback. */
   useLayoutEffect(() => {
     if (!audioUrl) return
@@ -1168,6 +1184,13 @@ export function Dashboard() {
                       className="text-xs text-primary hover:underline mt-2 ml-3"
                     >
                       Lock as default for this voice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetCloneDefaultsForSelectedVoice}
+                      className="text-xs text-muted-foreground hover:underline mt-2 ml-3"
+                    >
+                      Reset default for this voice
                     </button>
                     {showCloneAdvanced && (
                       <div className="mt-3 space-y-3 rounded-lg border p-3 bg-card">
