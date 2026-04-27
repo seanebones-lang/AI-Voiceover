@@ -873,7 +873,7 @@ export function Dashboard() {
               </div>
               {capabilities && (
                 <span className="text-xs text-muted-foreground hidden sm:inline">
-                  Standard {capabilities.tts_default ? '✓' : '—'} · xAI {capabilities.tts_xai ? '✓' : '—'} · Cloning {capabilities.cloning ? '✓' : '—'}
+                  Standard {capabilities.tts_default ? '✓' : '—'} · Cloning {capabilities.cloning ? '✓' : '—'}
                 </span>
               )}
               <span className="px-3 py-1 text-xs font-mono rounded-full bg-primary/20 text-primary border border-primary/30">
@@ -1597,8 +1597,8 @@ export function Dashboard() {
                   <CardTitle className="text-sm">About</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
-                  <p>Powered by <strong>Microsoft Edge TTS</strong> + <strong>xAI Grok</strong></p>
-                  <p>Standard voices free. xAI voices require XAI_API_KEY.</p>
+                  <p>Built with NextEleven voice technology.</p>
+                  <p>Professional text-to-speech and voice cloning, all in one platform.</p>
                   <p className="text-xs pt-2 border-t mt-3">
                     <span className="text-primary">⌘/Ctrl + Enter</span> to generate<br/>
                     <span className="text-primary">⌘/Ctrl + D</span> to download
@@ -2117,7 +2117,7 @@ export function Dashboard() {
       <footer className="border-t border-border py-6 mt-12">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>© 2026 NextEleven LLC. All Rights Reserved.</p>
-          <p className="text-xs mt-1">Edge TTS • xAI Grok Voices • Voice Cloning</p>
+          <p className="text-xs mt-1">NextEleven Voice Platform • Text to Speech • Voice Cloning</p>
       </div>
       </footer>
     </div>
