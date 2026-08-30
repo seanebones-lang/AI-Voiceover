@@ -21,6 +21,16 @@ const worker = new Worker(
     const { rowId, type } = job.data as { rowId?: string; type?: string }
     if (!rowId) {
       console.warn("[workers] job missing rowId", job.id)
+      // Mark job as failed since we can't process it
+      const db = getDb()
+      await db
+        .update(voiceJobs)
+        .set({
+          status: "failed",
+          errorMessage: "Job missing rowId",
+          updatedAt: new Date(),
+        })
+        .where(eq(voiceJobs.id, rowId ?? ''))
       return
     }
 
@@ -63,7 +73,7 @@ const worker = new Worker(
           updatedAt: new Date(),
         })
         .where(eq(voiceJobs.id, rowId))
-      throw err
+      // Do NOT re-throw - let the job naturally complete
     }
   },
   { connection }
