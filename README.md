@@ -1,23 +1,6 @@
-Enterprise AI voiceover platform: TTS, voice cloning, and effects. Next.js 16 monorepo with Clerk, Stripe, BullMQ workers, and an XTTS sidecar. Built by NextEleven.
-```
-
-
-
-**Topics:**
-
-```
-ai  tts  text-to-speech  voice-cloning  xtts  nextjs  typescript  clerk  stripe  monorepo  railway
-```
-
-
----
-
-## README.md
-
-```markdown
 # AI Voiceover
 
-**v3.0.0** · NextEleven LLC
+**v4.0.0** · NextEleven LLC
 
 Production TTS, voice cloning, and audio effects for creators and teams. Type a script, pick a stock or cloned voice, apply emotion/effects, and get downloadable audio.
 
