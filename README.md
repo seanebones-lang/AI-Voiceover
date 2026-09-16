@@ -1,12 +1,3 @@
-Paste-ready copy. The existing README is accurate but thin; this one is built for the GitHub landing page and for someone cloning the repo.
-
----
-
-## GitHub About
-
-**Description** (350-char field):
-
-```
 Enterprise AI voiceover platform: TTS, voice cloning, and effects. Next.js 16 monorepo with Clerk, Stripe, BullMQ workers, and an XTTS sidecar. Built by NextEleven.
 ```
 
