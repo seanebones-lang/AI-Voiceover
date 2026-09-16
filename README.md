@@ -1,7 +1,7 @@
 Enterprise AI voiceover platform: TTS, voice cloning, and effects. Next.js 16 monorepo with Clerk, Stripe, BullMQ workers, and an XTTS sidecar. Built by NextEleven.
 ```
 
-**Website:** leave blank until you have a public URL, or put the Railway/Vercel app URL.
+
 
 **Topics:**
 
@@ -9,7 +9,6 @@ Enterprise AI voiceover platform: TTS, voice cloning, and effects. Next.js 16 mo
 ai  tts  text-to-speech  voice-cloning  xtts  nextjs  typescript  clerk  stripe  monorepo  railway
 ```
 
-Check **Releases** if you want v3.0.0 visible. Leave Issues on.
 
 ---
 
