@@ -3,6 +3,7 @@ import { denyUnlessMutableApiAuthorized } from '@/lib/api-access'
 import { cloneRateLimiter } from '@/lib/rate-limit'
 import { config } from '@/lib/config'
 import { validateAudioFile, extractClientIP, voiceIdSchema } from '@/lib/validation'
+import { invalidateVoice } from '@/lib/tts-cache'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const detail = typeof data.detail === 'string' ? data.detail : `Voice service returned ${res.status}`
       return NextResponse.json({ error: detail }, { status: res.status })
     }
+    invalidateVoice(voiceId)
     return NextResponse.json(data)
   } catch (err) {
     return NextResponse.json(

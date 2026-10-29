@@ -131,6 +131,7 @@ GPU is optional. Kokoro stock voices are many times faster than real time on CPU
 | `POST /api/tts-v2` | Newer TTS path |
 | `POST /api/clone-voice` | Create a cloned voice |
 | `GET /api/cloned-voices` | List clones |
+| `POST /api/cloned-voices/{id}/samples` | Add reference takes to an existing clone |
 | `GET /api/voices` | Available voices |
 | `POST /api/voice-jobs` | Enqueue async work |
 | `GET /api/health` | Deploy + capability probe |
