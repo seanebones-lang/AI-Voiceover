@@ -28,11 +28,13 @@ SAMPLE_RATE = 24000
 STOCK_VOICES_PATH = Path(__file__).resolve().parent / "stock_voices.json"
 REF_SR = 24000
 
-# Sampling presets for XTTS (temperature, repetition_penalty, top_k, top_p).
+# Sampling presets for XTTS (temperature, repetition_penalty, top_k, top_p), tuned on a
+# Whisper-WER + ECAPA speaker-similarity benchmark. Repetition penalty below ~2.5 lets XTTS
+# babble on short lines; temperature below ~0.65 flattens the speaker's identity.
 CLONE_PRESETS: Dict[str, Tuple[float, float, int, float]] = {
     "natural": (0.70, 4.0, 50, 0.85),
     "expressive": (0.80, 3.0, 60, 0.90),
-    "stable": (0.60, 5.0, 40, 0.80),
+    "stable": (0.65, 5.0, 50, 0.85),
 }
 DEFAULT_PRESET = "natural"
 

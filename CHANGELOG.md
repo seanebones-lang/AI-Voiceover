@@ -25,7 +25,7 @@ Every voice now runs on self-hosted models; the app makes no third-party TTS API
 - Reference cleanup on upload: rumble filter, optional denoise, dead-air trim, long-pause compression, peak normalization; noisy takes are excluded when cleaner ones exist.
 - Runaway-generation guard: implausible segment durations are re-sampled with tighter repetition control.
 - Language-aware chunking that respects XTTS per-language limits (fixes truncated Chinese/Japanese/Korean output) and splits on CJK punctuation.
-- Retuned presets (natural 0.70/4.0, expressive, stable); the dashboard only sends raw sampling values when the advanced panel is open.
+- Retuned presets from a 3-seed benchmark: natural 0.70 / rep 4.0, expressive 0.80 / 3.0, stable 0.65 / 5.0 (the old stable at 0.60 lowered speaker similarity). The dashboard only sends raw sampling values when the advanced panel is open.
 - Native XTTS speed control, level-matched seams with fades, tail-artifact removal, loudness normalization to -19 LUFS.
 - Benchmarked on LibriSpeech speaker 1272 with Whisper + ECAPA: WER 21% → 3.6%, speaker similarity 0.54 → 0.62, no hallucinated babble on short lines.
 
