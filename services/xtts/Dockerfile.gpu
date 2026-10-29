@@ -1,28 +1,44 @@
-# XTTS with NVIDIA CUDA — use on GPU-capable hosts (RunPod, Lambda, vast.ai, self-hosted,
-# or any platform with nvidia-container-toolkit). Railway often has no GPU; keep Dockerfile (CPU) as default.
+# Local voice service with NVIDIA CUDA — use on GPU-capable hosts (RunPod, Lambda, vast.ai,
+# self-hosted, or any platform with nvidia-container-toolkit). Railway often has no GPU; keep
+# Dockerfile (CPU) as the default.
 #
-# Build: docker build -f Dockerfile.gpu -t xtts-gpu .
-# Run:  docker run --gpus all -p 8081:8081 -e PORT=8081 xtts-gpu
+# Build: docker build -f Dockerfile.gpu -t voice-gpu .
+# Run:  docker run --gpus all -p 8081:8081 -e PORT=8081 -v voices:/data/voices -e VOICES_DIR=/data/voices voice-gpu
 #
 # Base image ships PyTorch + CUDA; we only add ffmpeg and Python deps (no CPU torch reinstall).
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    NVIDIA_VISIBLE_DEVICES=all
+    NVIDIA_VISIBLE_DEVICES=all \
+    HF_HOME=/models/hf \
+    TTS_HOME=/models/tts \
+    HF_HUB_DISABLE_TELEMETRY=1
 
 WORKDIR /app
 
 USER root
+COPY requirements-common.txt .
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg build-essential cmake \
+    && pip install --upgrade pip \
+    && pip install -r requirements-common.txt \
+    && (pip uninstall -y unidic || true) \
+    && apt-get purge -y build-essential cmake \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-common.txt .
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements-common.txt
+# XTTS v2 weights are released under the Coqui Public Model License (non-commercial terms).
+ARG COQUI_TOS_AGREED=1
+COPY prefetch_models.py engine_init.py xtts_engine.py audio_utils.py stock_voices.json ./
+RUN COQUI_TOS_AGREED=${COQUI_TOS_AGREED} python prefetch_models.py
 
-COPY main.py .
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    VOICE_OFFLINE=1
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+COPY *.py ./
+
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 75"]

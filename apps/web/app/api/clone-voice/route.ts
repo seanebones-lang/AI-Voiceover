@@ -4,6 +4,7 @@ import { cloneRateLimiter } from '@/lib/rate-limit'
 import { config, getServiceUrl, withRetry } from '@/lib/config'
 import { validateAudioFile, extractClientIP } from '@/lib/validation'
 import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors'
+import { invalidateVoice } from '@/lib/tts-cache'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -170,6 +171,8 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json()
+    // A re-created voice reuses its id (derived from the name); never serve the old one's audio.
+    if (typeof result.voice_id === 'string') invalidateVoice(result.voice_id)
     
     console.log(`✓ Voice cloned: ${result.voice_id}`)
 

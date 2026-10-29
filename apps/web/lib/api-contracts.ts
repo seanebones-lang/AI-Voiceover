@@ -18,9 +18,8 @@ export interface ApiVoice {
 export interface VoicesResponse {
   voices: ApiVoice[]
   default_count: number
-  xai_count: number
   cloned_count: number
-  /** True when cloned list could not be fetched (XTTS unreachable); default + xAI voices still valid */
+  /** True when the cloned list could not be fetched (voice service unreachable); stock voice list is still returned */
   degraded?: boolean
   /** Present when degraded; reason for partial response */
   degraded_reason?: string
@@ -74,6 +73,6 @@ export interface HealthResponse {
     rag?: { status: string; url: string; latency?: number }
   }
   environment: { NODE_ENV?: string; isRailway: boolean; environment: string }
-  capabilities: { tts_default: boolean; tts_xai: boolean; cloning: boolean; tts_v2: boolean; rag: boolean }
+  capabilities: { tts_default: boolean; cloning: boolean; tts_v2: boolean; rag: boolean }
   latency: number
 }

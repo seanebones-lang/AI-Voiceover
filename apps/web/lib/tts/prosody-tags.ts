@@ -22,20 +22,17 @@ function clamp(n: number, lo: number, hi: number): number {
 /**
  * SSML-lite deterministic controls:
  * [emph]...[/emph], [strong]...[/strong], [question]...[/question], [pause], [pause:short|medium|long]
+ * (pauses become 0.25 / 0.5 / 0.9 s of real silence in the voice service)
  */
 export function parseProsodyTags(text: string): ProsodyTagParseResult {
   if (!text) return { cleanText: text, adjustments: { ...DEFAULT_ADJUSTMENTS } }
 
   let speedDelta = 0
   let pitchDelta = 0
-  let reverbDelta = 0
 
   const emphCount = (text.match(/\[emph\]/gi) || []).length
   const strongCount = (text.match(/\[strong\]/gi) || []).length
   const questionCount = (text.match(/\[question\]/gi) || []).length
-  const pauseShort = (text.match(/\[pause:short\]/gi) || []).length
-  const pauseMedium = (text.match(/\[pause(?::medium)?\]/gi) || []).length
-  const pauseLong = (text.match(/\[pause:long\]/gi) || []).length
 
   speedDelta += emphCount * 0.02
   pitchDelta += emphCount * 0.6
@@ -45,15 +42,12 @@ export function parseProsodyTags(text: string): ProsodyTagParseResult {
 
   pitchDelta += questionCount * 0.8
 
-  speedDelta -= pauseShort * 0.01
-  speedDelta -= pauseMedium * 0.02
-  speedDelta -= pauseLong * 0.03
-  reverbDelta += (pauseMedium + pauseLong) * 0.02
-
   const cleanText = text
     .replace(/\[(\/)?(emph|strong|question)\]/gi, '')
-    .replace(/\[pause(?::short|:medium|:long)?\]/gi, ' — ')
-    .replace(/\s+/g, ' ')
+    // Pauses stay as canonical markers; the voice service renders them as real silence.
+    .replace(/\[pause(?::(short|medium|long))?\]/gi, (_m, kind?: string) => ` [pause:${(kind || 'medium').toLowerCase()}] `)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
     .trim()
 
   return {
@@ -61,7 +55,7 @@ export function parseProsodyTags(text: string): ProsodyTagParseResult {
     adjustments: {
       speedDelta: clamp(speedDelta, -0.18, 0.22),
       pitchDelta: clamp(pitchDelta, -6, 8),
-      reverbDelta: clamp(reverbDelta, 0, 0.2),
+      reverbDelta: 0,
     },
   }
 }

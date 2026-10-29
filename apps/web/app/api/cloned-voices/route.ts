@@ -19,8 +19,9 @@ export async function GET() {
         { status: 503 }
       )
     }
-    const data = await response.json()
-    return NextResponse.json(data)
+    const data = (await response.json()) as { voices?: unknown[] }
+    // The voice service also lists stock voices on /voices; this route is cloned-only.
+    return NextResponse.json({ voices: Array.isArray(data.voices) ? data.voices : [] })
   } catch (err) {
     return NextResponse.json(
       {

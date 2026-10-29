@@ -1,0 +1,7 @@
+# Unit tests for the pure text/audio helpers (no model weights needed).
+pytest>=8
+numpy>=1.26,<2.5
+scipy>=1.13
+soundfile>=0.12
+pyloudnorm==0.2.0
+num2words>=0.5.14

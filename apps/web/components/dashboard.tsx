@@ -15,6 +15,7 @@ import {
   CLONE_SUGGESTED_PARAGRAPHS,
 } from '@/lib/clone-calibration'
 import { CLONED_TTS_MAX_CHARS, STANDARD_TTS_MAX_CHARS } from '@/lib/validation'
+import { isXttsVoice } from '@/lib/tts/stock-voices'
 import { EMOTIONS } from '@/lib/constants/emotions'
 
 interface Voice {
@@ -44,6 +45,23 @@ function formatTimeAgo(date: Date): string {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
   return date.toLocaleDateString()
+}
+
+const PREVIEW_TEXT: Record<string, string> = {
+  en: 'Hello! This is a preview of how this voice sounds.',
+  es: '¡Hola! Así es como suena esta voz.',
+  fr: 'Bonjour ! Voici un aperçu de cette voix.',
+  de: 'Hallo! So klingt diese Stimme.',
+  it: 'Ciao! Ecco come suona questa voce.',
+  pt: 'Olá! É assim que esta voz soa.',
+  ja: 'こんにちは。これはこの声のプレビューです。',
+  zh: '你好！这是这个声音的试听。',
+  ko: '안녕하세요! 이 목소리의 미리 듣기입니다.',
+  hi: 'नमस्ते! यह इस आवाज़ का एक नमूना है।',
+}
+
+function previewTextFor(language?: string): string {
+  return PREVIEW_TEXT[language ?? 'en'] ?? PREVIEW_TEXT.en
 }
 
 function safeJsonParse<T>(value: string | null): T | null {
@@ -179,7 +197,7 @@ export function Dashboard() {
   
   // Service health state
   const [serviceHealth, setServiceHealth] = useState<'checking' | 'healthy' | 'degraded' | 'offline'>('checking')
-  const [capabilities, setCapabilities] = useState<{ tts_default?: boolean; tts_xai?: boolean; cloning?: boolean } | null>(null)
+  const [capabilities, setCapabilities] = useState<{ tts_default?: boolean; cloning?: boolean } | null>(null)
   
   // Check service health (with timeout so UI never hangs)
   useEffect(() => {
@@ -228,6 +246,8 @@ export function Dashboard() {
 
   // Clone State
   const [cloneName, setCloneName] = useState('')
+  /** '' = create a new voice; otherwise add the uploaded takes to this existing clone. */
+  const [cloneTargetVoiceId, setCloneTargetVoiceId] = useState('')
   const [cloneDescription, setCloneDescription] = useState('')
   const [cloneFiles, setCloneFiles] = useState<File[]>([])
   const [cloneLoading, setCloneLoading] = useState(false)
@@ -243,10 +263,10 @@ export function Dashboard() {
   /** Coqui XTTS v2 clone output character (cloned voices only). */
   const [cloneVoicePreset, setCloneVoicePreset] = useState<'auto' | 'natural' | 'expressive' | 'stable'>('auto')
   const [showCloneAdvanced, setShowCloneAdvanced] = useState(false)
-  const [cloneTemperature, setCloneTemperature] = useState([0.63])
-  const [cloneRepetitionPenalty, setCloneRepetitionPenalty] = useState([1.68])
+  const [cloneTemperature, setCloneTemperature] = useState([0.7])
+  const [cloneRepetitionPenalty, setCloneRepetitionPenalty] = useState([4.0])
   const [cloneTopK, setCloneTopK] = useState([50])
-  const [cloneTopP, setCloneTopP] = useState([0.9])
+  const [cloneTopP, setCloneTopP] = useState([0.85])
   const [autoExpressive, setAutoExpressive] = useState(true)
   const [expressiveIntensity, setExpressiveIntensity] = useState<'subtle' | 'balanced' | 'dramatic'>('subtle')
   const [showCloneCoach, setShowCloneCoach] = useState(true)
@@ -270,12 +290,16 @@ export function Dashboard() {
   function getCloneTuningPayload(voiceId: string) {
     if (!voiceId.startsWith('clone_')) return {}
     const payload: Record<string, unknown> = {
-      temperature: cloneTemperature[0],
-      repetition_penalty: cloneRepetitionPenalty[0],
-      top_k: cloneTopK[0],
-      top_p: cloneTopP[0],
       auto_expressive: autoExpressive,
       expressive_intensity: expressiveIntensity,
+    }
+    // Raw sampling values only when the user is actively tuning them; otherwise the voice
+    // service uses the preset or the voice's saved tuning (tuned to avoid XTTS babble).
+    if (showCloneAdvanced) {
+      payload.temperature = cloneTemperature[0]
+      payload.repetition_penalty = cloneRepetitionPenalty[0]
+      payload.top_k = cloneTopK[0]
+      payload.top_p = cloneTopP[0]
     }
     if (cloneVoicePreset !== 'auto') payload.clone_preset = cloneVoicePreset
     return payload
@@ -409,7 +433,7 @@ export function Dashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: 'Hello! This is a preview of how this voice sounds.',
+          text: previewTextFor(voices.find((v) => v.voice_id === voiceId)?.language),
           voice_id: voiceId,
           emotion: ttsEmotion,
           speed: 1.0,
@@ -454,13 +478,13 @@ export function Dashboard() {
     } catch (err) {
       console.error('Failed to load voices:', err)
       setVoicesDegraded(true)
-      // Fallback so UI is still usable when API is slow or XTTS is down
+      // Fallback so the UI stays usable when the voices API is slow; voices are served locally.
       const fallback = [
-        { voice_id: 'default_english', name: 'Guy (US English)', language: 'en', source: 'edge-tts' },
-        { voice_id: 'female_english', name: 'Jenny (US English)', language: 'en', source: 'edge-tts' },
+        { voice_id: 'female_english', name: 'Heart (US English)', language: 'en', source: 'local' },
+        { voice_id: 'default_english', name: 'Michael (US English)', language: 'en', source: 'local' },
       ]
       setVoices(fallback)
-      setSelectedVoice('default_english')
+      setSelectedVoice('female_english')
     }
   }
 
@@ -503,6 +527,7 @@ export function Dashboard() {
           echo: echo[0],
           noise_reduction: noiseReduction,
           special_effect: specialEffect,
+          output_format: outputFormat,
           ...getMasteringPayload(),
           ...getPronunciationOverridesPayload(),
           ...getCloneTuningPayload(selectedVoice),
@@ -570,7 +595,8 @@ export function Dashboard() {
     const url = registerObjectUrl(audioBlob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `nexteleven-${Date.now()}.${outputFormat}`
+    const ext = audioBlob.type.includes('mpeg') ? 'mp3' : audioBlob.type.includes('wav') ? 'wav' : outputFormat
+    a.download = `nexteleven-${Date.now()}.${ext}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -746,7 +772,39 @@ export function Dashboard() {
     }
   }
 
+  async function addTakesToClone() {
+    if (cloneFiles.length === 0) {
+      setCloneError('Please upload at least one audio file')
+      return
+    }
+    setCloneLoading(true)
+    setCloneError(null)
+    setCloneSuccess(null)
+    try {
+      const formData = new FormData()
+      cloneFiles.forEach((file) => formData.append('files', file))
+      const response = await fetch(`/api/cloned-voices/${encodeURIComponent(cloneTargetVoiceId)}/samples`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not add takes')
+      setCloneSuccess(data.message || 'Takes added.')
+      setCloneQualityTier(typeof data.quality_tier === 'string' ? data.quality_tier : null)
+      setCloneQualityScore(typeof data.quality_score === 'number' ? data.quality_score : null)
+      setCloneFiles([])
+    } catch (err) {
+      setCloneError(err instanceof Error ? err.message : 'Could not add takes')
+    } finally {
+      setCloneLoading(false)
+    }
+  }
+
   async function cloneVoice() {
+    if (cloneTargetVoiceId) {
+      await addTakesToClone()
+      return
+    }
     if (!cloneName.trim()) {
       setCloneError('Please enter a voice name')
       return
@@ -1206,7 +1264,7 @@ export function Dashboard() {
                             <label className="text-xs font-medium">Repetition Penalty</label>
                             <span className="text-xs text-muted-foreground">{cloneRepetitionPenalty[0].toFixed(2)}</span>
                           </div>
-                          <Slider value={cloneRepetitionPenalty} onValueChange={setCloneRepetitionPenalty} min={1.0} max={2.5} step={0.01} />
+                          <Slider value={cloneRepetitionPenalty} onValueChange={setCloneRepetitionPenalty} min={1.0} max={10.0} step={0.1} />
                         </div>
                         <div>
                           <div className="flex justify-between mb-1">
@@ -1343,25 +1401,25 @@ export function Dashboard() {
                   </label>
                     <span
                       className={`text-xs ${
-                        selectedVoice.startsWith('clone_') && charCount > CLONED_TTS_MAX_CHARS
+                        isXttsVoice(selectedVoice) && charCount > CLONED_TTS_MAX_CHARS
                           ? 'text-destructive font-medium'
-                          : selectedVoice.startsWith('clone_') && charCount > CLONED_TTS_MAX_CHARS * 0.85
+                          : isXttsVoice(selectedVoice) && charCount > CLONED_TTS_MAX_CHARS * 0.85
                             ? 'text-amber-600 dark:text-amber-400'
                             : 'text-muted-foreground'
                       }`}
                     >
                       {charCount}
-                      {selectedVoice.startsWith('clone_') ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} chars • {wordCount} words
+                      {isXttsVoice(selectedVoice) ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} chars • {wordCount} words
                     </span>
                   </div>
                 </div>
-                {selectedVoice.startsWith('clone_') && (
+                {isXttsVoice(selectedVoice) && (
                   <p className="text-xs text-muted-foreground mb-2">
-                    Cloned voices: up to {CLONED_TTS_MAX_CHARS} characters per generation (one XTTS run). For longer scripts, enable batch mode and keep each paragraph under that limit.
+                    Cloned and studio voices: up to {CLONED_TTS_MAX_CHARS} characters per generation (one XTTS run). For longer scripts, enable batch mode and keep each paragraph under that limit.
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground mb-2">
-                  Deterministic prosody tags: <code>[emph]...[/emph]</code>, <code>[strong]...[/strong]</code>, <code>[question]...[/question]</code>, <code>[pause]</code>, <code>[pause:long]</code>.
+                  Deterministic prosody tags: <code>[emph]...[/emph]</code>, <code>[strong]...[/strong]</code>, <code>[question]...[/question]</code>, <code>[pause]</code>, <code>[pause:short]</code>, <code>[pause:long]</code> (pauses insert real silence; blank lines add a paragraph pause).
                 </p>
                 <div className="mb-2">
                   <label className="text-xs font-medium block mb-1">Pronunciation dictionary (optional)</label>
@@ -1380,12 +1438,12 @@ export function Dashboard() {
                     : "Type or paste your text here..."
                   }
                   className="w-full min-h-[200px] px-4 py-3 rounded-lg border bg-background resize-none"
-                  maxLength={selectedVoice.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS}
+                  maxLength={isXttsVoice(selectedVoice) ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS}
                 />
                 {batchMode && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Batch mode: {text.split(/\n\n+/).filter(p => p.trim()).length} paragraphs detected
-                    {selectedVoice.startsWith('clone_')
+                    {isXttsVoice(selectedVoice)
                       ? ' — each paragraph must stay within the clone character limit.'
                       : ''}
                   </p>
@@ -1630,7 +1688,7 @@ export function Dashboard() {
                           [
                             'Browser could not play this audio.',
                             hint,
-                            'Try downloading instead; if the file opens elsewhere, check XTTS/Edge TTS output and response headers.',
+                            'Try downloading instead; if the file opens elsewhere, check the voice service output and response headers.',
                           ]
                             .filter(Boolean)
                             .join(' ')
@@ -1648,6 +1706,16 @@ export function Dashboard() {
                   </div>
                 )}
                 <div className="flex gap-2">
+                      <select
+                        aria-label="Audio format for the next generation"
+                        title="Audio format for the next generation"
+                        value={outputFormat}
+                        onChange={(e) => setOutputFormat(e.target.value === 'wav' ? 'wav' : 'mp3')}
+                        className="rounded-md border bg-background px-2 text-sm"
+                      >
+                        <option value="mp3">MP3</option>
+                        <option value="wav">WAV</option>
+                      </select>
                       <Button onClick={downloadAudio} variant="outline" className="flex-1" disabled={!audioBlob}>
                         <Download className="h-5 w-5" />
                         <span className="ml-2">Download</span>
@@ -1968,7 +2036,32 @@ export function Dashboard() {
                   </div>
                 )}
 
+                {/* Target: new voice or more takes for an existing clone */}
+                {voices.some((v) => v.source === 'cloned') && (
+                  <div>
+                    <label htmlFor="clone-target" className="text-sm font-medium mb-2 block">Clone target</label>
+                    <select
+                      id="clone-target"
+                      value={cloneTargetVoiceId}
+                      onChange={(e) => setCloneTargetVoiceId(e.target.value)}
+                      className="w-full px-4 py-3 rounded-lg border bg-background"
+                    >
+                      <option value="">Create a new voice</option>
+                      {voices.filter((v) => v.source === 'cloned').map((v) => (
+                        <option key={v.voice_id} value={v.voice_id}>Add takes to: {v.name}</option>
+                      ))}
+                    </select>
+                    {cloneTargetVoiceId && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        New takes are cleaned and merged into this voice (up to 8 takes). More clean, varied takes give a steadier identity.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Voice Name */}
+                {!cloneTargetVoiceId && (
+                <>
               <div>
                   <label className="text-sm font-medium mb-2 block">Voice Name *</label>
                   <input
@@ -1993,6 +2086,8 @@ export function Dashboard() {
                     maxLength={100}
                 />
               </div>
+                </>
+                )}
 
                 {/* Recording */}
               <div>
@@ -2065,12 +2160,14 @@ export function Dashboard() {
                 {/* Clone Button */}
                 <Button 
                   onClick={cloneVoice} 
-                  disabled={cloneLoading || !cloneName.trim() || cloneFiles.length === 0}
+                  disabled={cloneLoading || (!cloneTargetVoiceId && !cloneName.trim()) || cloneFiles.length === 0}
                   className="w-full"
                   size="lg"
                 >
                   <Mic className="h-5 w-5" />
-                  <span className="ml-2">{cloneLoading ? 'Cloning...' : 'Clone Voice'}</span>
+                  <span className="ml-2">
+                    {cloneLoading ? (cloneTargetVoiceId ? 'Adding takes...' : 'Cloning...') : cloneTargetVoiceId ? 'Add Takes' : 'Clone Voice'}
+                  </span>
                 </Button>
             </CardContent>
           </Card>

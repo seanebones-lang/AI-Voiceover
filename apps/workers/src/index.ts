@@ -6,6 +6,7 @@ import { Worker } from "bullmq"
 import { Redis } from "ioredis"
 import { eq } from "drizzle-orm"
 import { getDb, voiceJobs } from "@ai-voiceover/db"
+import { runTtsJob } from "./tts-job.js"
 
 const redisUrl = process.env.REDIS_URL
 if (!redisUrl) {
@@ -45,21 +46,31 @@ const worker = new Worker(
       .where(eq(voiceJobs.id, rowId))
 
     try {
-      // Stub: replace with real TTS / clone pipeline (ffmpeg, xtts, etc.)
-      await job.updateProgress(15)
-      await new Promise((r) => setTimeout(r, 50))
-      await job.updateProgress(70)
-      const result =
-        type === "clone"
-          ? { ok: true, outputUrl: null as string | null, note: "clone_stub" }
-          : { ok: true, audioBase64: null as string | null, note: "tts_stub" }
+      if (type !== "tts") {
+        // Cloning needs uploaded audio and runs synchronously via /api/clone-voice.
+        throw new Error(`Job type "${type}" is not supported by the worker; use /api/clone-voice for cloning`)
+      }
+      const [row] = await db.select({ payload: voiceJobs.payload }).from(voiceJobs).where(eq(voiceJobs.id, rowId)).limit(1)
+      await job.updateProgress(5)
+      const result = await runTtsJob(row?.payload ?? {}, {
+        jobId: String(job.id),
+        onProgress: (pct) => job.updateProgress(pct),
+        isCancelled: async () => {
+          const [cur] = await db.select({ status: voiceJobs.status }).from(voiceJobs).where(eq(voiceJobs.id, rowId)).limit(1)
+          return cur?.status === "cancelled"
+        },
+      })
+      if (!result) {
+        console.log("[workers] job cancelled", rowId)
+        return
+      }
       await job.updateProgress(100)
 
       await db
         .update(voiceJobs)
         .set({
           status: "succeeded",
-          result: result as Record<string, unknown>,
+          result: result as unknown as Record<string, unknown>,
           updatedAt: new Date(),
         })
         .where(eq(voiceJobs.id, rowId))

@@ -70,15 +70,17 @@
                             <pre class="text-sm"><code class="text-gray-300">{
   "voices": [
     {
-      "voice_id": "default_english",
-      "name": "Guy (US English)",
+      "voice_id": "female_english",
+      "name": "Heart (US English)",
       "language": "en",
-      "gender": "male",
-      "source": "edge-tts",
-      "category": "standard"
+      "gender": "female",
+      "source": "local",
+      "category": "standard",
+      "engine": "kokoro",
+      "available": true
     }
   ],
-  "default_count": 8,
+  "default_count": 34,
   "cloned_count": 0
 }</code></pre>
                         </div>
@@ -124,16 +126,23 @@
                                     <td class="py-2 text-green-400">Yes</td>
                                     <td class="py-2 text-gray-400">Voice ID from /api/voices</td>
                                 </tr>
-                                <tr>
+                                <tr class="border-b border-gray-800">
                                     <td class="py-2"><code class="text-green-400">language</code></td>
                                     <td class="py-2 text-gray-500">string</td>
                                     <td class="py-2 text-gray-500">No</td>
-                                    <td class="py-2 text-gray-400">Language code (default: en)</td>
+                                    <td class="py-2 text-gray-400">Language code (default: en). Stock voices use their own language; cloned and studio voices accept any of the 17 XTTS languages.</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2"><code class="text-green-400">output_format</code></td>
+                                    <td class="py-2 text-gray-500">string</td>
+                                    <td class="py-2 text-gray-500">No</td>
+                                    <td class="py-2 text-gray-400"><code>wav</code> (default, lossless) or <code>mp3</code></td>
                                 </tr>
                             </tbody>
                         </table>
+                        <p class="text-gray-400 mt-3 text-sm">Text markup: <code>[pause]</code>, <code>[pause:short|medium|long]</code> insert real silence; blank lines add a paragraph pause; <code>[ipa:word|phonemes]</code> sets pronunciation (exact phonemes on stock voices).</p>
                         <h4 class="text-white font-medium mb-2 mt-4">Response</h4>
-                        <p class="text-gray-400">Returns audio file (audio/mpeg)</p>
+                        <p class="text-gray-400">Returns an audio file (<code>audio/wav</code> or <code>audio/mpeg</code>). All synthesis runs on the self-hosted voice service; no third-party TTS API is called.</p>
                     </div>
                 </div>
 

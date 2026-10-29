@@ -57,14 +57,6 @@ jest.mock('@/lib/tts/emotion-prosody', () => ({
   applyExpressiveCopyProsody: jest.fn((base: Record<string, unknown>) => base),
 }))
 
-jest.mock('@/lib/edgeTtsService', () => ({
-  synthesizeEdge: jest.fn(async () => Buffer.from('edge-mp3')),
-  isEdgeVoice: jest.fn((voiceId: string) => voiceId === 'default_english'),
-}))
-
-jest.mock('@/lib/edgeTtsFallback', () => ({
-  synthesizeEdgeTts: jest.fn(async () => Buffer.from('fallback-mp3')),
-}))
 
 function makeRequest(body: Record<string, unknown>) {
   return {
@@ -81,7 +73,16 @@ describe('POST /api/tts options matrix', () => {
     global.fetch = jest.fn()
   })
 
-  it('routes standard voice to edge websocket path', async () => {
+  it('routes stock voices to the local voice service (no third-party API)', async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'content-type' ? 'audio/mpeg' : name.toLowerCase() === 'x-engine' ? 'kokoro' : null,
+      },
+      arrayBuffer: async () => new Uint8Array([9, 9, 9]).buffer,
+    })
+
     const response = await POST(
       makeRequest({
         text: 'hello world',
@@ -95,12 +96,57 @@ describe('POST /api/tts options matrix', () => {
         noise_reduction: false,
         special_effect: 'none',
         emotion: 'neutral',
+        output_format: 'mp3',
+        temperature: 0.9,
       })
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('X-Voice-Type')).toBe('edge-tts-websocket')
-    expect(global.fetch).not.toHaveBeenCalled()
+    expect(response.headers.get('X-Voice-Type')).toBe('standard')
+    expect(response.headers.get('X-Voice-Engine')).toBe('kokoro')
+    expect(response.headers.get('Content-Type')).toBe('audio/mpeg')
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(url).toBe('http://xtts-service:8081/tts')
+    const requestBody = JSON.parse(init.body as string)
+    expect(requestBody.voice_id).toBe('default_english')
+    expect(requestBody.output_format).toBe('mp3')
+    // XTTS sampling params are never sent for Kokoro voices.
+    expect(requestBody.temperature).toBeUndefined()
+  })
+
+  it('returns 503 with a retry hint while the voice engine is loading', async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ detail: 'XTTS model is loading. Please retry in 20-60 seconds.' }),
+    })
+
+    const response = await POST(makeRequest({ text: 'hi', voice_id: 'clone_demo_123456', language: 'en' }))
+    const data = await response.json()
+    expect(response.status).toBe(503)
+    expect(response.headers.get('Retry-After')).toBe('15')
+    expect(data.details).toContain('loading')
+  })
+
+  it('keeps pause markers and IPA markup for the voice service to render', async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'audio/wav' },
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    })
+
+    await POST(
+      makeRequest({
+        text: 'Say [ipa:tomato|təˈmɑːtoʊ] [pause:long] then NextEleven.\n\nNew paragraph.',
+        voice_id: 'female_english',
+        language: 'en',
+        pronunciation_overrides: { NextEleven: 'Next Eleven' },
+      })
+    )
+    const requestBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string)
+    expect(requestBody.text).toBe('Say [ipa:tomato|təˈmɑːtoʊ] [pause:long] then Next Eleven.\n\nNew paragraph.')
+    expect(requestBody.pronunciation_overrides).toBeUndefined()
   })
 
   it('forwards clone controls including pitch and advanced XTTS params', async () => {
@@ -142,11 +188,9 @@ describe('POST /api/tts options matrix', () => {
     const requestBody = JSON.parse(init.body as string)
     expect(requestBody.pitch).toBe(4)
     expect(requestBody.clone_preset).toBe('expressive')
-    expect(requestBody.auto_expressive).toBe(true)
-    expect(requestBody.expressive_intensity).toBe('balanced')
     expect(requestBody.mastering_enabled).toBe(true)
     expect(requestBody.mastering_profile).toBe('podcast')
-    expect(requestBody.pronunciation_overrides).toEqual({ Nexteleven: 'Next Eleven' })
+    expect(requestBody.pronunciation_overrides).toBeUndefined()
     expect(requestBody.temperature).toBe(0.72)
     expect(requestBody.repetition_penalty).toBe(1.52)
     expect(requestBody.top_k).toBe(60)

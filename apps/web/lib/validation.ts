@@ -6,11 +6,12 @@
 
 import { z } from 'zod'
 import { ttsEmotionIds } from '@/lib/tts/emotion-prosody'
+import { isXttsVoice } from '@/lib/tts/stock-voices'
 
-/** Max chars for one synchronous cloned-voice request (XTTS + gateway budgets). */
+/** Max chars for one synchronous XTTS request (cloned + studio voices; XTTS + gateway budgets). */
 export const CLONED_TTS_MAX_CHARS = 2200
 
-/** Max chars for standard / edge voices in one request. */
+/** Max chars for fast stock (Kokoro) voices in one request. */
 export const STANDARD_TTS_MAX_CHARS = 5000
 
 function textSecurityRefine(text: string): boolean {
@@ -115,9 +116,11 @@ export const ttsRequestSchema = z
     mastering_profile: z.enum(['none', 'podcast', 'broadcast', 'cinematic']).optional().default('none'),
     /** Deterministic pronunciation overrides map: { "word": "replacement" } */
     pronunciation_overrides: z.record(z.string().min(1).max(60), z.string().min(1).max(120)).optional(),
-    /** Advanced XTTS sampling (optional; omit to use service defaults). */
+    /** Output container: WAV (lossless, default) or MP3 (VBR ~190 kbps, ~8x smaller). */
+    output_format: z.enum(['wav', 'mp3']).optional().default('wav'),
+    /** Advanced XTTS sampling (optional; omit to use the preset / the voice's saved tuning). */
     temperature: z.number().min(0.35).max(1.15).optional(),
-    repetition_penalty: z.number().min(1.0).max(2.5).optional(),
+    repetition_penalty: z.number().min(1.0).max(10.0).optional(),
     top_k: z.number().int().min(10).max(100).optional(),
     top_p: z.number().min(0.65).max(0.99).optional(),
   })
@@ -129,12 +132,13 @@ export const ttsRequestSchema = z
         message: 'Pronunciation overrides cannot exceed 30 entries',
       })
     }
-    const max = data.voice_id.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
+    const xtts = isXttsVoice(data.voice_id)
+    const max = xtts ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
     if (data.text.length > max) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['text'],
-        message: data.voice_id.startsWith('clone_')
+        message: xtts
           ? `Cloned voice text must be ${max} characters or less for reliable synthesis. Use batch mode or split your script into sections.`
           : `Text must be ${STANDARD_TTS_MAX_CHARS} characters or less`,
       })
@@ -286,11 +290,15 @@ export function validateTotalDuration(totalDuration: number, minTotalSeconds: nu
 }
 
 // Sanitize text input
+/** Normalize whitespace but keep line/paragraph breaks (the voice service pauses on them). */
 export function sanitizeText(text: string): string {
   return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '') // control characters except \t and \n
+    .replace(/[ \t\u00A0]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
 }
 
 // Validate and sanitize TTS request

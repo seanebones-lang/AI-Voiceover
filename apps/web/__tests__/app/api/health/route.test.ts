@@ -23,8 +23,7 @@ describe('GET /api/health', () => {
     expect(data).toHaveProperty('status')
     expect(data).toHaveProperty('capabilities')
     expect(data.capabilities).toMatchObject({
-      tts_default: true,
-      tts_xai: expect.any(Boolean),
+      tts_default: expect.any(Boolean),
       cloning: expect.any(Boolean),
       tts_v2: expect.any(Boolean),
       rag: expect.any(Boolean),

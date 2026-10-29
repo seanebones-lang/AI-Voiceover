@@ -31,13 +31,13 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value:
               "default-src 'self'; " +
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://api.openai.com https://*.clerk.com https://*.clerk.accounts.dev; " +
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://*.clerk.com https://*.clerk.accounts.dev; " +
               "worker-src 'self' blob:; " +
               "style-src 'self' 'unsafe-inline'; " +
               "img-src 'self' data: blob: https://*.supabase.co https://img.clerk.com; " +
               "font-src 'self' data:; " +
               "media-src 'self' blob: data:; " +
-              "connect-src 'self' https://*.supabase.co https://api.openai.com https://api.stripe.com https://api.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com https://api.x.ai wss://api.x.ai wss://*.supabase.co; " +
+              "connect-src 'self' https://*.supabase.co https://api.stripe.com https://api.clerk.com https://*.clerk.accounts.dev https://clerk-telemetry.com wss://*.supabase.co; " +
               "frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://js.stripe.com https://hooks.stripe.com; " +
               "frame-ancestors 'none';",
           },

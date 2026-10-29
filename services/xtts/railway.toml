@@ -1,0 +1,13 @@
+# Railway config for the voice service (set the service root directory to services/xtts).
+# /health answers 200 immediately; engines report readiness in the body while models load.
+# Attach a volume and set VOICES_DIR to its mount path so cloned voices survive redeploys.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

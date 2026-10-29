@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented in this file.
 
+## [4.0.0] - 2026-10-29
+
+Every voice now runs on self-hosted models; the app makes no third-party TTS API calls.
+
+### Removed
+- xAI Grok voice integration (Eve, Ara, Rex, Sal, Leo), `XAI_API_KEY`, the `tts_xai` health capability and x.ai/OpenAI CSP entries.
+- Microsoft Edge TTS for stock voices (`edgeTtsService`, `edge-tts-universal`, Python `edge-tts`).
+- Dead code and dependencies: `openai`, `onnxruntime-node` + Piper stub, `ws`, unused `lib/tts-v2` and `xtts-client`.
+
+### Added
+- Kokoro-82M (Apache-2.0) stock voices in the voice service; legacy voice IDs keep working. XTTS studio speakers cover German, Korean and French male; new Hindi voices and four multilingual studio voices (34 stock voices total).
+- `output_format` (`wav` | `mp3`) on `/api/tts`, `/api/tts-v2` and the voice service; dashboard format picker.
+- `[pause]`, `[pause:short|medium|long]` and blank lines render as real silence; `[ipa:word|phonemes]` becomes inline phonemes on Kokoro voices.
+- Voice service: `GET /stock-voices`, `GET /voices/{id}`, `PUT /voices/{id}/tuning`, per-engine readiness in `/health`.
+- Worker renders queued `tts` jobs for long scripts (split into parts, MP3 result); unsupported job types now fail clearly instead of reporting fake success.
+- Model weights are baked into the voice-service images; runtime is forced offline (`HF_HUB_OFFLINE=1`).
+- Python unit tests for text/audio helpers (`services/xtts/tests`).
+
+### Changed — cloned voice quality
+- Conditioning latents are computed once per voice from all cleaned takes (30 s balanced window instead of the first 10 s of each file) and cached on disk; existing voices migrate automatically on first use.
+- Reference cleanup on upload: rumble filter, optional denoise, dead-air trim, long-pause compression, peak normalization; noisy takes are excluded when cleaner ones exist.
+- Runaway-generation guard: implausible segment durations are re-sampled with tighter repetition control.
+- Language-aware chunking that respects XTTS per-language limits (fixes truncated Chinese/Japanese/Korean output) and splits on CJK punctuation.
+- Retuned presets from a 3-seed benchmark: natural 0.70 / rep 4.0, expressive 0.80 / 3.0, stable 0.65 / 5.0 (the old stable at 0.60 lowered speaker similarity). The dashboard only sends raw sampling values when the advanced panel is open.
+- Native XTTS speed control, level-matched seams with fades, tail-artifact removal, loudness normalization to -19 LUFS.
+- Benchmarked on LibriSpeech speaker 1272 with Whisper + ECAPA: WER 21% → 3.6%, speaker similarity 0.54 → 0.62, no hallucinated babble on short lines.
+
+### Fixed
+- `deep`/`chipmunk` effects assumed 44.1 kHz on 24 kHz audio (deep actually raised pitch); pitch shift now preserves formants (rubberband).
+- "Reverb" was a single slapback echo; now a synthetic room impulse response.
+- Inference no longer blocks the voice service event loop (health checks and voice listing stay responsive during long jobs).
+- Pronunciation overrides are applied in one pass (a rule no longer rewrites another rule's output) and match non-ASCII words.
+- Newlines were collapsed before synthesis, so paragraphs ran together.
+- Downloads were always named `.mp3` even when the audio was WAV.
+
 ## [3.0.0] - 2026-04-24
 
 ### Added

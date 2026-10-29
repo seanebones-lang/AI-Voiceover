@@ -32,7 +32,7 @@ export async function GET(_request?: Request) {
         isRailway: boolean
         environment: string
       }
-      capabilities: { tts_default: boolean; tts_xai: boolean; cloning: boolean; tts_v2: boolean; rag: boolean }
+      capabilities: { tts_default: boolean; cloning: boolean; tts_v2: boolean; rag: boolean }
       deployment: {
         xttsUrlConfigured: boolean
         xttsUrl: string
@@ -48,7 +48,7 @@ export async function GET(_request?: Request) {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       services: {
-        nextjs: { status: 'healthy', version: '15.x' },
+        nextjs: { status: 'healthy', version: '16.x' },
         xtts: { status: 'unknown', url: config.services.xtts.url }
       },
       environment: {
@@ -57,8 +57,7 @@ export async function GET(_request?: Request) {
         environment: config.environment
       },
       capabilities: {
-        tts_default: true,
-        tts_xai: !!process.env.XAI_API_KEY,
+        tts_default: false,
         cloning: false,
         tts_v2: false,
         rag: false
@@ -113,7 +112,8 @@ export async function GET(_request?: Request) {
         url: config.services.xtts.url,
         error: xttsHealth.status === 'fulfilled' ? (xttsHealth.value as { error?: string }).error : 'Service check failed'
       }
-      if (!isUnconfigured) health.status = 'degraded'
+      // Every voice (stock and cloned) is synthesized by the voice service.
+      health.status = 'degraded'
     }
 
     // TTS V2 Service (optional)
@@ -144,7 +144,12 @@ export async function GET(_request?: Request) {
       }
     }
 
-    health.capabilities.cloning = xttsHealth.status === 'fulfilled' && (xttsHealth.value as { healthy?: boolean }).healthy === true
+    // Both engines run inside the voice service. Prefer its per-engine readiness flags; older
+    // service builds without them only report reachability.
+    const voiceServiceUp = xttsHealth.status === 'fulfilled' && (xttsHealth.value as { healthy?: boolean }).healthy === true
+    const xttsInfo = health.services.xtts as SidecarStatus & { stock_tts_ready?: boolean; xtts_loaded?: boolean }
+    health.capabilities.tts_default = voiceServiceUp && xttsInfo.stock_tts_ready !== false
+    health.capabilities.cloning = voiceServiceUp && xttsInfo.xtts_loaded !== false
     health.capabilities.tts_v2 = ttsV2Health.status === 'fulfilled' && (ttsV2Health.value as { healthy?: boolean }).healthy === true
     health.capabilities.rag = ragHealth.status === 'fulfilled' && (ragHealth.value as { healthy?: boolean }).healthy === true
 
