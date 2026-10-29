@@ -4,41 +4,56 @@ export interface SotaCandidate {
   strengths: string[]
   tradeoffs: string[]
   gpuRequired: boolean
-  integrationShape: 'python-service' | 'hosted-api'
+  /** All candidates are self-hosted; nothing here is a hosted third-party API. */
+  integrationShape: 'python-service'
+  license: string
 }
 
+/** Engines in use (current) and self-hosted alternatives worth evaluating for cloned voices. */
 export const SOTA_CLONE_CANDIDATES: SotaCandidate[] = [
   {
     id: 'xtts_v2_current',
-    name: 'Coqui XTTS v2 (current stack)',
-    strengths: ['Already integrated', 'Multi-language', 'Low migration risk'],
-    tradeoffs: ['Clone quality can flatten on noisy references', 'CPU latency can be high'],
+    name: 'Coqui XTTS v2 via coqui-tts (current: cloned + studio voices)',
+    strengths: ['Already integrated', '17 languages', 'Cached speaker latents; zero-shot from 6+ s of audio'],
+    tradeoffs: ['CPU latency is 1-3x real time', 'Non-commercial model license'],
     gpuRequired: false,
     integrationShape: 'python-service',
+    license: 'Coqui Public Model License (non-commercial)',
   },
   {
-    id: 'cosyvoice2',
+    id: 'kokoro_current',
+    name: 'Kokoro-82M (current: stock voices)',
+    strengths: ['Very fast on CPU', 'High naturalness for its size', 'Inline phoneme control'],
+    tradeoffs: ['No voice cloning', 'No German or Korean voices'],
+    gpuRequired: false,
+    integrationShape: 'python-service',
+    license: 'Apache-2.0',
+  },
+  {
+    id: 'chatterbox',
+    name: 'Chatterbox (Resemble AI)',
+    strengths: ['Zero-shot cloning with emotion exaggeration control', 'Permissive license'],
+    tradeoffs: ['Strongest in English; multilingual model is newer', 'Benefits from a GPU'],
+    gpuRequired: false,
+    integrationShape: 'python-service',
+    license: 'MIT',
+  },
+  {
+    id: 'cosyvoice',
     name: 'CosyVoice 2',
-    strengths: ['Strong expressive control', 'Good multilingual quality'],
-    tradeoffs: ['Migration effort from current XTTS API', 'Higher VRAM demand'],
+    strengths: ['Strong expressive control', 'Good multilingual quality', 'Streaming'],
+    tradeoffs: ['Migration effort from the XTTS API', 'Higher VRAM demand'],
     gpuRequired: true,
     integrationShape: 'python-service',
+    license: 'Apache-2.0',
   },
   {
-    id: 'fish_speech',
-    name: 'Fish Speech',
-    strengths: ['High naturalness on strong references', 'Community momentum'],
-    tradeoffs: ['Operational complexity', 'Heavier runtime and model weights'],
+    id: 'f5_tts',
+    name: 'F5-TTS',
+    strengths: ['High naturalness and prosody from short references'],
+    tradeoffs: ['Released weights are non-commercial', 'GPU recommended'],
     gpuRequired: true,
     integrationShape: 'python-service',
-  },
-  {
-    id: 'elevenlabs_hosted',
-    name: 'ElevenLabs hosted API',
-    strengths: ['Top-tier voice quality', 'Minimal infra to operate'],
-    tradeoffs: ['Per-character cost', 'Vendor lock-in and external dependency'],
-    gpuRequired: false,
-    integrationShape: 'hosted-api',
+    license: 'CC-BY-NC-4.0 (weights)',
   },
 ]
-

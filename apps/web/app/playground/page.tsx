@@ -5,6 +5,7 @@ import { SkipLink } from '@/components/skip-link'
 import { EMOTIONS } from '@/lib/constants/emotions'
 import { VOICE_EFFECTS } from '@/lib/constants/effects'
 import { CLONED_TTS_MAX_CHARS, STANDARD_TTS_MAX_CHARS } from '@/lib/validation'
+import { isXttsVoice } from '@/lib/tts/stock-voices'
 
 type PlaygroundVoice = {
   voice_id: string
@@ -26,7 +27,7 @@ const API_SPECIAL_EFFECTS = new Set<string>([
   'megaphone',
 ])
 
-/** Map playground UI effects to XTTS / Edge supported `special_effect` values. */
+/** Map playground UI effects to the voice service's supported `special_effect` values. */
 function playgroundEffectToApi(effectId: string): string {
   if (API_SPECIAL_EFFECTS.has(effectId)) return effectId
   if (effectId === 'broadcast') return 'radio'
@@ -255,7 +256,7 @@ export default function PlaygroundPage() {
                   <span className="text-xs text-white/70" aria-live="polite" aria-atomic="true">
                     <span className="sr-only">Character count: </span>
                     {text.length}
-                    {selectedVoice.startsWith('clone_') ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} characters
+                    {isXttsVoice(selectedVoice) ? ` / ${CLONED_TTS_MAX_CHARS}` : ''} characters
                   </span>
                 </div>
                 
@@ -268,7 +269,7 @@ export default function PlaygroundPage() {
                   aria-describedby="text-input-help text-input-stats"
                   aria-required="true"
                   maxLength={
-                    selectedVoice.startsWith('clone_') ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
+                    isXttsVoice(selectedVoice) ? CLONED_TTS_MAX_CHARS : STANDARD_TTS_MAX_CHARS
                   }
                   className="w-full h-32 sm:h-40 md:h-48 px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl bg-black/30 border border-white/10 
                            text-white placeholder-white/50 resize-none text-sm sm:text-base
@@ -277,7 +278,7 @@ export default function PlaygroundPage() {
                 />
                 <div id="text-input-help" className="sr-only">
                   Enter the text you want to convert to speech.
-                  {selectedVoice.startsWith('clone_')
+                  {isXttsVoice(selectedVoice)
                     ? ` Cloned voices allow up to ${CLONED_TTS_MAX_CHARS} characters per request.`
                     : ` Standard voices allow up to ${STANDARD_TTS_MAX_CHARS} characters.`}
                 </div>

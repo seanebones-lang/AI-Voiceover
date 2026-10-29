@@ -14,9 +14,10 @@ describe('parseProsodyTags', () => {
     expect(out.adjustments.pitchDelta).toBeGreaterThan(0)
   })
 
-  it('converts pause tags into pauses and lowers speed', () => {
-    const out = parseProsodyTags('Start [pause:long] then continue')
-    expect(out.cleanText).toContain('—')
-    expect(out.adjustments.speedDelta).toBeLessThan(0)
+  it('keeps pause tags as canonical markers for real silence without slowing the read', () => {
+    const out = parseProsodyTags('Start [pause:long] then [PAUSE] continue [pause:short]')
+    expect(out.cleanText).toBe('Start [pause:long] then [pause:medium] continue [pause:short]')
+    expect(out.adjustments.speedDelta).toBe(0)
+    expect(out.adjustments.reverbDelta).toBe(0)
   })
 })

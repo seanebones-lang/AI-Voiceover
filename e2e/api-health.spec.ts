@@ -16,11 +16,11 @@ test.describe('API Health', () => {
     expect(data).toHaveProperty('capabilities')
     const cap = data.capabilities
     expect(cap).toHaveProperty('tts_default')
-    expect(cap).toHaveProperty('tts_xai')
+    expect(cap).not.toHaveProperty('tts_xai')
     expect(cap).toHaveProperty('cloning')
     expect(cap).toHaveProperty('tts_v2')
     expect(cap).toHaveProperty('rag')
     expect(typeof cap.tts_default).toBe('boolean')
-    expect(typeof cap.tts_xai).toBe('boolean')
+    expect(typeof cap.cloning).toBe('boolean')
   })
 })

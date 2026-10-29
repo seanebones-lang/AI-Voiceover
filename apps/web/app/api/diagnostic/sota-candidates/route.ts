@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     status: 'ok',
     generatedAt: new Date().toISOString(),
-    currentEngine: 'coqui_xtts_v2',
+    currentEngines: { cloned: 'coqui_xtts_v2', stock: 'kokoro_82m' },
+    externalApis: [],
     candidates: SOTA_CLONE_CANDIDATES,
   })
 }

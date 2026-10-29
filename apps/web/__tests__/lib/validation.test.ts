@@ -166,6 +166,10 @@ describe('Validation Library', () => {
     it('should remove control characters', () => {
       expect(sanitizeText('hello\x00world')).toBe('helloworld')
     })
+
+    it('should keep paragraph breaks but collapse runs of blank lines', () => {
+      expect(sanitizeText('One.  \r\n\r\n\n\n  Two.\nThree.')).toBe('One.\n\nTwo.\nThree.')
+    })
   })
 
   describe('extractClientIP', () => {
