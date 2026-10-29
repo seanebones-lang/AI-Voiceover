@@ -1,11 +1,11 @@
 # Railway Deployment (Solo-Creator)
 
-Single source of truth for deploying the AI Voiceover app on Railway. One Next.js service; optional XTTS sidecar for voice cloning and quality TTS.
+Single source of truth for deploying the AI Voiceover app on Railway. Two services: the Next.js app and the self-hosted voice service (`services/xtts`), which synthesizes **every** voice (stock and cloned) with local models. No third-party TTS API or key is involved.
 
 ## Prerequisites
 
 - Railway account; project connected to this repo
-- (Optional) Second Railway service for XTTS (Python) if you want cloning and self-contained TTS
+- Second Railway service for the voice service (Python, `services/xtts`, ~6 GB RAM recommended on CPU)
 
 ## Build and deploy
 
@@ -20,27 +20,31 @@ Single source of truth for deploying the AI Voiceover app on Railway. One Next.j
 | `NODE_ENV` | Yes | Set to `production` |
 | `NEXTAUTH_SECRET` | Yes | Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Yes | Your app public URL (e.g. `https://your-app.railway.app`) |
-| `XTTS_URL` | Optional | XTTS service URL (e.g. `http://xtts-service:8081`). If set but XTTS is down, health returns 200 with `status: 'degraded'` |
+| `XTTS_URL` | Yes | Voice service URL (e.g. `http://xtts-service:8081`). If it is down, health returns 200 with `status: 'degraded'` |
 | `UPSTASH_REDIS_REST_URL` | Optional | Redis for rate limiting; app works without it |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Redis token |
-| `XAI_API_KEY` | Optional | For xAI voices (Eve, Ara, Rex, Sal, Leo) |
-| `VOICES_DIR` | Optional | Persistent path for cloned voices (e.g. `/app/cloned_voices`). Mount a volume and set this |
+| `VOICES_DIR` | Recommended (voice service) | Persistent path for cloned voices (e.g. `/data/voices`). Mount a volume and set this |
+| `XTTS_GPT_COND_LEN` / `XTTS_MAX_REF_LEN` | Optional (voice service) | Seconds of reference audio used for clone conditioning (defaults 30 / 30) |
+| `VOICE_DEVICE` | Optional (voice service) | `auto` (default), `cpu` or `cuda` |
 
 **Never commit real secrets.** Rotate any credentials that may have been exposed. Use Railway Dashboard or `scripts/railway-sync-vars.js` with env vars set locally (see script header).
 
 ## Verify
 
-- **GET /api/health** — Returns `status`, `capabilities` (tts_default, tts_xai, cloning), and service status. Use this to confirm what’s available after deploy.
+- **GET /api/health** — Returns `status`, `capabilities` (`tts_default` = stock voices ready, `cloning` = XTTS ready), and voice-service status. XTTS takes about a minute to load after a cold start; Kokoro is ready in seconds.
 - **Sensitive endpoints:** `/api/metrics` and `/api/diagnostic/clone-flow` require header `X-Diagnostic-Secret` matching env `DIAGNOSTIC_SECRET`, or are allowed from localhost only.
 
 ## Persistent cloned voices
 
 To keep cloned voices across restarts, add a **volume** in Railway to the XTTS service (or the app if XTTS runs in-process) and set `VOICES_DIR` to the volume mount path. See Railway docs for adding volumes to a service.
 
-## Single-service vs XTTS sidecar
+## Voice service
 
-- **Single service (Next.js only):** Deploy as-is. TTS and cloning will be unavailable unless you use xAI voices with `XAI_API_KEY`. Health returns 200 with `cloning: false`.
-- **With XTTS sidecar:** Add a second Railway service for `services/xtts` (Python/FastAPI), set `XTTS_URL` to its internal URL, and (recommended) attach a volume for `VOICES_DIR`. If XTTS is down, health still returns 200 with `status: 'degraded'`.
+Add a Railway service with root directory `services/xtts` (it builds from its own `Dockerfile`), set `XTTS_URL` on the Next.js service to its internal URL, and attach a volume for `VOICES_DIR`. The image bakes in all model weights (Kokoro-82M and XTTS v2) at build time and runs with `HF_HUB_OFFLINE=1`, so it needs no outbound network at runtime. If it is down, the web app's health still returns 200 with `status: 'degraded'`.
+
+Existing cloned voices keep working: on first use each legacy voice is migrated to cleaned references (`ref_*.wav`) and its conditioning latents are cached next to it (`latents_*.pt`).
+
+XTTS v2 weights are under the Coqui Public Model License (non-commercial terms); building the image accepts it. Kokoro-82M is Apache-2.0.
 
 ## GPU inference (XTTS)
 

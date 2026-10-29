@@ -427,7 +427,9 @@ def encode(wav: np.ndarray, sr: int, fmt: str = "wav") -> tuple:
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0",
-            "-codec:a", "libmp3lame", "-q:a", "2", "-f", "mp3", "pipe:1",
+            # CBR without a Xing header: exact duration in every player, and parts from
+            # long-form jobs can be concatenated byte-for-byte.
+            "-codec:a", "libmp3lame", "-b:a", "128k", "-write_xing", "0", "-f", "mp3", "pipe:1",
         ]
         proc = subprocess.run(cmd, input=wav.tobytes(), capture_output=True, timeout=120)
         if proc.returncode == 0 and proc.stdout:

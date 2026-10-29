@@ -60,3 +60,18 @@ def test_ipa_markup_per_engine():
     s = "Say [ipa:tomato|təˈmɑːtoʊ] now"
     assert tu.render_ipa_markup(s, supports_phonemes=True) == "Say [tomato](/təˈmɑːtoʊ/) now"
     assert tu.render_ipa_markup(s, supports_phonemes=False) == "Say tomato now"
+
+
+def test_english_normalizer_reads_money_times_dates_and_abbreviations():
+    from normalize_en import normalize_english as n
+
+    assert n("It costs $4.99, or 15% off.") == "It costs four dollars and ninety-nine cents, or fifteen percent off."
+    assert n("Revenue hit $2.5M & growth was 12.5%.") == (
+        "Revenue hit two point five million dollars and growth was twelve point five percent."
+    )
+    assert n("Call at 3:45 PM on 10/29/2026.") == "Call at three forty-five PM on October twenty-ninth, twenty twenty-six."
+    assert n("Meet at 9:00 or 12:05 a.m.") == "Meet at nine o'clock or twelve oh five AM."
+    assert n("Version 4.0 ships Jan. 5th, e.g. next week.") == "Version four point oh ships January 5th, for example next week."
+    assert n("$1 and $0.50") == "one dollar and fifty cents"
+    # Left alone: ratios, dotted versions/IPs, plain integers (engines read those well).
+    assert n("Ratio 3:2 at 192.168.0.1 in 2026") == "Ratio 3:2 at 192.168.0.1 in 2026"

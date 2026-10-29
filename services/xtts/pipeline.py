@@ -18,6 +18,7 @@ import numpy as np
 
 import audio_utils as au
 import text_utils as tu
+from normalize_en import normalize_english
 from kokoro_engine import KokoroEngine, PHONEME_MARKUP_LANGS
 from xtts_engine import XttsEngine, LANGUAGES as XTTS_LANGUAGES
 
@@ -283,6 +284,8 @@ class VoiceService:
 
         if engine_name == "xtts" and lang not in XTTS_LANGUAGES:
             raise ServiceError(400, f"Language '{lang}' is not supported for this voice")
+        if lang == "en":
+            text = normalize_english(text)
 
         if engine_name == "kokoro":
             lang_code = KokoroEngine.lang_code_for(kokoro_voice)
