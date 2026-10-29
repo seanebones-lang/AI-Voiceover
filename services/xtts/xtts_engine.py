@@ -18,6 +18,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from engine_init import INIT_LOCK
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
@@ -92,16 +94,17 @@ class XttsEngine:
                 return
             self.loading = True
         try:
-            import torch
-            from TTS.tts.configs.xtts_config import XttsConfig
-            from TTS.tts.models.xtts import Xtts
+            with INIT_LOCK:
+                import torch
+                from TTS.tts.configs.xtts_config import XttsConfig
+                from TTS.tts.models.xtts import Xtts
 
-            model_dir = ensure_model_files(resolve_model_dir())
-            config = XttsConfig()
-            config.load_json(os.path.join(model_dir, "config.json"))
-            model = Xtts.init_from_config(config)
-            model.load_checkpoint(config, checkpoint_dir=model_dir, eval=True, use_deepspeed=False)
-            model.to(self.device)
+                model_dir = ensure_model_files(resolve_model_dir())
+                config = XttsConfig()
+                config.load_json(os.path.join(model_dir, "config.json"))
+                model = Xtts.init_from_config(config)
+                model.load_checkpoint(config, checkpoint_dir=model_dir, eval=True, use_deepspeed=False)
+                model.to(self.device)
             if self.device == "cpu":
                 torch.set_num_threads(max(1, _env_int("XTTS_CPU_THREADS", os.cpu_count() or 1)))
             self.model = model

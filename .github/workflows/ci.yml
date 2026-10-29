@@ -19,3 +19,13 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: E2E API health smoke
         run: npm run e2e:api
+  voice-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r services/xtts/requirements-dev.txt
+      - run: python -m pytest -q services/xtts/tests

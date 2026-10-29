@@ -8,7 +8,6 @@ Engines (no third-party APIs at runtime):
 Model weights are read from the local cache (baked into the image by prefetch_models.py).
 """
 
-import asyncio
 import logging
 import os
 import sys
@@ -139,14 +138,17 @@ CLONE_GUIDE = {
 
 
 def _start_loaders() -> None:
-    if _flag("KOKORO_PRELOAD_ON_STARTUP", "1"):
-        def kokoro_boot():
+    """Load engines one after another in a single thread: Kokoro first (seconds) so stock
+    voices are available quickly, then XTTS (about a minute on CPU)."""
+    def boot():
+        if _flag("KOKORO_PRELOAD_ON_STARTUP", "1"):
             service.kokoro.load()
             if service.kokoro.ready:
                 service.kokoro.warm({v["voice"] for v in service.stock.values() if v["engine"] == "kokoro"})
-        threading.Thread(target=kokoro_boot, daemon=True, name="kokoro-loader").start()
-    if _flag("XTTS_PRELOAD_ON_STARTUP", "1"):
-        threading.Thread(target=service.xtts.load, daemon=True, name="xtts-loader").start()
+        if _flag("XTTS_PRELOAD_ON_STARTUP", "1"):
+            service.xtts.load()
+
+    threading.Thread(target=boot, daemon=True, name="engine-loader").start()
 
 
 @asynccontextmanager
@@ -430,6 +432,29 @@ async def clone_voice(
         "sample_files": [r["file"] for r in meta["references"][:3]],
         "message": message,
         "warnings": [] if service.xtts.ready else ["Cloning engine still loading"],
+    }
+
+
+@app.post("/voices/{voice_id}/samples")
+async def add_voice_samples(voice_id: str, files: List[UploadFile] = File(...)):
+    """Add more reference takes to an existing cloned voice; latents are recomputed."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Audio file required")
+    uploads = [(f.filename or f"audio_{i}", await f.read()) for i, f in enumerate(files)]
+    try:
+        out = await run_in_threadpool(service.add_samples, voice_id, uploads, QUALITY_GATE)
+    except ServiceError as e:
+        _raise(e)
+    meta = out["meta"]
+    return {
+        "success": True,
+        "voice_id": voice_id,
+        "samples_count": sum(1 for r in meta["references"] if r.get("use", True)),
+        "reference_seconds": meta["reference_seconds"],
+        "quality_score": meta.get("quality_score"),
+        "quality_tier": meta.get("quality_tier"),
+        "quality_reports": out["reports"],
+        "message": f"Added {len(out['reports'])} take(s). The voice now uses {meta['reference_seconds']:.0f}s of reference speech.",
     }
 
 

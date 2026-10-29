@@ -315,7 +315,7 @@ class VoiceService:
             else:
                 wav, residual = self.xtts.synthesize(seg.text, lang, latents, t, rp, k, p, speed=speed)
                 wav = au.remove_tail_artifacts(wav, SAMPLE_RATE)
-                wav = au.compress_pauses(wav, SAMPLE_RATE, max_pause_s=0.9, keep_s=0.45)
+                wav = au.compress_pauses(wav, SAMPLE_RATE, max_pause_s=0.8, keep_s=0.5)
             chunks.append(au.trim_silence(wav, SAMPLE_RATE, top_db=42.0, pad_ms=35.0))
             pauses.append(seg.pause_after / speed)
         headers["X-Text-Chunks"] = str(sum(1 for s in segments if s.text.strip()))
@@ -351,6 +351,79 @@ class VoiceService:
 
     # ------------------------------------------------------------ cloning
 
+    MAX_REFERENCES = 8
+
+    def _ingest_uploads(self, voice_dir: Path, uploads: List[Tuple[str, bytes]], start: int,
+                        quality_gate: dict) -> Tuple[List[dict], List[dict]]:
+        """Validate, assess and clean uploaded takes into ref_{n}.wav files under voice_dir."""
+        refs, reports = [], []
+        for offset, (filename, content) in enumerate(uploads):
+            i = start + offset
+            if len(content) < 1000:
+                raise ServiceError(400, f"Audio file {filename} is too small (need at least 1KB)")
+            suffix = (Path(filename or "").suffix or ".wav").lower()[:6]
+            upload_name = f"upload_{i}{suffix}"
+            (voice_dir / upload_name).write_bytes(content)
+            try:
+                raw = au.decode_audio(content, REF_SR)
+            except ValueError as e:
+                raise ServiceError(400, f"Invalid audio file {filename}: {e}")
+            source_sr = probe_sample_rate(str(voice_dir / upload_name))
+            report = assess_reference(raw, REF_SR, source_sr, quality_gate)
+            report["source_file"] = filename
+            reports.append(report)
+            if quality_gate.get("strict_reject_mode") and not report["gate_passed"]:
+                reasons = "; ".join(report["gate_fail_reasons"][:2]) or "Audio quality gate failed"
+                raise ServiceError(400, f"Audio quality gate failed for {filename}: {reasons}")
+            cleaned = clean_reference(raw, REF_SR, denoise=report["analysis"]["snr_db"] < 25)
+            if len(cleaned) < REF_SR * 1.0:
+                raise ServiceError(400, f"Audio file {filename} has less than one second of speech")
+            ref_name = f"ref_{i}.wav"
+            au.sf.write(str(voice_dir / ref_name), cleaned, REF_SR, subtype="PCM_16")
+            refs.append({"file": ref_name, "source": upload_name, "use": True,
+                         "quality_score": report["quality_score"],
+                         "analysis": au.analyze_reference(cleaned, REF_SR)})
+        return refs, reports
+
+    def add_samples(self, voice_id: str, uploads: List[Tuple[str, bytes]], quality_gate: dict) -> dict:
+        """Add reference takes to an existing cloned voice (more clean takes = steadier identity)."""
+        meta = self.read_meta(voice_id)
+        if not meta.get("references"):
+            self.reference_paths(meta)  # migrate the legacy layout first
+            meta = self.read_meta(voice_id)
+        existing = list(meta["references"])
+        if len(existing) + len(uploads) > self.MAX_REFERENCES:
+            raise ServiceError(400, f"A voice can hold at most {self.MAX_REFERENCES} takes "
+                                    f"({len(existing)} already stored)")
+        voice_dir = self.voices_dir / voice_id
+        start = 1 + max([int(m.group(1)) for r in existing if (m := re.match(r"ref_(\d+)", r["file"]))] + [-1])
+        try:
+            new_refs, reports = self._ingest_uploads(voice_dir, uploads, start, quality_gate)
+        except Exception:
+            for i in range(start, start + len(uploads)):
+                for f in voice_dir.glob(f"*_{i}.*"):
+                    f.unlink(missing_ok=True)
+            raise
+        refs = existing + new_refs
+        _mark_usable(refs)
+        meta["references"] = refs
+        meta["sample_files"] = [r["source"] for r in refs]
+        meta["reference_seconds"] = round(sum(r["analysis"]["duration"] for r in refs if r.get("use", True)), 1)
+        scores = [r.get("quality_score") for r in refs if r.get("quality_score") is not None]
+        if scores:
+            meta["quality_score"] = round(sum(scores) / len(scores), 1)
+        meta["quality_tier"] = _tier(meta["reference_seconds"])
+        meta["quality_warnings"] = sorted(set(meta.get("quality_warnings", [])) | {w for r in reports for w in r["warnings"]})
+        self.write_meta(meta)
+        self.xtts.forget(voice_id)
+        if self.xtts.ready:
+            try:
+                self.clone_latents(voice_id)
+            except Exception as e:
+                logger.warning("Could not recompute latents for %s: %s", voice_id, e)
+        logger.info("Added %d takes to %s", len(new_refs), voice_id)
+        return {"meta": meta, "reports": reports}
+
     def create_clone(self, name: str, description: Optional[str], uploads: List[Tuple[str, bytes]],
                      quality_gate: dict) -> dict:
         safe = "".join(c for c in name.lower().replace(" ", "_") if c.isalnum() or c == "_")[:48] or "voice"
@@ -360,43 +433,13 @@ class VoiceService:
         voice_dir = self.voices_dir / voice_id
         voice_dir.mkdir(parents=True, exist_ok=True)
         try:
-            refs, reports = [], []
-            for i, (filename, content) in enumerate(uploads):
-                if len(content) < 1000:
-                    raise ServiceError(400, f"Audio file {filename} is too small (need at least 1KB)")
-                suffix = (Path(filename or "").suffix or ".wav").lower()[:6]
-                upload_name = f"upload_{i}{suffix}"
-                (voice_dir / upload_name).write_bytes(content)
-                try:
-                    raw = au.decode_audio(content, REF_SR)
-                except ValueError as e:
-                    raise ServiceError(400, f"Invalid audio file {filename}: {e}")
-                source_sr = probe_sample_rate(str(voice_dir / upload_name))
-                report = assess_reference(raw, REF_SR, source_sr, quality_gate)
-                report["source_file"] = filename
-                reports.append(report)
-                if quality_gate.get("strict_reject_mode") and not report["gate_passed"]:
-                    reasons = "; ".join(report["gate_fail_reasons"][:2]) or "Audio quality gate failed"
-                    raise ServiceError(400, f"Audio quality gate failed for {filename}: {reasons}")
-                cleaned = clean_reference(raw, REF_SR, denoise=report["analysis"]["snr_db"] < 25)
-                if len(cleaned) < REF_SR * 1.0:
-                    raise ServiceError(400, f"Audio file {filename} has less than one second of speech")
-                ref_name = f"ref_{i}.wav"
-                au.sf.write(str(voice_dir / ref_name), cleaned, REF_SR, subtype="PCM_16")
-                refs.append({"file": ref_name, "source": upload_name, "use": True,
-                             "quality_score": report["quality_score"],
-                             "analysis": au.analyze_reference(cleaned, REF_SR)})
-
-            # Drop clearly bad takes when good ones exist (one noisy take drags the voice down).
-            good = [r for r in refs if r["quality_score"] >= 55]
-            if good and len(good) < len(refs):
-                for r in refs:
-                    r["use"] = r in good
+            refs, reports = self._ingest_uploads(voice_dir, uploads, 0, quality_gate)
+            _mark_usable(refs)
 
             avg = sum(r["quality_score"] for r in reports) / max(1, len(reports))
             speech_s = sum(r["analysis"]["duration"] for r in refs if r["use"])
             gate_failed = sum(1 for r in reports if not r["gate_passed"])
-            tier = "excellent" if speech_s >= 60 else "good" if speech_s >= 25 else "basic" if speech_s >= 10 else "minimal"
+            tier = _tier(speech_s)
             preset = "stable" if (avg < 65 or gate_failed) else DEFAULT_PRESET
             meta = {
                 "voice_id": voice_id,
@@ -457,6 +500,17 @@ class VoiceService:
 
 
 # ---------------------------------------------------------------- reference helpers
+
+def _tier(speech_seconds: float) -> str:
+    return ("excellent" if speech_seconds >= 60 else "good" if speech_seconds >= 25
+            else "basic" if speech_seconds >= 10 else "minimal")
+
+
+def _mark_usable(refs: List[dict]) -> None:
+    """Exclude clearly bad takes when good ones exist (one noisy take drags the voice down)."""
+    good = [r for r in refs if r.get("quality_score", 70) >= 55]
+    for r in refs:
+        r["use"] = (r in good) if good else True
 
 def clean_reference(wav: np.ndarray, sr: int, denoise: bool = False) -> np.ndarray:
     """

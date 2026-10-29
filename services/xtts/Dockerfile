@@ -26,7 +26,7 @@ RUN apt-get update \
 # XTTS v2 weights are released under the Coqui Public Model License (non-commercial terms).
 # Building this image downloads them and accepts that license.
 ARG COQUI_TOS_AGREED=1
-COPY prefetch_models.py xtts_engine.py audio_utils.py stock_voices.json ./
+COPY prefetch_models.py engine_init.py xtts_engine.py audio_utils.py stock_voices.json ./
 RUN COQUI_TOS_AGREED=${COQUI_TOS_AGREED} python prefetch_models.py
 
 ENV HF_HUB_OFFLINE=1 \

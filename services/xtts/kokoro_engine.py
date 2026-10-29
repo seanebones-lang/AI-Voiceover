@@ -10,6 +10,8 @@ from typing import Dict, Optional
 
 import numpy as np
 
+from engine_init import INIT_LOCK
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
@@ -41,9 +43,10 @@ class KokoroEngine:
                 return
             self.loading = True
         try:
-            from kokoro import KModel
+            with INIT_LOCK:
+                from kokoro import KModel
 
-            model = KModel(repo_id=REPO_ID).to(self.device).eval()
+                model = KModel(repo_id=REPO_ID).to(self.device).eval()
             self.model = model
             self.load_error = None
             logger.info("Kokoro loaded (%s)", self.device)
@@ -58,10 +61,13 @@ class KokoroEngine:
             return self._pipelines[lang_code]
         if lang_code in self._pipeline_errors:
             raise RuntimeError(self._pipeline_errors[lang_code])
-        from kokoro import KPipeline
-
         try:
-            pipe = KPipeline(lang_code=lang_code, repo_id=REPO_ID, model=self.model)
+            with INIT_LOCK:
+                if lang_code in self._pipelines:
+                    return self._pipelines[lang_code]
+                from kokoro import KPipeline
+
+                pipe = KPipeline(lang_code=lang_code, repo_id=REPO_ID, model=self.model)
         except Exception as e:
             msg = f"Kokoro language pack '{lang_code}' unavailable: {e}"
             self._pipeline_errors[lang_code] = msg

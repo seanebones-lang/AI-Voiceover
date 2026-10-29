@@ -246,6 +246,8 @@ export function Dashboard() {
 
   // Clone State
   const [cloneName, setCloneName] = useState('')
+  /** '' = create a new voice; otherwise add the uploaded takes to this existing clone. */
+  const [cloneTargetVoiceId, setCloneTargetVoiceId] = useState('')
   const [cloneDescription, setCloneDescription] = useState('')
   const [cloneFiles, setCloneFiles] = useState<File[]>([])
   const [cloneLoading, setCloneLoading] = useState(false)
@@ -770,7 +772,39 @@ export function Dashboard() {
     }
   }
 
+  async function addTakesToClone() {
+    if (cloneFiles.length === 0) {
+      setCloneError('Please upload at least one audio file')
+      return
+    }
+    setCloneLoading(true)
+    setCloneError(null)
+    setCloneSuccess(null)
+    try {
+      const formData = new FormData()
+      cloneFiles.forEach((file) => formData.append('files', file))
+      const response = await fetch(`/api/cloned-voices/${encodeURIComponent(cloneTargetVoiceId)}/samples`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not add takes')
+      setCloneSuccess(data.message || 'Takes added.')
+      setCloneQualityTier(typeof data.quality_tier === 'string' ? data.quality_tier : null)
+      setCloneQualityScore(typeof data.quality_score === 'number' ? data.quality_score : null)
+      setCloneFiles([])
+    } catch (err) {
+      setCloneError(err instanceof Error ? err.message : 'Could not add takes')
+    } finally {
+      setCloneLoading(false)
+    }
+  }
+
   async function cloneVoice() {
+    if (cloneTargetVoiceId) {
+      await addTakesToClone()
+      return
+    }
     if (!cloneName.trim()) {
       setCloneError('Please enter a voice name')
       return
@@ -2002,7 +2036,32 @@ export function Dashboard() {
                   </div>
                 )}
 
+                {/* Target: new voice or more takes for an existing clone */}
+                {voices.some((v) => v.source === 'cloned') && (
+                  <div>
+                    <label htmlFor="clone-target" className="text-sm font-medium mb-2 block">Clone target</label>
+                    <select
+                      id="clone-target"
+                      value={cloneTargetVoiceId}
+                      onChange={(e) => setCloneTargetVoiceId(e.target.value)}
+                      className="w-full px-4 py-3 rounded-lg border bg-background"
+                    >
+                      <option value="">Create a new voice</option>
+                      {voices.filter((v) => v.source === 'cloned').map((v) => (
+                        <option key={v.voice_id} value={v.voice_id}>Add takes to: {v.name}</option>
+                      ))}
+                    </select>
+                    {cloneTargetVoiceId && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        New takes are cleaned and merged into this voice (up to 8 takes). More clean, varied takes give a steadier identity.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Voice Name */}
+                {!cloneTargetVoiceId && (
+                <>
               <div>
                   <label className="text-sm font-medium mb-2 block">Voice Name *</label>
                   <input
@@ -2027,6 +2086,8 @@ export function Dashboard() {
                     maxLength={100}
                 />
               </div>
+                </>
+                )}
 
                 {/* Recording */}
               <div>
@@ -2099,12 +2160,14 @@ export function Dashboard() {
                 {/* Clone Button */}
                 <Button 
                   onClick={cloneVoice} 
-                  disabled={cloneLoading || !cloneName.trim() || cloneFiles.length === 0}
+                  disabled={cloneLoading || (!cloneTargetVoiceId && !cloneName.trim()) || cloneFiles.length === 0}
                   className="w-full"
                   size="lg"
                 >
                   <Mic className="h-5 w-5" />
-                  <span className="ml-2">{cloneLoading ? 'Cloning...' : 'Clone Voice'}</span>
+                  <span className="ml-2">
+                    {cloneLoading ? (cloneTargetVoiceId ? 'Adding takes...' : 'Cloning...') : cloneTargetVoiceId ? 'Add Takes' : 'Clone Voice'}
+                  </span>
                 </Button>
             </CardContent>
           </Card>

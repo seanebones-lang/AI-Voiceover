@@ -8,7 +8,7 @@ Web UI and APIs run on Next.js 16. **Every voice is synthesized by the self-host
 
 ## What it does
 
-- 34 local stock voices across 11 languages (Kokoro-82M, plus XTTS studio speakers for German, Korean, French male and four multilingual studio voices)
+- 34 local stock voices in 10 languages plus 4 multilingual studio voices (25 on Kokoro-82M; XTTS studio speakers cover German, Korean, French male and the multilingual set)
 - Voice cloning from short reference clips (XTTS v2): references are cleaned automatically and speaker latents are cached per voice
 - Emotion / prosody controls, `[pause]` markers that insert real silence, paragraph pauses, pronunciation lexicon and inline IPA (`[ipa:word|phonemes]`)
 - Post-synthesis effects (room reverb, echo, denoise, radio/telephone/robot/…) and mastering profiles (podcast, broadcast, cinematic)
